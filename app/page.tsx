@@ -33,6 +33,11 @@ export default function HomePage() {
     const fetchStores = async () => {
       try {
         const allStores = await getAllStores({ limit: 50 });
+        console.log('Frontend: All stores fetched:', allStores);
+        console.log('Frontend: Store count:', allStores.length);
+        allStores.forEach((store, index) => {
+          console.log(`Frontend: Store ${index + 1}:`, store.name, store.id, store.isActive);
+        });
         setStores(allStores);
       } catch (error) {
         console.error('Failed to fetch stores:', error);
@@ -60,12 +65,18 @@ export default function HomePage() {
       try {
         const combined: Record<string, Store> = {};
         const addStores = (items: Store[]) => {
+          console.log('Frontend: Adding stores:', items);
           items.forEach((store) => {
+            console.log('Frontend: Checking store:', store.name, store.id, store.isActive);
             // Only add stores that are active and have valid data
             if (store.isActive && store.id && store.name) {
+              console.log('Frontend: Adding store to combined:', store.name);
               combined[store.id] = store;
+            } else {
+              console.log('Frontend: Skipping store (inactive or invalid):', store.name);
             }
           });
+          console.log('Frontend: Combined stores after adding:', Object.keys(combined));
         };
 
         if (location?.latitude && location?.longitude) {
@@ -100,6 +111,11 @@ export default function HomePage() {
 
         if (isMounted) {
           const finalStores = Object.values(combined).slice(0, 12);
+          console.log('Frontend: Nearby stores final:', finalStores);
+          console.log('Frontend: Nearby store count:', finalStores.length);
+          finalStores.forEach((store, index) => {
+            console.log(`Frontend: Nearby Store ${index + 1}:`, store.name, store.id, store.isActive);
+          });
           setNearbyStores(finalStores);
         }
       } catch (error) {
