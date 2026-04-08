@@ -320,6 +320,9 @@ class StoreController extends Controller
                     'category' => $this->categoryRelationWithBanners(),
                     'activeBoost.plan',
                     'activeSubscription.plan',
+                    'products' => function ($query) {
+                        $query->orderByDesc('created_at');
+                    },
                 ]);
                 \Log::info('Relationships loaded successfully');
             } catch (\Exception $e) {

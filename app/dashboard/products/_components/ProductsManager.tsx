@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X } from 'lucide-react';
 import type { Product, Service } from '@/types';
-import { addProduct, addService, deleteProduct, getServicesByStore, getStoreBySlug, isApiError, updateProduct } from '@/src/lib/api';
+import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlug, isApiError, updateProduct } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 
 const PRODUCT_UNIT_OPTIONS = [
@@ -200,13 +200,18 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     setLoading(true);
     setError(null);
     try {
-      const { store, products: storeProducts } = await getStoreBySlug(user.storeSlug);
+      const { store } = await getStoreBySlug(user.storeSlug);
       setStoreId(store?.id ?? null);
-      setProducts(storeProducts ?? []);
+
+      // Load products directly using getProductsByStore
       if (store?.id) {
+        const storeProducts = await getProductsByStore(store.id);
+        setProducts(storeProducts ?? []);
+
         const storeServices = await getServicesByStore(store.id);
         setServices(storeServices ?? []);
       } else {
+        setProducts([]);
         setServices([]);
       }
     } catch (err) {
@@ -222,7 +227,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     } finally {
       setLoading(false);
     }
-  }, [router, user?.storeSlug]);
+  }, [user?.storeSlug, router]);
 
   useEffect(() => {
     if (!isLoggedIn) {
