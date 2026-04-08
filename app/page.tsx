@@ -33,6 +33,11 @@ export default function HomePage() {
     const fetchStores = async () => {
       try {
         const allStores = await getAllStores({ limit: 50 });
+        console.log('All stores fetched:', allStores);
+        console.log('Store count:', allStores.length);
+        allStores.forEach((store, index) => {
+          console.log(`Store ${index + 1}:`, store.name, store.id, store.is_active);
+        });
         setStores(allStores);
       } catch (error) {
         console.error('Failed to fetch stores:', error);
@@ -97,6 +102,11 @@ export default function HomePage() {
 
         if (isMounted) {
           const finalStores = Object.values(combined).slice(0, 12);
+          console.log('Nearby stores final:', finalStores);
+          console.log('Nearby store count:', finalStores.length);
+          finalStores.forEach((store, index) => {
+            console.log(`Nearby Store ${index + 1}:`, store.name, store.id, store.is_active);
+          });
           setNearbyStores(finalStores);
         }
       } catch (error) {
