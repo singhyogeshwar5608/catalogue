@@ -52,7 +52,10 @@ export default function AllStoresPage() {
         const combined: Record<string, Store> = {};
         const addStores = (items: Store[]) => {
           items.forEach((store) => {
-            combined[String(store.id)] = store;
+            // Only add stores that are active and have valid data
+            if (store.isActive && store.id && store.name) {
+              combined[String(store.id)] = store;
+            }
           });
         };
 
@@ -74,13 +77,12 @@ export default function AllStoresPage() {
           const cityTokens = extractCityTokens(location.label);
           for (const token of cityTokens) {
             try {
-              const hadStoresBeforeLabelSearch = Object.keys(combined).length > 0;
               const labelStores = await getAllStores({ location: token, limit: 12 });
               addStores(labelStores);
-              if (!hadStoresBeforeLabelSearch && labelStores.length > 0) {
+              if (Object.keys(combined).length === 0) {
                 setFallbackQueryUsed(token);
-                break;
               }
+              break; // Only use first successful token to avoid multiple API calls
             } catch (error) {
               console.warn(`Location query failed for token: ${token}`, error);
             }
