@@ -31,7 +31,7 @@ export default function AdminStoresPage() {
       console.log('Auth token available:', typeof window !== 'undefined' ? !!localStorage.getItem('auth_token') : 'N/A');
       console.log('Auth user available:', typeof window !== 'undefined' ? !!localStorage.getItem('auth_user') : 'N/A');
       
-      const data = await getAllStores({ limit: 100 });
+      const data = await getAllStores({ limit: 100, include_inactive: true });
       console.log('Stores fetched:', data.length, 'stores');
       console.log('First store:', data[0]);
       console.log('All store statuses:', data.map(s => `${s.name}: ${s.isActive ? 'Active' : 'Banned'}`));

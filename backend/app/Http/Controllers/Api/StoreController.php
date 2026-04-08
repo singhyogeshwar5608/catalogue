@@ -88,21 +88,24 @@ class StoreController extends Controller
         // For public API, show only active stores
         $user = $request->user();
         $isAdmin = $user?->role === 'super_admin';
+        $includeInactive = $request->boolean('include_inactive', false);
         
         \Log::info('getAllStores called', [
             'user_id' => $user?->id,
             'user_role' => $user?->role,
             'is_admin' => $isAdmin,
+            'include_inactive' => $includeInactive,
             'limit' => $request->input('limit', 50)
         ]);
         
         // For admin panel, show all stores (active + banned)
         // For public API, show only active stores
-        if (!$isAdmin) {
+        // Also include inactive stores if explicitly requested
+        if (!$isAdmin && !$includeInactive) {
             $query->where('is_active', true);
             \Log::info('Filtering active stores only (non-admin user)');
         } else {
-            \Log::info('Showing all stores (admin user)');
+            \Log::info('Showing all stores (admin user or include_inactive requested)');
         }
         
         $stores = $query->with([

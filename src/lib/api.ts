@@ -962,6 +962,7 @@ export const getAllStores = async (params?: {
   lat?: number;
   lng?: number;
   radiusKm?: number;
+  include_inactive?: boolean;
 }) => {
   const queryParams = new URLSearchParams();
   if (params?.search) queryParams.append('search', params.search);
@@ -973,29 +974,13 @@ export const getAllStores = async (params?: {
   if (typeof params?.lat === 'number') queryParams.append('lat', params.lat.toString());
   if (typeof params?.lng === 'number') queryParams.append('lng', params.lng.toString());
   if (typeof params?.radiusKm === 'number') queryParams.append('radius_km', params.radiusKm.toString());
+  if (params?.include_inactive) queryParams.append('include_inactive', '1');
 
   const url = `/stores${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
   const response = await apiRequest<BackendStore[]>(url);
 
-  return response.data.map((store) => normalizeStore(store));
-};
-
-export const getStoreBySlug = async (slug: string) => {
-  const response = await apiRequest<BackendStore | null>(`/store/${slug}`);
-
-  if (!response.data) {
-    return { store: null, products: [] };
-  }
-
-  const normalizedStore = normalizeStore(response.data);
-  const products = (response.data.products ?? []).map((product) =>
-    normalizeProduct(product, response.data as BackendStore)
-  );
-
-  return {
-    store: normalizedStore,
-    products,
-  };
+  const normalizedStores = response.data.map((store) => normalizeStore(store));
+  return normalizedStores;
 };
 
 export const getBoostPlans = async (): Promise<BoostPlan[]> => {
