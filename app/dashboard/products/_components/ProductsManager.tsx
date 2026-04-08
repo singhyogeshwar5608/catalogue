@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X, Search } from 'lucide-react';
 import type { Product, Service } from '@/types';
 import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlug, isApiError, updateProduct } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
+import { useSearch } from '@/src/context/SearchContext';
 
 const PRODUCT_UNIT_OPTIONS = [
   { value: 'piece', label: 'Pieces (pcs)' },
@@ -157,6 +158,8 @@ const compressImageToDataUrl = async (file: File): Promise<string> => {
 export default function ProductsManager({ defaultShowForm = false }: ProductsManagerProps) {
   const router = useRouter();
   const { isLoggedIn, user } = useAuth();
+  const { searchQuery: globalSearchQuery, setSearchQuery: setGlobalSearchQuery } = useSearch();
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [showAddForm, setShowAddForm] = useState(defaultShowForm);
   const [showAddServiceForm, setShowAddServiceForm] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -512,6 +515,35 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
 
   const liveCount = useMemo(() => products.filter((product) => product.inStock).length, [products]);
   const liveServicesCount = useMemo(() => services.filter((service) => service.isActive).length, [services]);
+
+  // Filter products based on search query
+  const filteredProducts = useMemo(() => {
+    if (!localSearchQuery.trim()) return products;
+    
+    const query = localSearchQuery.toLowerCase().trim();
+    return products.filter((product) => {
+      return (
+        product.name.toLowerCase().includes(query) ||
+        product.description?.toLowerCase().includes(query) ||
+        product.category?.toLowerCase().includes(query) ||
+        (product.unitType && product.unitType.toLowerCase().includes(query))
+      );
+    });
+  }, [products, localSearchQuery]);
+
+  // Filter services based on search query
+  const filteredServices = useMemo(() => {
+    if (!localSearchQuery.trim()) return services;
+    
+    const query = localSearchQuery.toLowerCase().trim();
+    return services.filter((service) => {
+      return (
+        service.title.toLowerCase().includes(query) ||
+        service.description?.toLowerCase().includes(query) ||
+        (service.billingUnit && service.billingUnit.toLowerCase().includes(query))
+      );
+    });
+  }, [services, localSearchQuery]);
 
   return (
     <div className="space-y-6 md:space-y-8 pb-24">
@@ -1071,6 +1103,27 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
           </span>
         </div>
 
+        {/* Search Input */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            value={localSearchQuery}
+            onChange={(e) => setLocalSearchQuery(e.target.value)}
+            placeholder="Search products by name, description, category..."
+            className="w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          />
+          {localSearchQuery && (
+            <button
+              type="button"
+              onClick={() => setLocalSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
         <div className="md:hidden flex gap-2 text-xs font-semibold">
           <button
             type="button"
@@ -1090,12 +1143,12 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
 
         {listFilter === 'products' ? (
           <div className="space-y-1 md:hidden">
-            {products.length === 0 && !loading ? (
+            {filteredProducts.length === 0 && !loading ? (
               <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-3 py-6 text-center text-xs text-gray-500">
-                No products yet. Add your first product to see it here.
+                {localSearchQuery ? 'No products found matching your search.' : 'No products yet. Add your first product to see it here.'}
               </div>
             ) : (
-              products.map((product) => (
+              filteredProducts.map((product) => (
                 <div key={product.id} className="rounded-2xl border border-gray-100 bg-white px-1.5 py-1.5 shadow-sm">
                   <div className="flex gap-1.5">
                     <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-xl bg-gray-50">
@@ -1146,12 +1199,12 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
           </div>
         ) : (
           <div className="space-y-1 md:hidden">
-            {services.length === 0 && !loading ? (
+            {filteredServices.length === 0 && !loading ? (
               <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-3 py-6 text-center text-xs text-gray-500">
-                No services yet. Add one to see it here.
+                {localSearchQuery ? 'No services found matching your search.' : 'No services yet. Add one to see it here.'}
               </div>
             ) : (
-              services.map((service) => (
+              filteredServices.map((service) => (
                 <div key={service.id} className="rounded-2xl border border-gray-100 bg-white px-1.5 py-1.5 shadow-sm">
                   <div className="flex gap-1.5">
                     <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-xl bg-gray-50">
@@ -1207,7 +1260,12 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
         </div>
 
         <div>
-          {products.map((product) => (
+          {filteredProducts.length === 0 && !loading ? (
+            <div className="px-5 py-8 text-center text-sm text-gray-500">
+              {localSearchQuery ? 'No products found matching your search.' : 'No products yet. Add your first product to see it here.'}
+            </div>
+          ) : (
+            filteredProducts.map((product) => (
             <div
               key={product.id}
               className="grid grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto] items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-b-0"
@@ -1251,7 +1309,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                 </button>
               </div>
             </div>
-          ))}
+          ))
+          )}
         </div>
         {!products.length && !loading && (
           <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
@@ -1306,9 +1365,9 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
             </button>
           </div>
 
-          {!services.length && !loading ? (
+          {!filteredServices.length && !loading ? (
             <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center">
-              <p className="text-sm text-gray-600">No services added yet.</p>
+              <p className="text-sm text-gray-600">{localSearchQuery ? 'No services found matching your search.' : 'No services added yet.'}</p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -1320,7 +1379,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               </div>
 
               <div>
-                {services.map((service) => (
+                {filteredServices.map((service) => (
                   <div
                     key={service.id}
                     className="grid grid-cols-[minmax(0,2.5fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto] items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-b-0"
