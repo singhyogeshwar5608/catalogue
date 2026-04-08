@@ -1,0 +1,50 @@
+cd public_html/backend
+
+echo "=== DIRECT CORS FIX ==="
+
+echo "1. Check current CORS config..."
+cat config/cors.php | grep -A 10 "allowed_origins"
+
+echo -e "\n2. Create new CORS config..."
+cat > config/cors.php << 'EOF'
+<?php
+
+return [
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'allowed_methods' => ['*'],
+    'allowed_origins' => [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:*',
+        'https://kaushalschoolfurniture.com',
+        'http://kaushalschoolfurniture.com',
+        'https://www.kaushalschoolfurniture.com',
+        'http://www.kaushalschoolfurniture.com',
+    ],
+    'allowed_origins_patterns' => [],
+    'allowed_headers' => ['*'],
+    'exposed_headers' => [],
+    'max_age' => 0,
+    'supports_credentials' => false,
+];
+EOF
+
+echo "3. Verify new CORS config..."
+cat config/cors.php | grep -A 10 "allowed_origins"
+
+echo -e "\n4. Clear all caches..."
+php artisan config:clear
+php artisan cache:clear
+php artisan route:clear
+php artisan view:clear
+
+echo -e "\n5. Rebuild caches..."
+php artisan config:cache
+php artisan route:cache
+
+echo -e "\n6. Test CORS..."
+curl -I https://kaushalschoolfurniture.com/api/v1/v1/auth/login \
+  -H "Origin: http://localhost:3001" \
+  -H "Access-Control-Request-Method: POST"
+
+echo -e "\n=== CORS FIXED ==="

@@ -1,0 +1,10 @@
+RewriteEngine On
+
+# Allow API requests to Laravel backend
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^(.*)$ backend/public/index.php [L]
+
+# Handle React SPA (catch all other requests)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]

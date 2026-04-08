@@ -1,0 +1,181 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\SubscriptionPlan;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+
+class SubscriptionPlanController extends Controller
+{
+    public function publicIndex()
+    {
+        $query = SubscriptionPlan::query();
+
+        if (Schema::hasColumn('subscription_plans', 'is_active')) {
+            $query->where('is_active', true);
+        }
+
+        if (Schema::hasColumn('subscription_plans', 'is_popular')) {
+            $query->orderByDesc('is_popular');
+        }
+
+        if (Schema::hasColumn('subscription_plans', 'price')) {
+            $query->orderBy('price');
+        } else {
+            $query->orderBy('id');
+        }
+
+        $plans = $query->get();
+
+        return $this->successResponse('Subscription plans retrieved successfully.', $plans);
+    }
+
+    public function index()
+    {
+        $query = SubscriptionPlan::query();
+
+        if (Schema::hasColumn('subscription_plans', 'is_active')) {
+            $query->orderByDesc('is_active');
+        }
+
+        if (Schema::hasColumn('subscription_plans', 'is_popular')) {
+            $query->orderByDesc('is_popular');
+        }
+
+        if (Schema::hasColumn('subscription_plans', 'price')) {
+            $query->orderBy('price');
+        } else {
+            $query->orderBy('id');
+        }
+
+        $plans = $query->get();
+
+        return $this->successResponse('Subscription plans retrieved successfully.', $plans);
+    }
+
+    public function store(Request $request)
+    {
+        $rules = [
+            'name' => 'required|string|max:255',
+            'price' => 'required|integer|min:0',
+            'billing_cycle' => 'required|in:monthly,yearly',
+            'duration_days' => 'nullable|integer|min:1|max:365',
+            'max_products' => 'required|integer|min:1',
+            'is_popular' => 'nullable|boolean',
+            'is_active' => 'nullable|boolean',
+            'features' => 'nullable',
+            'description' => 'nullable|string',
+        ];
+
+        if (Schema::hasColumn('subscription_plans', 'slug')) {
+            $rules['slug'] = 'nullable|string|max:255|unique:subscription_plans,slug';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            return $this->errorResponse('Validation failed.', 422, $validator->errors());
+        }
+
+        $data = $validator->validated();
+        
+        if (Schema::hasColumn('subscription_plans', 'slug')) {
+            $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? Str::slug($data['name']));
+        }
+        
+        $data['features'] = $this->normalizeFeatures($data['features'] ?? []);
+
+        $plan = SubscriptionPlan::create($data);
+
+        return $this->successResponse('Subscription plan created successfully.', $plan, 201);
+    }
+
+    public function update(Request $request, SubscriptionPlan $plan)
+    {
+        $rules = [
+            'name' => 'sometimes|required|string|max:255',
+            'price' => 'sometimes|required|integer|min:0',
+            'billing_cycle' => 'sometimes|required|in:monthly,yearly',
+            'duration_days' => 'sometimes|nullable|integer|min:1|max:365',
+            'max_products' => 'sometimes|required|integer|min:1',
+            'is_popular' => 'nullable|boolean',
+            'is_active' => 'nullable|boolean',
+            'features' => 'nullable',
+            'description' => 'nullable|string',
+        ];
+
+        if (Schema::hasColumn('subscription_plans', 'slug')) {
+            $rules['slug'] = 'sometimes|nullable|string|max:255|unique:subscription_plans,slug,' . $plan->id;
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            return $this->errorResponse('Validation failed.', 422, $validator->errors());
+        }
+
+        $data = $validator->validated();
+        
+        if (Schema::hasColumn('subscription_plans', 'slug')) {
+            if (array_key_exists('slug', $data)) {
+                $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? ($data['name'] ?? $plan->name), $plan->id);
+            }
+
+            if (array_key_exists('name', $data) && ! array_key_exists('slug', $data)) {
+                $data['slug'] = $this->generateUniqueSlug(Str::slug($data['name']), $plan->id);
+            }
+        }
+
+        if (array_key_exists('features', $data)) {
+            $data['features'] = $this->normalizeFeatures($data['features']);
+        }
+
+        $plan->update($data);
+
+        return $this->successResponse('Subscription plan updated successfully.', $plan);
+    }
+
+    public function destroy(SubscriptionPlan $plan)
+    {
+        if ($plan->storeSubscriptions()->active()->exists()) {
+            return $this->errorResponse('Cannot delete plan while active subscriptions exist.', 409);
+        }
+
+        $plan->delete();
+
+        return $this->successResponse('Subscription plan deleted successfully.');
+    }
+
+    private function generateUniqueSlug(string $baseSlug, ?int $ignoreId = null): string
+    {
+        $slug = Str::slug($baseSlug);
+        $original = $slug;
+        $counter = 1;
+
+        while (SubscriptionPlan::where('slug', $slug)
+            ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->exists()) {
+            $slug = $original . '-' . $counter++;
+        }
+
+        return $slug;
+    }
+
+    private function normalizeFeatures(mixed $features): array
+    {
+        if (is_array($features)) {
+            return array_values(array_filter(array_map('trim', $features)));
+        }
+
+        if (is_string($features)) {
+            $items = preg_split('/\r\n|\n|\r|,/', $features) ?: [];
+            return array_values(array_filter(array_map('trim', $items)));
+        }
+
+        return [];
+    }
+}
