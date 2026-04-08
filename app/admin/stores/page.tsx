@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Ban, Loader2, RefreshCcw, Phone, MapPin, Store as StoreIcon, Calendar, CreditCard, X, Clock, Eye, Pencil, Trash2, Zap, AlertCircle, Search, Filter } from 'lucide-react';
 import { getAllStores, updateStore, getStoreSubscription, cancelStoreSubscription, deleteStore } from '@/src/lib/api';
+import { useAuth } from '@/src/context/AuthContext';
 import type { Store, StoreSubscription } from '@/types';
 
 interface StoreWithSubscription extends Store {
@@ -19,14 +20,21 @@ export default function AdminStoresPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'boosted' | 'banned'>('all');
+  const { user, isLoggedIn } = useAuth();
 
   const fetchStores = async () => {
     setLoading(true);
     try {
       console.log('Fetching stores...');
+      console.log('User logged in:', isLoggedIn);
+      console.log('User role:', user?.role);
+      console.log('Auth token available:', typeof window !== 'undefined' ? !!localStorage.getItem('auth_token') : 'N/A');
+      console.log('Auth user available:', typeof window !== 'undefined' ? !!localStorage.getItem('auth_user') : 'N/A');
+      
       const data = await getAllStores({ limit: 100 });
       console.log('Stores fetched:', data.length, 'stores');
       console.log('First store:', data[0]);
+      console.log('All store statuses:', data.map(s => `${s.name}: ${s.isActive ? 'Active' : 'Banned'}`));
       
       const storesWithSubscriptions = await Promise.all(
         data.map(async (store) => {
@@ -40,6 +48,7 @@ export default function AdminStoresPage() {
       );
       
       console.log('Stores with subscriptions:', storesWithSubscriptions.length);
+      console.log('All store statuses with subscriptions:', storesWithSubscriptions.map(s => `${s.name}: ${s.isActive ? 'Active' : 'Banned'}`));
       setStores(storesWithSubscriptions);
     } catch (error) {
       console.error('Failed to load stores:', error);
