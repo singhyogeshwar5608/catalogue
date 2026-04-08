@@ -12,6 +12,7 @@ import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/src/context/AuthContext";
 import { StoreProvider } from "@/src/context/StoreContext";
 import { LocationProvider } from "@/src/context/LocationContext";
+import { SearchProvider } from "@/src/context/SearchContext";
 import Script from "next/script";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -70,18 +71,20 @@ export default function RootLayout({
         <AuthProvider>
           <StoreProvider>
             <LocationProvider>
-              {!hideNavbar && (
-                <div className={isStorePage ? 'hidden md:block' : ''}>
-                  <Navbar />
-                </div>
-              )}
-              <main className={`min-h-screen ${mainPaddingClass} pt-10`}>{children}</main>
-              {!hideFooter && (
-                <div className={isCreateStorePage || isAuthPage ? 'hidden md:block' : ''}>
-                  <Footer />
-                </div>
-              )}
-              {!hideBottomNav && <MobileBottomNav />}
+              <SearchProvider>
+                {!hideNavbar && (
+                  <div className={isStorePage ? 'hidden md:block' : ''}>
+                    <Navbar />
+                  </div>
+                )}
+                <main className={`min-h-screen ${mainPaddingClass} pt-10`}>{children}</main>
+                {!hideFooter && (
+                  <div className={isCreateStorePage || isAuthPage ? 'hidden md:block' : ''}>
+                    <Footer />
+                  </div>
+                )}
+                {!hideBottomNav && <MobileBottomNav />}
+              </SearchProvider>
             </LocationProvider>
           </StoreProvider>
         </AuthProvider>

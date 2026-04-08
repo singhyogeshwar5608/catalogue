@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ArrowRight, Zap, Shield, TrendingUp } from 'lucide-react';
 import StoreCard from '@/components/StoreCard';
 import Image from 'next/image';
@@ -13,6 +14,7 @@ import StoreExplorer, { createCategorySlug } from '@/components/home/StoreExplor
 import { getAllStores } from '@/src/lib/api';
 import type { Product, Service, Store } from '@/types';
 import { useLocationContext } from '@/src/context/LocationContext';
+import { useSearch } from '@/src/context/SearchContext';
 import { extractCityTokens } from '@/src/lib/location';
 
 export default function HomePage() {
@@ -23,6 +25,8 @@ export default function HomePage() {
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [fallbackQueryUsed, setFallbackQueryUsed] = useState<string | null>(null);
   const { location, isLoading: locationDetecting } = useLocationContext();
+  const { searchQuery, setSearchQuery } = useSearch();
+  const searchParams = useSearchParams();
   const [activeCategory, setActiveCategory] = useState('all');
 
   useEffect(() => {
@@ -38,6 +42,14 @@ export default function HomePage() {
     };
     fetchStores();
   }, []);
+
+  // Handle URL search parameters
+  useEffect(() => {
+    const q = searchParams?.get('q');
+    if (q) {
+      setSearchQuery(q);
+    }
+  }, [searchParams, setSearchQuery]);
 
   useEffect(() => {
     let isMounted = true;
@@ -133,13 +145,33 @@ export default function HomePage() {
   const verifiedCatIdx = useMemo(() => computeCategoryIndices(verifiedStores), [verifiedStores]);
 
   const filteredStoresByCategory = useMemo(() => {
-    if (activeCategory === 'all') return stores;
-    return stores.filter((store) => {
-      const cat = (store.categoryName || store.businessType || '').toLowerCase();
-      const slug = createCategorySlug(activeCategory);
-      return createCategorySlug(cat) === slug;
-    });
-  }, [stores, activeCategory]);
+    let filtered = stores;
+    
+    // Filter by category
+    if (activeCategory !== 'all') {
+      filtered = filtered.filter((store) => {
+        const cat = (store.categoryName || store.businessType || '').toLowerCase();
+        const slug = createCategorySlug(activeCategory);
+        return createCategorySlug(cat) === slug;
+      });
+    }
+    
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter((store) => {
+        return (
+          store.name.toLowerCase().includes(query) ||
+          store.description?.toLowerCase().includes(query) ||
+          store.categoryName?.toLowerCase().includes(query) ||
+          store.location?.toLowerCase().includes(query) ||
+          store.businessType?.toLowerCase().includes(query)
+        );
+      });
+    }
+    
+    return filtered;
+  }, [stores, activeCategory, searchQuery]);
 
   const handleCategoryChange = useCallback((category: string) => {
     setActiveCategory(category);

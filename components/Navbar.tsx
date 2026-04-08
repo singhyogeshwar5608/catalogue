@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '@/src/context/AuthContext';
 import { useStoreSelection } from '@/src/context/StoreContext';
 import { useLocationContext } from '@/src/context/LocationContext';
+import { useSearch } from '@/src/context/SearchContext';
 import { getCityLabel, getDistrictStateLabel, searchLocations } from '@/src/lib/location';
 import { searchAll } from '@/src/lib/api';
 import type { LocationSuggestion } from '@/src/lib/location';
@@ -40,6 +41,7 @@ export default function Navbar() {
   const [isDesktopPopoverOpen, setIsDesktopPopoverOpen] = useState(false);
   const { isLoggedIn, user, logout } = useAuth();
   const { selectedStore } = useStoreSelection();
+  const { searchQuery, setSearchQuery } = useSearch();
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
   const [storeLoginMenuOpen, setStoreLoginMenuOpen] = useState(false);
   const [isMobileLocationOpen, setIsMobileLocationOpen] = useState(false);
@@ -100,16 +102,16 @@ export default function Navbar() {
   const trimmedLocationSearch = locationSearch.trim();
 
   const handleMobileSearchKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter' && mobileSearchQuery.trim()) {
+    if (event.key === 'Enter' && searchQuery.trim()) {
       event.preventDefault();
-      router.push(`/?q=${encodeURIComponent(mobileSearchQuery.trim())}`);
+      router.push(`/?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
 
   const handleDesktopSearchKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter' && desktopSearchQuery.trim()) {
+    if (event.key === 'Enter' && searchQuery.trim()) {
       event.preventDefault();
-      router.push(`/all-stores?q=${encodeURIComponent(desktopSearchQuery.trim())}`);
+      router.push(`/?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
 
@@ -458,10 +460,11 @@ export default function Navbar() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/70" />
               <input
                 type="text"
-                value={desktopSearchQuery}
+                value={searchQuery}
                 onChange={(event) => {
                   const nextValue = event.target.value;
                   setDesktopSearchQuery(nextValue);
+                  setSearchQuery(nextValue);
                   setIsDesktopPopoverOpen(Boolean(nextValue.trim()));
                 }}
                 onKeyDown={handleDesktopSearchKey}
@@ -696,8 +699,11 @@ export default function Navbar() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                value={mobileSearchQuery}
-                onChange={(event) => setMobileSearchQuery(event.target.value)}
+                value={searchQuery}
+                onChange={(event) => {
+                  setMobileSearchQuery(event.target.value);
+                  setSearchQuery(event.target.value);
+                }}
                 onKeyDown={handleMobileSearchKey}
                 placeholder="Search stores or products"
                 className="w-full rounded-2xl border border-gray-300 bg-white pl-10 pr-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary"
