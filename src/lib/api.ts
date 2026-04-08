@@ -241,7 +241,7 @@ export type SearchAllParams = {
   };
 };
 
-export const API_BASE_URL = 'https://kaushalschoolfurniture.com/api/v1/v1'; // process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000/api/v1';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://kaushalschoolfurniture.com/api/v1/v1';
 const AUTH_TOKEN_HEADER = 'Authorization';
 export const AUTH_TOKEN_KEY = 'auth_token';
 export const AUTH_USER_KEY = 'auth_user';

@@ -27,6 +27,18 @@ class ProductController extends Controller
             'image' => 'nullable|string|max:4000000',
             'description' => 'nullable|string',
             'is_active' => 'nullable|boolean',
+            'unit_type' => 'nullable|string|max:50',
+            'unit_custom_label' => 'nullable|string|max:100',
+            'unit_quantity' => 'nullable|numeric|min:0',
+            'wholesale_enabled' => 'nullable|boolean',
+            'wholesale_price' => 'nullable|numeric|min:0',
+            'wholesale_min_qty' => 'nullable|integer|min:1',
+            'min_order_quantity' => 'nullable|integer|min:1',
+            'discount_enabled' => 'nullable|boolean',
+            'discount_price' => 'nullable|numeric|min:0',
+            'discount_schedule_enabled' => 'nullable|boolean',
+            'discount_starts_at' => 'nullable|date',
+            'discount_ends_at' => 'nullable|date|after_or_equal:discount_starts_at',
         ]);
 
         if ($validator->fails()) {
@@ -58,6 +70,18 @@ class ProductController extends Controller
             'image' => 'nullable|string|max:4000000',
             'description' => 'nullable|string',
             'is_active' => 'nullable|boolean',
+            'unit_type' => 'nullable|string|max:50',
+            'unit_custom_label' => 'nullable|string|max:100',
+            'unit_quantity' => 'nullable|numeric|min:0',
+            'wholesale_enabled' => 'nullable|boolean',
+            'wholesale_price' => 'nullable|numeric|min:0',
+            'wholesale_min_qty' => 'nullable|integer|min:1',
+            'min_order_quantity' => 'nullable|integer|min:1',
+            'discount_enabled' => 'nullable|boolean',
+            'discount_price' => 'nullable|numeric|min:0',
+            'discount_schedule_enabled' => 'nullable|boolean',
+            'discount_starts_at' => 'nullable|date',
+            'discount_ends_at' => 'nullable|date|after_or_equal:discount_starts_at',
         ]);
 
         if ($validator->fails()) {

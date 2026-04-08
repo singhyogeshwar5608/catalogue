@@ -31,6 +31,9 @@ return [
         'https://www.kaushalschoolfurniture.com',
         'http://www.kaushalschoolfurniture.com',
         
+        // AWS Amplify production URL
+        'https://main.d2euv5dilboqrn.amplifyapp.com',
+        
         // Add more production domains as needed
         // 'https://yourdomain.com',
     ],

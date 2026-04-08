@@ -20,6 +20,18 @@ class Product extends Model
         'rating',
         'total_reviews',
         'is_active',
+        'unit_type',
+        'unit_custom_label',
+        'unit_quantity',
+        'wholesale_enabled',
+        'wholesale_price',
+        'wholesale_min_qty',
+        'min_order_quantity',
+        'discount_enabled',
+        'discount_price',
+        'discount_schedule_enabled',
+        'discount_starts_at',
+        'discount_ends_at',
     ];
 
     protected $casts = [
@@ -29,6 +41,16 @@ class Product extends Model
         'rating' => 'decimal:1',
         'total_reviews' => 'integer',
         'is_active' => 'boolean',
+        'unit_quantity' => 'decimal:2',
+        'wholesale_enabled' => 'boolean',
+        'wholesale_price' => 'decimal:2',
+        'wholesale_min_qty' => 'integer',
+        'min_order_quantity' => 'integer',
+        'discount_enabled' => 'boolean',
+        'discount_price' => 'decimal:2',
+        'discount_schedule_enabled' => 'boolean',
+        'discount_starts_at' => 'datetime',
+        'discount_ends_at' => 'datetime',
     ];
 
     public function store(): BelongsTo
