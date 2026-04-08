@@ -49,12 +49,26 @@ class StoreController extends Controller
             $radius = (float) $request->input('radius_km', 50);
             $radius = max(1, min(200, $radius));
 
-            $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
-
-            $query->whereNotNull('latitude')
-                ->whereNotNull('longitude')
-                ->selectRaw("{$haversine} as distance_km", [$latitude, $longitude, $latitude])
-                ->having('distance_km', '<=', $radius);
+            // Check if we're using SQLite (which doesn't support acos)
+            $isSQLite = config('database.default') === 'sqlite';
+            
+            if ($isSQLite) {
+                // For SQLite, skip distance calculation and just get active stores with coordinates
+                // The frontend will handle distance filtering
+                $query->whereNotNull('latitude')
+                    ->whereNotNull('longitude')
+                    ->select('*')
+                    ->orderBy('is_boosted', 'desc')
+                    ->orderBy('boost_expiry_date', 'desc')
+                    ->orderBy('created_at', 'desc');
+            } else {
+                // For MySQL/PostgreSQL, use proper Haversine formula
+                $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
+                $query->whereNotNull('latitude')
+                    ->whereNotNull('longitude')
+                    ->selectRaw("{$haversine} as distance_km", [$latitude, $longitude, $latitude])
+                    ->having('distance_km', '<=', $radius);
+            }
         } else {
             $query->select('*');
         }
