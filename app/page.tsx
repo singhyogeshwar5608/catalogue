@@ -36,7 +36,7 @@ export default function HomePage() {
         console.log('All stores fetched:', allStores);
         console.log('Store count:', allStores.length);
         allStores.forEach((store, index) => {
-          console.log(`Store ${index + 1}:`, store.name, store.id, store.is_active);
+          console.log(`Store ${index + 1}:`, store.name, store.id, store.isActive);
         });
         setStores(allStores);
       } catch (error) {
@@ -66,7 +66,10 @@ export default function HomePage() {
         const combined: Record<string, Store> = {};
         const addStores = (items: Store[]) => {
           items.forEach((store) => {
-            combined[store.id] = store;
+            // Only add stores that are active and have valid data
+            if (store.isActive && store.id && store.name) {
+              combined[store.id] = store;
+            }
           });
         };
 
@@ -93,7 +96,7 @@ export default function HomePage() {
               if (Object.keys(combined).length === 0) {
                 setFallbackQueryUsed(token);
               }
-              break;
+              break; // Only use first successful token to avoid multiple API calls
             } catch (err) {
               console.warn(`Location query failed for token: ${token}`, err);
             }
@@ -105,7 +108,7 @@ export default function HomePage() {
           console.log('Nearby stores final:', finalStores);
           console.log('Nearby store count:', finalStores.length);
           finalStores.forEach((store, index) => {
-            console.log(`Nearby Store ${index + 1}:`, store.name, store.id, store.is_active);
+            console.log(`Nearby Store ${index + 1}:`, store.name, store.id, store.isActive);
           });
           setNearbyStores(finalStores);
         }
