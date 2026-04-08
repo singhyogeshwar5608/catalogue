@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('stores', function (Blueprint $table) {
             // Add missing columns that the seeder expects
             if (!Schema::hasColumn('stores', 'username')) {
-                $table->string('username')->unique()->after('slug');
+                $table->string('username')->after('slug');
             }
             if (!Schema::hasColumn('stores', 'email')) {
                 $table->string('email')->nullable()->after('phone');
@@ -34,9 +34,17 @@ return new class extends Migration
             if (!Schema::hasColumn('stores', 'business_type')) {
                 $table->string('business_type')->nullable()->after('category_id');
             }
-            
-            // Index will be added separately if needed
         });
+
+        // Update existing stores to have unique usernames
+        if (Schema::hasColumn('stores', 'username')) {
+            \DB::statement("UPDATE stores SET username = CONCAT('store-', id) WHERE username IS NULL OR username = ''");
+            
+            // Add unique index after updating existing data
+            Schema::table('stores', function (Blueprint $table) {
+                $table->unique('username', 'stores_username_unique');
+            });
+        }
     }
 
     /**
@@ -45,6 +53,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('stores', function (Blueprint $table) {
+            // Drop unique index first
+            $table->dropUnique('stores_username_unique');
+            
             $columnsToDrop = [
                 'username',
                 'email', 
