@@ -18,6 +18,7 @@ class SampleStoresSeeder extends Seeder
         $sampleStores = [
             [
                 'name' => 'Kaushal Construction Materials',
+                'slug' => 'kaushal-construction-materials',
                 'username' => 'kaushal-construction',
                 'email' => 'construction@kaushal.com',
                 'phone' => '+919876543210',
@@ -34,6 +35,7 @@ class SampleStoresSeeder extends Seeder
             ],
             [
                 'name' => 'Pet Paradise Store',
+                'slug' => 'pet-paradise-store',
                 'username' => 'pet-paradise',
                 'email' => 'pets@petparadise.com',
                 'phone' => '+919876543211',
@@ -50,6 +52,7 @@ class SampleStoresSeeder extends Seeder
             ],
             [
                 'name' => 'Farmers Agricultural Hub',
+                'slug' => 'farmers-agricultural-hub',
                 'username' => 'farmers-hub',
                 'email' => 'agriculture@farmershub.com',
                 'phone' => '+919876543212',

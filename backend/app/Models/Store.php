@@ -14,6 +14,7 @@ class Store extends Model
         'category_id',
         'name',
         'slug',
+        'username',
         'logo',
         'banner',
         'phone',
