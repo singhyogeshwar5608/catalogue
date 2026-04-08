@@ -82,14 +82,14 @@ class StoreController extends Controller
             'limit' => $request->input('limit', 50)
         ]);
         
-        // TEMPORARY: Always show all stores for debugging
-        \Log::info('TEMPORARY: Showing all stores (bypassing role check)');
-        // if (!$isAdmin) {
-        //     $query->where('is_active', true);
-        //     \Log::info('Filtering active stores only (non-admin user)');
-        // } else {
-        //     \Log::info('Showing all stores (admin user)');
-        // }
+        // For admin panel, show all stores (active + banned)
+        // For public API, show only active stores
+        if (!$isAdmin) {
+            $query->where('is_active', true);
+            \Log::info('Filtering active stores only (non-admin user)');
+        } else {
+            \Log::info('Showing all stores (admin user)');
+        }
         
         $stores = $query->with([
                 'products' => function($q) {
