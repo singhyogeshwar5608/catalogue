@@ -217,6 +217,7 @@ class StoreController extends Controller
 
         $data = $validator->validated();
         $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? Str::slug($data['name']));
+        $data['username'] = Str::slug($data['name']) . '-' . $user->id;
         $data['user_id'] = $user->id;
 
         if ((! isset($data['latitude']) || $data['latitude'] === null) && (! isset($data['longitude']) || $data['longitude'] === null)) {
