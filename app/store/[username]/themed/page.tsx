@@ -8,7 +8,7 @@ export default async function ThemedStorePage({ params }: { params: Promise<{ us
   const { username } = await params;
   
   try {
-    const { store } = await getStoreBySlug(username);
+    const store = await getStoreBySlug(username);
     
     if (!store) {
       notFound();

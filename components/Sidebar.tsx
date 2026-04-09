@@ -32,7 +32,7 @@ export default function Sidebar() {
       return;
     }
     try {
-      const { store } = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlug(user.storeSlug);
       setMyStore(store);
     } catch (error) {
       console.error('Failed to load store:', error);

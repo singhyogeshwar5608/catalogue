@@ -203,7 +203,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     setLoading(true);
     setError(null);
     try {
-      const { store } = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlug(user.storeSlug);
       setStoreId(store?.id ?? null);
 
       // Load products directly using getProductsByStore

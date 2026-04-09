@@ -373,7 +373,7 @@ export default function MobileBottomNav() {
 
     (async () => {
       try {
-        const { store } = await getStoreBySlug(derivedStoreSlug);
+        const store = await getStoreBySlug(derivedStoreSlug);
         if (!isMounted) return;
         const type = store?.businessType;
         if (type === 'product' || type === 'service' || type === 'hybrid') {

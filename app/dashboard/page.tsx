@@ -26,7 +26,7 @@ import {
   Youtube,
   Zap,
 } from 'lucide-react';
-import { getStoreBySlug, getStoreSubscription, isApiError, updateStore } from '@/src/lib/api';
+import { getProductsByStore, getStoreBySlug, getStoreSubscription, isApiError, updateStore } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 import type { Product, Store, StoreSubscription } from '@/types';
 import SubscriptionExpiryPopup from '@/components/SubscriptionExpiryPopup';
@@ -85,7 +85,8 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const { store, products } = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlug(user.storeSlug);
+      const products = await getProductsByStore(store.id);
       if (!store) {
         setError('Store not found');
         return;

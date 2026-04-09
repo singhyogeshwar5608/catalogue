@@ -49,7 +49,7 @@ export default function SubscriptionPage() {
           return;
         }
 
-        const { store } = await getStoreBySlug(user.storeSlug);
+        const store = await getStoreBySlug(user.storeSlug);
         if (!store) {
           setError('Store not found');
           return;

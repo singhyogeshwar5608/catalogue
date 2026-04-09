@@ -108,7 +108,7 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
     setLoading(true);
     setError(null);
     try {
-      const { store } = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlug(user.storeSlug);
       if (!store) {
         setServices([]);
         setStoreId(null);

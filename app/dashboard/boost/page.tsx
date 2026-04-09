@@ -33,7 +33,7 @@ export default function BoostPage() {
           return;
         }
 
-        const { store } = await getStoreBySlug(user.storeSlug);
+        const store = await getStoreBySlug(user.storeSlug);
         if (!store) {
   return;
         }

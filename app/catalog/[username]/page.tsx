@@ -103,7 +103,7 @@ export default function AutoCatalogPage({ params }: { params: ParamsPromise }) {
     // Fetch store data, products, and reviews from API
     const fetchStoreData = async () => {
       try {
-        const { store } = await getStoreBySlug(resolvedParams.username);
+        const store = await getStoreBySlug(resolvedParams.username);
         setStoreData(store);
 
         if (store) {

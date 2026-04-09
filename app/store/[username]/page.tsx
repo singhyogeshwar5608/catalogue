@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import StoreView from '@/components/store/StoreView';
 import type { Store, Product, Review, Service, RatingSummary, ReviewPagination } from '@/types';
-import { getServicesByStore, getStoreBySlug, getStoreReviews, submitStoreReview, isApiError } from '@/src/lib/api';
+import { getProductsByStore, getServicesByStore, getStoreBySlug, getStoreReviews, submitStoreReview, isApiError } from '@/src/lib/api';
 
 interface StorePageProps {
   params: Promise<{ username: string }>;
@@ -87,7 +87,8 @@ export default function StorePage({ params }: StorePageProps) {
       setLoading(true);
       setError(null);
       try {
-        const { store: fetchedStore, products: fetchedProducts } = await getStoreBySlug(username);
+        const fetchedStore = await getStoreBySlug(username);
+        const fetchedProducts = await getProductsByStore(fetchedStore.id);
         let fetchedServices: Service[] = [];
         if (fetchedStore?.id) {
           try {
