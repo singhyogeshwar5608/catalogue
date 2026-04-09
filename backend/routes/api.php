@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     Route::post('auth/register', [AuthController::class, 'register']);
     Route::post('auth/login', [AuthController::class, 'login']);
-    Route::get('auth/google/redirect', [AuthController::class, 'googleRedirect']);
+    Route::get('auth/google', [AuthController::class, 'googleRedirect']);
     Route::get('auth/google/callback', [AuthController::class, 'googleCallback']);
 
     Route::get('utils/geo', [UtilityController::class, 'geoLookup']);

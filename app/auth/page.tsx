@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
 import { API_BASE_URL } from '@/src/lib/api';
+import { GoogleAuthButton } from '@/components/GoogleAuthButton';
 
 const GoogleGlyph = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -64,7 +65,7 @@ export default function AuthPage() {
 
   const googleRedirectUrl = useMemo(() => {
     const base = API_BASE_URL.replace(/\/+$/, '');
-    const url = new URL(`${base}/auth/google/redirect`);
+    const url = new URL(`${base}/auth/google`);
     const desiredRedirect = redirectTarget ?? (view === 'signup' ? '/create-store' : null);
     if (desiredRedirect) {
       url.searchParams.set('redirect', desiredRedirect);
@@ -172,17 +173,12 @@ export default function AuthPage() {
         </div>
 
         <div className="space-y-4">
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
+          <GoogleAuthButton
+            redirectTo={redirectTarget ?? (view === 'signup' ? '/create-store' : undefined)}
             disabled={externalLoading}
-            className="w-full rounded-full border border-black/80 bg-black py-2.5 text-xs font-semibold text-white flex items-center justify-center gap-3 shadow-sm transition hover:bg-black/90 focus:ring-2 focus:ring-black/40 disabled:opacity-60 md:py-3 md:text-sm"
           >
-            <span className="flex items-center justify-center rounded-full bg-white p-1">
-              <GoogleGlyph />
-            </span>
             {externalLoading ? 'Connecting to Google...' : view === 'login' ? 'Sign in with Google' : 'Continue with Google'}
-          </button>
+          </GoogleAuthButton>
           <div className="flex items-center gap-2 text-[11px] text-gray-400 md:text-xs">
             <span className="h-px flex-1 bg-gray-200" />
             <span>or continue with email</span>
