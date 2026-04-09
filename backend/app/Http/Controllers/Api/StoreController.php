@@ -227,8 +227,12 @@ class StoreController extends Controller
         }
 
         $store = Store::create($data);
-        $store->load(['category' => $this->categoryRelationWithBanners()]);
-        $store = $this->applyCategoryBannerData($store);
+        
+        // Load only basic relationships to avoid SQLite issues
+        $store->load(['category']);
+        
+        // Skip category banner data for now to avoid SQLite issues
+        // $store = $this->applyCategoryBannerData($store);
 
         $category = $store->category;
         $businessType = $category?->business_type ?? 'product';
