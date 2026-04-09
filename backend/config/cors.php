@@ -23,7 +23,8 @@ return [
         // Development origins (when APP_ENV=local)
         'http://localhost:3000',
         'http://localhost:3001',
-        'http://localhost:*',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
         
         // Production origins (when APP_ENV=production)
         'https://kaushalschoolfurniture.com',
@@ -38,7 +39,11 @@ return [
         // 'https://yourdomain.com',
     ],
 
-    'allowed_origins_patterns' => [],
+    // Any localhost / 127.0.0.1 port (Next.js dev, etc.)
+    'allowed_origins_patterns' => [
+        '/^http:\/\/localhost:\d+$/',
+        '/^http:\/\/127\.0\.0\.1:\d+$/',
+    ],
 
     'allowed_headers' => ['*'],
 

@@ -241,7 +241,8 @@ export type SearchAllParams = {
   };
 };
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+/** Must match Laravel route prefix in bootstrap (`api/v1`) + routes/api.php inner `v1` group → `/api/v1/v1/...`. */
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1/v1';
 
 /** Browser redirect to Laravel Socialite; path must match deployed API (typically …/api/v1/v1 on this project). */
 export function getGoogleOAuthApiBaseUrl(): string {
@@ -340,10 +341,6 @@ export const apiRequest = async <T>(
 ): Promise<ApiEnvelope<T>> => {
   const { method = 'GET', body, requiresAuth = false } = options;
   const url = `${API_BASE_URL}${path}`;
-  
-  // Debug: Log API_BASE_URL and URL
-  console.log('API_BASE_URL:', API_BASE_URL);
-  console.log('Full URL:', url);
 
   ensureAuthToken();
 
