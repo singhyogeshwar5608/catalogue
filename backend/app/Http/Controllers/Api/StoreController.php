@@ -187,7 +187,7 @@ class StoreController extends Controller
     public function createStore(Request $request)
     {
         $user = $request->user();
-        \Log::debug('Create store request', ['user_id' => $user->id, 'payload' => $request->all()]);
+        \Log::debug('Create store request - LATEST CODE', ['user_id' => $user->id, 'payload' => $request->all()]);
 
         // Enforce single store per user
         if ($user->stores()->exists()) {
