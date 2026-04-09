@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { API_BASE_URL } from '@/src/lib/api';
+import { getGoogleOAuthApiBaseUrl } from '@/src/lib/api';
 import { GoogleAuthButton } from '@/components/GoogleAuthButton';
 
 const GoogleGlyph = () => (
@@ -64,7 +64,7 @@ export default function AuthPage() {
   }, [shouldRedirect, isLoggedIn, user, router, redirectTarget]);
 
   const googleRedirectUrl = useMemo(() => {
-    const base = API_BASE_URL.replace(/\/+$/, '');
+    const base = getGoogleOAuthApiBaseUrl();
     const url = new URL(`${base}/auth/google`);
     const desiredRedirect = redirectTarget ?? (view === 'signup' ? '/create-store' : null);
     if (desiredRedirect) {

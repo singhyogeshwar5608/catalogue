@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/src/context/AuthContext';
-import { API_BASE_URL } from '@/src/lib/api';
+import { getGoogleOAuthApiBaseUrl } from '@/src/lib/api';
 
 interface GoogleAuthButtonProps {
   redirectTo?: string;
@@ -26,7 +26,8 @@ export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
       params.set('redirect', redirectTo);
     }
     
-    const googleUrl = `${API_BASE_URL}/auth/google${params.toString() ? '?' + params.toString() : ''}`;
+    const base = getGoogleOAuthApiBaseUrl();
+    const googleUrl = `${base}/auth/google${params.toString() ? '?' + params.toString() : ''}`;
     window.location.href = googleUrl;
   };
 

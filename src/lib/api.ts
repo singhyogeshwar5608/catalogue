@@ -242,6 +242,16 @@ export type SearchAllParams = {
 };
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+
+/** Browser redirect to Laravel Socialite; path must match deployed API (typically …/api/v1/v1 on this project). */
+export function getGoogleOAuthApiBaseUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_GOOGLE_OAUTH_API_BASE_URL ??
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    'http://localhost:8000/api/v1/v1';
+  return raw.replace(/\/+$/, '');
+}
+
 const AUTH_TOKEN_HEADER = 'Authorization';
 export const AUTH_TOKEN_KEY = 'auth_token';
 export const AUTH_USER_KEY = 'auth_user';
