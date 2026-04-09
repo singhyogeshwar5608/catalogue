@@ -1,14 +1,13 @@
 'use client';
 
-// Local API configuration (Laravel registers routes under /api/v1/v1)
+// Local API (set NEXT_PUBLIC_API_BASE_URL when using php artisan serve)
 export const API_BASE_URL_LOCAL = 'http://localhost:8000/api/v1/v1';
 
-// Production API configuration
 export const API_BASE_URL_PRODUCTION = 'https://kaushalschoolfurniture.com/api/v1/v1';
 
-// Use environment variable or default to production
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 
-  (process.env.NODE_ENV === 'development' ? API_BASE_URL_LOCAL : API_BASE_URL_PRODUCTION);
+// Prefer env; otherwise always production API (same as api.ts)
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? API_BASE_URL_PRODUCTION;
 
 const AUTH_TOKEN_HEADER = 'Authorization';
 export const AUTH_TOKEN_KEY = 'auth_token';

@@ -241,15 +241,17 @@ export type SearchAllParams = {
   };
 };
 
-/** Must match Laravel route prefix in bootstrap (`api/v1`) + routes/api.php inner `v1` group → `/api/v1/v1/...`. */
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1/v1';
+/** Production API (path = Laravel `api/v1` + inner `v1` group). Override with NEXT_PUBLIC_API_BASE_URL e.g. http://localhost:8000/api/v1/v1 for local backend. */
+const DEFAULT_PUBLIC_API_BASE = 'https://kaushalschoolfurniture.com/api/v1/v1';
 
-/** Browser redirect to Laravel Socialite; path must match deployed API (typically …/api/v1/v1 on this project). */
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_PUBLIC_API_BASE;
+
+/** Browser redirect to Laravel Socialite. */
 export function getGoogleOAuthApiBaseUrl(): string {
   const raw =
     process.env.NEXT_PUBLIC_GOOGLE_OAUTH_API_BASE_URL ??
     process.env.NEXT_PUBLIC_API_BASE_URL ??
-    'http://localhost:8000/api/v1/v1';
+    DEFAULT_PUBLIC_API_BASE;
   return raw.replace(/\/+$/, '');
 }
 
