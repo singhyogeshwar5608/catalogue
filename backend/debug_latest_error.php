@@ -7,14 +7,14 @@ $app = require_once 'bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
-echo "Testing store creation...\n";
+echo "Checking latest Laravel logs for store creation errors...\n";
 
-// Check Laravel logs for errors
+// Check Laravel logs for recent errors
 $logFile = storage_path('logs/laravel.log');
 if (file_exists($logFile)) {
-    echo "Last 20 lines from Laravel log:\n";
+    echo "Last 30 lines from Laravel log:\n";
     $lines = file($logFile);
-    $lastLines = array_slice($lines, -20);
+    $lastLines = array_slice($lines, -30);
     foreach ($lastLines as $line) {
         echo $line;
     }

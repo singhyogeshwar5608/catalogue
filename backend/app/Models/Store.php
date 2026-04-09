@@ -84,9 +84,10 @@ class Store extends Model
 
     public function activeBoost(): HasOne
     {
+        // Temporarily disable latestOfMany to avoid SQLite issues
         return $this->hasOne(StoreBoost::class)
-            ->latestOfMany('ends_at')
-            ->where('status', 'active');
+            ->where('status', 'active')
+            ->orderBy('ends_at', 'desc');
     }
 
     public function storeSubscriptions(): HasMany
@@ -96,8 +97,9 @@ class Store extends Model
 
     public function activeSubscription(): HasOne
     {
+        // Temporarily disable latestOfMany to avoid SQLite issues
         return $this->hasOne(StoreSubscription::class)
-            ->latestOfMany('ends_at')
-            ->where('status', 'active');
+            ->where('status', 'active')
+            ->orderBy('ends_at', 'desc');
     }
 }
