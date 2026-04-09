@@ -863,6 +863,14 @@ export const getMyStores = async (): Promise<Store[]> => {
   return response.data.map((store) => normalizeStore(store));
 };
 
+export const getStoreBySlug = async (slug: string): Promise<Store> => {
+  const response = await apiRequest<BackendStore>(`/store/${slug}`, {
+    method: 'GET',
+  });
+
+  return normalizeStore(response.data);
+};
+
 export const searchAll = async (params: SearchAllParams) => {
   const { query, location, lat, lng, radiusKm, types, limits } = params;
   const queryParams = new URLSearchParams();
