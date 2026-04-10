@@ -60,7 +60,7 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
       }`}
     >
       <div
-        className={`relative z-[1] w-full shrink-0 cursor-zoom-in overflow-hidden transition-[filter] hover:brightness-[1.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 ${isCompact ? 'h-24' : 'h-44'}`}
+        className={`relative w-full shrink-0 cursor-zoom-in overflow-hidden transition-[filter] hover:brightness-[1.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 ${isCompact ? 'h-24' : 'h-44'}`}
         role="button"
         tabIndex={0}
         onClick={() => setBannerPreviewOpen(true)}
@@ -115,10 +115,10 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
       />
 
       <div
-        className={`relative z-[2] flex min-h-0 flex-1 flex-col bg-white ${isCompact ? 'gap-1.5 p-2 pb-1.5' : 'gap-2.5 p-4'}`}
+        className={`flex min-h-0 flex-1 flex-col ${isCompact ? 'gap-2 p-2' : 'gap-4 p-5'}`}
       >
-        <div className={`flex shrink-0 items-start ${isCompact ? 'gap-1.5' : 'gap-2.5'}`}>
-          <div className="relative inline-flex items-center" style={{ marginTop: isCompact ? '-22px' : '-48px' }}>
+        <div className={`flex shrink-0 ${isCompact ? 'items-start gap-2' : 'items-center gap-3'}`}>
+          <div className="relative inline-flex items-center" style={{ marginTop: isCompact ? '-24px' : '-52px' }}>
             {isProPlan && (
               <span className={`absolute inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg ${
                 isCompact
@@ -145,7 +145,7 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
               </span>
             )}
           </div>
-          <div className={`min-w-0 flex-1 ${isCompact ? 'pt-3.5' : 'pt-8'}`}>
+          <div className="flex-1 min-w-0">
             <div className={`flex items-start gap-2 font-semibold text-slate-900 ${isCompact ? 'justify-between text-sm' : 'text-lg'}`}>
               <span className={`${isCompact ? 'line-clamp-2' : 'break-words'}`}>{store.name}</span>
               {isCompact ? (
@@ -177,17 +177,17 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
               )}
             </div>
             {!isCompact ? (
-              <p className="mt-0.5 text-sm leading-snug text-slate-500 break-words">{categoryLabel}</p>
+              <p className="text-sm text-slate-500 break-words">{categoryLabel}</p>
             ) : null}
           </div>
         </div>
 
         {!isCompact ? (
-          <p className="shrink-0 break-words text-sm leading-snug text-slate-600">{store.shortDescription}</p>
+          <p className="shrink-0 break-words text-sm text-slate-600">{store.shortDescription}</p>
         ) : null}
 
         <div
-          className={`flex shrink-0 ${isCompact ? 'flex-col items-start gap-0.5 text-xs' : 'items-center justify-between gap-2 text-sm'}`}
+          className={`flex shrink-0 ${isCompact ? 'flex-col items-start gap-1 text-xs' : 'items-center justify-between text-sm'}`}
         >
           {!isCompact ? (
             <div className="flex items-center gap-2 text-slate-900">
@@ -210,7 +210,7 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
 
         {verificationBadges.length > 0 || store.trustSeal ? (
           <div
-            className={`flex shrink-0 flex-wrap items-center gap-1 ${isCompact ? 'text-[10px]' : 'text-xs'} text-slate-600`}
+            className={`flex shrink-0 flex-wrap items-center gap-1.5 ${isCompact ? 'text-[10px]' : 'text-xs'} text-slate-600`}
           >
             {verificationBadges.map(({ label, icon: Icon }) => (
               <span
@@ -230,11 +230,11 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
           </div>
         ) : null}
 
-        <div className="mt-auto flex shrink-0 justify-center pt-0.5">
+        <div className="mt-auto flex shrink-0 justify-center pt-1">
           {isCompact ? (
             <Link
               href={`/store/${store.username}`}
-              className="inline-flex w-full max-w-[9rem] items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-1 text-[10px] font-semibold text-white transition hover:bg-blue-700"
+              className="inline-flex w-full max-w-[9rem] items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-1.5 text-[10px] font-semibold text-white transition hover:bg-blue-700"
             >
               <ArrowUpRight className="h-3 w-3" />
               Visit
@@ -242,7 +242,7 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
           ) : (
             <Link
               href={`/store/${store.username}`}
-              className="flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-[0.9375rem] font-semibold text-white transition hover:bg-blue-700"
+              className="flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700"
             >
               Visit store
               <ArrowUpRight className="h-5 w-5" />

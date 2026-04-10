@@ -7,29 +7,31 @@ use App\Models\BannerTemplate;
 use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class CategoryController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Category::query()->orderBy('name');
+        $table = (new Category)->getTable();
+        $cols = Schema::getColumnListing($table);
+        $has = static fn (string $c): bool => in_array($c, $cols, true);
 
-        if (! $request->user() || $request->user()->role !== 'super_admin') {
+        $query = Category::query();
+        if ($has('name')) {
+            $query->orderBy('name');
+        }
+
+        if (
+            (! $request->user() || $request->user()->role !== 'super_admin')
+            && $has('is_active')
+        ) {
             $query->where('is_active', true);
         }
 
-        $categories = $query->get([
-            'id',
-            'name',
-            'slug',
-            'business_type',
-            'is_active',
-            'banner_image',
-            'banner_images',
-            'banner_title',
-            'banner_subtitle',
-        ]);
+        // Only select columns that exist (avoids SQL errors on hosts behind on migrations).
+        $categories = $query->get($cols);
 
         return $this->successResponse('Categories retrieved successfully.', $categories);
     }

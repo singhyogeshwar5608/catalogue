@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Clock4, MessageSquareHeart, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 const heroImages = [
   {
@@ -37,40 +36,6 @@ type HeroBannerProps = {
 
 export default function HeroBanner({ locationName }: HeroBannerProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const resolvedLocation = useMemo(() => {
-    const trimmed = locationName?.trim();
-    return trimmed && trimmed.length > 0 ? trimmed : 'Kaithal';
-  }, [locationName]);
-
-  const highlightPillars = useMemo(
-    () => [
-      {
-        title: 'Verified Local Sellers',
-        description: 'Every marketplace partner is hand-checked for quality, pricing transparency, and reliable service.',
-        Icon: ShieldCheck,
-      },
-      {
-        title: 'Same-Day Assistance',
-        description: `Need exchanges, returns, or delivery help? Our ${resolvedLocation} support desk is just a tap away 7 days a week.`,
-        Icon: Clock4,
-      },
-      {
-        title: 'Smart Reviews & Ratings',
-        description: 'Real shoppers share photos, ratings, and tips so you know exactly what to expect before you order.',
-        Icon: MessageSquareHeart,
-      },
-    ],
-    [resolvedLocation]
-  );
-
-  const trustStats = useMemo(
-    () => [
-      { label: 'Happy shoppers', value: '2,300+' },
-      { label: 'Partner stores', value: '180' },
-      { label: 'Avg. satisfaction', value: '4.8/5' },
-    ],
-    []
-  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -103,6 +68,11 @@ export default function HeroBanner({ locationName }: HeroBannerProps) {
               </div>
             </div>
           ))}
+          {locationName?.trim() ? (
+            <p className="absolute left-6 bottom-[3.25rem] max-w-[min(100%,20rem)] text-sm font-medium text-white/85 sm:bottom-24">
+              Near {locationName.trim()}
+            </p>
+          ) : null}
           <div className="absolute left-1/2 -translate-x-1/2 bottom-5 flex items-center gap-2">
             {heroImages.map((_, index) => (
               <button

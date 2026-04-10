@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -17,32 +18,63 @@ class StoreController extends Controller
 {
     public function listStores(Request $request)
     {
+        $limit = (int) $request->integer('limit', 50);
+        $limit = max(1, min(100, $limit));
+
+        try {
+            return $this->listStoresFull($request, $limit);
+        } catch (\Throwable $e) {
+            Log::error('listStores failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return $this->listStoresMinimalFallback($limit);
+        }
+    }
+
+    /**
+     * Full listing with relations (fails on hosts missing tables/columns).
+     */
+    private function listStoresFull(Request $request, int $limit): \Illuminate\Http\JsonResponse
+    {
+        $storeTable = (new Store)->getTable();
+        $storeCols = array_flip(Schema::getColumnListing($storeTable));
+        $hasCol = static fn (string $c): bool => isset($storeCols[$c]);
+
         $query = Store::query();
 
         if ($request->filled('search')) {
             $search = $request->string('search');
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('slug', 'like', "%{$search}%")
-                    ->orWhere('location', 'like', "%{$search}%")
-                    ->orWhereHas('category', function ($categoryQuery) use ($search) {
+            $query->where(function ($q) use ($search, $hasCol) {
+                $q->where('name', 'like', "%{$search}%");
+                if ($hasCol('slug')) {
+                    $q->orWhere('slug', 'like', "%{$search}%");
+                }
+                if ($hasCol('location')) {
+                    $q->orWhere('location', 'like', "%{$search}%");
+                }
+                if ($hasCol('category_id')) {
+                    $q->orWhereHas('category', function ($categoryQuery) use ($search) {
                         $categoryQuery->where('name', 'like', "%{$search}%");
                     });
+                }
             });
         }
 
-        if ($request->filled('category')) {
+        if ($request->filled('category') && $hasCol('category_id')) {
             $query->whereHas('category', function ($q) use ($request) {
                 $q->where('name', $request->string('category'));
             });
         }
 
-        if ($request->filled('location')) {
+        if ($request->filled('location') && $hasCol('location')) {
             $locationFilter = $request->string('location');
             $query->where('location', 'like', '%' . $locationFilter . '%');
         }
 
-        $hasCoordinatesFilter = $request->filled(['lat', 'lng']);
+        $hasCoordinatesFilter = $request->filled(['lat', 'lng']) && $hasCol('latitude') && $hasCol('longitude');
         if ($hasCoordinatesFilter) {
             $latitude = (float) $request->input('lat');
             $longitude = (float) $request->input('lng');
@@ -57,10 +89,14 @@ class StoreController extends Controller
                 // The frontend will handle distance filtering
                 $query->whereNotNull('latitude')
                     ->whereNotNull('longitude')
-                    ->select('*')
-                    ->orderBy('is_boosted', 'desc')
-                    ->orderBy('boost_expiry_date', 'desc')
-                    ->orderBy('created_at', 'desc');
+                    ->select('*');
+                if ($hasCol('is_boosted')) {
+                    $query->orderBy('is_boosted', 'desc');
+                }
+                if ($hasCol('boost_expiry_date')) {
+                    $query->orderBy('boost_expiry_date', 'desc');
+                }
+                $query->orderBy('created_at', 'desc');
             } else {
                 // For MySQL/PostgreSQL, use proper Haversine formula
                 $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
@@ -70,19 +106,24 @@ class StoreController extends Controller
                     ->having('distance_km', '<=', $radius);
             }
         } else {
-            $query->select('*');
+            // Do not SELECT huge LONGTEXT columns for listing — avoids OOM before trimHeavy runs.
+            $omitHeavy = array_values(array_filter(['logo', 'banner', 'description'], $hasCol));
+            $allCols = array_keys($storeCols);
+            $slim = array_values(array_diff($allCols, $omitHeavy));
+            if (count($slim) >= 3 && in_array('id', $slim, true)) {
+                $query->select($slim);
+            } else {
+                $query->select('*');
+            }
         }
 
         if ($request->boolean('only_verified')) {
             $query->where('is_verified', true);
         }
 
-        if ($request->boolean('only_boosted')) {
+        if ($request->boolean('only_boosted') && $hasCol('is_boosted')) {
             $query->where('is_boosted', true);
         }
-
-        $limit = (int) $request->integer('limit', 50);
-        $limit = max(1, min(100, $limit));
 
         // For admin panel, show all stores (active + banned)
         // For public API, show only active stores
@@ -101,45 +142,127 @@ class StoreController extends Controller
         // For admin panel, show all stores (active + banned)
         // For public API, show only active stores
         // Also include inactive stores if explicitly requested
-        if (!$isAdmin && !$includeInactive) {
+        if (!$isAdmin && !$includeInactive && $hasCol('is_active')) {
             $query->where('is_active', true);
             \Log::info('Filtering active stores only (non-admin user)');
         } else {
             \Log::info('Showing all stores (admin user or include_inactive requested)');
         }
-        
-        $stores = $query->with([
-                'products' => function($q) {
-                    $q->where('is_active', true)
-                      ->orderBy('created_at', 'desc')
-                      ->limit(3);
-                },
-                'services' => function($q) {
-                    $q->where('is_active', true)
-                      ->orderBy('created_at', 'desc')
-                      ->limit(3);
-                },
-                'category' => $this->categoryRelationWithBanners(),
-                'activeBoost.plan',
-                'activeSubscription.plan',
-                'user:id,name,email',
-            ])
-            ->withCount(['products', 'services'])
-            ->when($hasCoordinatesFilter, function ($q) {
-                $q->orderBy('distance_km')
-                    ->orderByDesc('is_boosted')
-                    ->orderByDesc('boost_expiry_date');
-            }, function ($q) {
-                $q->orderByDesc('is_boosted')
-                    ->orderByDesc('boost_expiry_date')
-                    ->latest();
+
+        $hasProductsTable = Schema::hasTable('products');
+        $hasServicesTable = Schema::hasTable('services');
+        $productHasActive = $hasProductsTable && Schema::hasColumn('products', 'is_active');
+        $serviceHasActive = $hasServicesTable && Schema::hasColumn('services', 'is_active');
+
+        $eager = [];
+        if ($hasProductsTable) {
+            $eager['products'] = function ($q) use ($productHasActive) {
+                $q->orderBy('created_at', 'desc')->limit(3);
+                if ($productHasActive) {
+                    $q->where('is_active', true);
+                }
+            };
+        }
+        if ($hasServicesTable) {
+            $eager['services'] = function ($q) use ($serviceHasActive) {
+                $q->orderBy('created_at', 'desc')->limit(3);
+                if ($serviceHasActive) {
+                    $q->where('is_active', true);
+                }
+            };
+        }
+        if (Schema::hasTable('categories')) {
+            $eager['category'] = $this->categoryRelationWithBanners();
+        }
+        if (Schema::hasTable('users')) {
+            $eager[] = Schema::hasColumn('users', 'email')
+                ? 'user:id,name,email'
+                : 'user:id,name';
+        }
+        if (Schema::hasTable('store_boosts') && Schema::hasTable('boost_plans')) {
+            $eager[] = 'activeBoost.plan';
+        }
+        if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+            $eager[] = 'activeSubscription.plan';
+        }
+
+        $countRelations = array_values(array_filter([
+            $hasProductsTable ? 'products' : null,
+            $hasServicesTable ? 'services' : null,
+        ]));
+
+        // MySQL: selectRaw + having + withCount in one query often breaks ONLY_FULL_GROUP_BY / invalid SQL.
+        $deferCounts = $hasCoordinatesFilter && config('database.default') !== 'sqlite' && $countRelations !== [];
+
+        $builder = $query->with($eager);
+        if ($countRelations !== [] && ! $deferCounts) {
+            $builder->withCount($countRelations);
+        }
+
+        $stores = $builder
+            ->when($hasCoordinatesFilter, function ($q) use ($hasCol) {
+                if (config('database.default') !== 'sqlite') {
+                    $q->orderBy('distance_km');
+                }
+                if ($hasCol('is_boosted')) {
+                    $q->orderByDesc('is_boosted');
+                }
+                if ($hasCol('boost_expiry_date')) {
+                    $q->orderByDesc('boost_expiry_date');
+                }
+            }, function ($q) use ($hasCol) {
+                if ($hasCol('is_boosted')) {
+                    $q->orderByDesc('is_boosted');
+                }
+                if ($hasCol('boost_expiry_date')) {
+                    $q->orderByDesc('boost_expiry_date');
+                }
+                $q->latest();
             })
             ->take($limit)
             ->get();
 
-        $stores = $this->applyCategoryBannerData($stores);
+        if ($deferCounts) {
+            $stores->loadCount($countRelations);
+        }
+
+        try {
+            $stores = $this->applyCategoryBannerData($stores);
+        } catch (\Throwable $bannerEx) {
+            Log::warning('applyCategoryBannerData skipped', ['message' => $bannerEx->getMessage()]);
+        }
+
+        $this->trimHeavyPayloadForStoreListing($stores);
 
         return $this->successResponse('Stores retrieved successfully.', $stores);
+    }
+
+    /**
+     * Last-resort listing when the full query throws (missing relations, schema drift, etc.).
+     */
+    private function listStoresMinimalFallback(int $limit): \Illuminate\Http\JsonResponse
+    {
+        try {
+            $storeTable = (new Store)->getTable();
+            $activeCol = Schema::hasColumn($storeTable, 'is_active');
+            $listed = Schema::getColumnListing($storeTable);
+            $slimCols = array_values(array_diff($listed, array_intersect(['logo', 'banner', 'description'], $listed)));
+
+            $stores = Store::query()
+                ->when($activeCol, fn ($q) => $q->where('is_active', true))
+                ->when(count($slimCols) >= 3 && in_array('id', $slimCols, true), fn ($q) => $q->select($slimCols))
+                ->latest()
+                ->take($limit)
+                ->get();
+
+            $this->trimHeavyPayloadForStoreListing($stores);
+
+            return $this->successResponse('Stores retrieved successfully.', $stores);
+        } catch (\Throwable $e) {
+            Log::error('listStoresMinimalFallback failed', ['message' => $e->getMessage()]);
+
+            return $this->errorResponse('Unable to load stores.', 503);
+        }
     }
 
     public function myStores(Request $request)
@@ -151,24 +274,34 @@ class StoreController extends Controller
         // For regular users, show only their stores
         if ($user->role === 'super_admin') {
             \Log::info('Executing admin branch - showing all stores');
-            $stores = \App\Models\Store::with([
+            $adminEager = [
                 'category' => $this->categoryRelationWithBanners(),
-                'activeSubscription.plan',
-                'activeBoost.plan',
-                'user'
-            ])
+                'user',
+            ];
+            if (Schema::hasTable('store_boosts') && Schema::hasTable('boost_plans')) {
+                $adminEager[] = 'activeBoost.plan';
+            }
+            if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+                $adminEager[] = 'activeSubscription.plan';
+            }
+            $stores = \App\Models\Store::with($adminEager)
             ->withCount(['products', 'services'])
             ->orderByDesc('created_at')
             ->get();
         } else {
             \Log::info('Executing user branch - showing only user stores');
+            $userEager = [
+                'category' => $this->categoryRelationWithBanners(),
+            ];
+            if (Schema::hasTable('store_boosts') && Schema::hasTable('boost_plans')) {
+                $userEager[] = 'activeBoost.plan';
+            }
+            if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+                $userEager[] = 'activeSubscription.plan';
+            }
             $stores = $user
                 ->stores()
-                ->with([
-                    'category' => $this->categoryRelationWithBanners(),
-                    'activeSubscription.plan',
-                    'activeBoost.plan'
-                ])
+                ->with($userEager)
                 ->withCount(['products', 'services'])
                 ->orderByDesc('created_at')
                 ->get();
@@ -338,20 +471,23 @@ class StoreController extends Controller
 
             \Log::info('Store found', ['id' => $store->id, 'name' => $store->name]);
 
-            // Load relationships separately to avoid issues
+            $toLoad = [
+                'category' => $this->categoryRelationWithBanners(),
+                'products' => function ($query) {
+                    $query->orderByDesc('created_at');
+                },
+            ];
+            if (Schema::hasTable('store_boosts') && Schema::hasTable('boost_plans')) {
+                $toLoad[] = 'activeBoost.plan';
+            }
+            if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+                $toLoad[] = 'activeSubscription.plan';
+            }
             try {
-                $store->load([
-                    'category' => $this->categoryRelationWithBanners(),
-                    'activeBoost.plan',
-                    'activeSubscription.plan',
-                    'products' => function ($query) {
-                        $query->orderByDesc('created_at');
-                    },
-                ]);
+                $store->load($toLoad);
                 \Log::info('Relationships loaded successfully');
             } catch (\Exception $e) {
                 \Log::error('Failed to load relationships: ' . $e->getMessage());
-                // Continue without relationships
             }
 
             try {
@@ -407,31 +543,90 @@ class StoreController extends Controller
         return $slug;
     }
 
+    /**
+     * Shared hosting: listing 50 stores with data-URL base64 logos/banners can exceed memory / JSON limits
+     * and return HTTP 500. Strip heavy fields here; store detail routes can still return full rows.
+     */
+    private function trimHeavyPayloadForStoreListing(Collection $stores): void
+    {
+        foreach ($stores as $store) {
+            if (! $store instanceof Store) {
+                continue;
+            }
+
+            foreach (['logo', 'banner'] as $attr) {
+                $this->nullIfHeavyBinaryString($store, $attr);
+            }
+            foreach (['description', 'short_description'] as $attr) {
+                $this->nullIfHeavyBinaryString($store, $attr, 65536);
+            }
+
+            if ($store->relationLoaded('products')) {
+                foreach ($store->products as $product) {
+                    $this->nullIfHeavyBinaryString($product, 'image');
+                    $this->nullIfHeavyBinaryString($product, 'description', 65536);
+                    $imgs = $product->getAttribute('images');
+                    if (is_array($imgs) && $imgs !== []) {
+                        $product->setAttribute('images', []);
+                    }
+                }
+            }
+
+            if ($store->relationLoaded('services')) {
+                foreach ($store->services as $service) {
+                    $this->nullIfHeavyBinaryString($service, 'image');
+                    $this->nullIfHeavyBinaryString($service, 'description', 65536);
+                }
+            }
+
+            if ($store->relationLoaded('category') && $store->category) {
+                $cat = $store->category;
+                $this->nullIfHeavyBinaryString($cat, 'banner_image');
+                $raw = $cat->getAttribute('banner_images');
+                if (is_array($raw) && $raw !== []) {
+                    $keep = [];
+                    foreach ($raw as $url) {
+                        if (! is_string($url) || $url === '') {
+                            continue;
+                        }
+                        if (str_starts_with($url, 'data:') || strlen($url) > 8192) {
+                            continue;
+                        }
+                        $keep[] = $url;
+                        if (count($keep) >= 3) {
+                            break;
+                        }
+                    }
+                    $cat->setAttribute('banner_images', $keep);
+                    if ($keep === []) {
+                        $cat->setAttribute('banner_image', null);
+                    }
+                }
+            }
+        }
+    }
+
+    private function nullIfHeavyBinaryString(object $model, string $attr, int $maxLen = 8192): void
+    {
+        $v = $model->getAttribute($attr);
+        if (! is_string($v) || $v === '') {
+            return;
+        }
+        if (str_starts_with($v, 'data:') || strlen($v) > $maxLen) {
+            $model->setAttribute($attr, null);
+        }
+    }
+
     private function categoryRelationWithBanners(): Closure
     {
         return function ($query) {
-            $query->select([
-                'id',
-                'name',
-                'slug',
-                'business_type',
-                'banner_image',
-                'banner_images',
-                'banner_title',
-                'banner_subtitle',
-                'banner_color',
-                'color_combinations',
-                'banner_pattern',
-            ])->with(['bannerTemplates' => function ($bannerTemplates) {
-                $bannerTemplates->select([
-                    'id',
-                    'category_id',
-                    'device',
-                    'bg_image',
-                    'title',
-                    'subtitle',
-                ])->orderBy('id');
-            }]);
+            // Do not use a fixed SELECT list: production DBs may lag migrations
+            // (unknown column errors). Load full category rows; optional templates.
+            if (Schema::hasTable('banner_templates')) {
+                $query->with(['bannerTemplates' => function ($bannerTemplates) {
+                    $bannerTemplates->orderBy('id');
+                }]);
+            }
         };
     }
 
@@ -448,7 +643,11 @@ class StoreController extends Controller
             }
 
             if ($category->relationLoaded('bannerTemplates')) {
-                $bannerImages = collect($category->banner_images)
+                $rawImages = $category->banner_images ?? [];
+                if (! is_array($rawImages)) {
+                    $rawImages = [];
+                }
+                $bannerImages = collect($rawImages)
                     ->filter(fn ($url) => filled($url) && is_string($url))
                     ->values();
 

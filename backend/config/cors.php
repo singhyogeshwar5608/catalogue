@@ -15,7 +15,8 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    // Include `v1/*` because routes are also registered under prefix `v1/v1` (see bootstrap/app.php).
+    'paths' => ['api/*', 'v1/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
@@ -43,6 +44,9 @@ return [
     'allowed_origins_patterns' => [
         '/^http:\/\/localhost:\d+$/',
         '/^http:\/\/127\.0\.0\.1:\d+$/',
+        // Next dev opened via LAN IP (matches allowedDevOrigins in next.config)
+        '/^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:\d+$/',
+        '/^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/',
     ],
 
     'allowed_headers' => ['*'],

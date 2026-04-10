@@ -15,9 +15,8 @@ use App\Http\Controllers\Api\SubscriptionPlanController;
 use App\Http\Controllers\Api\UtilityController;
 use Illuminate\Support\Facades\Route;
 
-// API v1 Routes
-Route::prefix('v1')->group(function () {
-    Route::post('auth/register', [AuthController::class, 'register']);
+// URL prefix is `api/v1/v1` (set in bootstrap/app.php).
+Route::post('auth/register', [AuthController::class, 'register']);
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::get('auth/google', [AuthController::class, 'googleRedirect']);
     Route::get('auth/google/callback', [AuthController::class, 'googleCallback']);
@@ -107,5 +106,4 @@ Route::prefix('v1')->group(function () {
     Route::get('products/{storeId}', [ProductController::class, 'getProductsByStore']);
     Route::get('product/{id}', [ProductController::class, 'getProductById']);
     Route::get('services/{storeId}', [ServiceController::class, 'getServicesByStore']);
-    Route::get('service/{id}', [ServiceController::class, 'getServiceById']);
-});
+Route::get('service/{id}', [ServiceController::class, 'getServiceById']);

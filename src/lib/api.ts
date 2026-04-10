@@ -243,17 +243,40 @@ export type SearchAllParams = {
   };
 };
 
-/** Production API (path = Laravel `api/v1` + inner `v1` group). Override with NEXT_PUBLIC_API_BASE_URL e.g. http://localhost:8000/api/v1/v1 for local backend. */
-const DEFAULT_PUBLIC_API_BASE = 'https://kaushalschoolfurniture.com/api/v1/v1';
+/** Live Laravel API (same DB as production). Local PHP only if you set NEXT_PUBLIC_API_BASE_URL to http://127.0.0.1:8000/api/v1/v1 */
+const LIVE_API_BASE = 'https://kaushalschoolfurniture.com/api/v1/v1';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_PUBLIC_API_BASE;
+const resolvedPublicApiBase = (() => {
+  const v = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  if (v && v.length > 0) return v.replace(/\/+$/, '');
+  // Never default dev to localhost — env often fails to inline; users expect live data.
+  return LIVE_API_BASE;
+})();
+
+export const API_BASE_URL = resolvedPublicApiBase;
+
+/**
+ * Base URL for fetch(). Default: direct hit to {@link resolvedPublicApiBase} (live or whatever
+ * `NEXT_PUBLIC_API_BASE_URL` is). Optional dev-only same-origin proxy (CORS bypass):
+ * set `NEXT_PUBLIC_USE_API_PROXY=1` and keep `rewrites` in `next.config.ts`.
+ */
+export function getApiRequestBaseUrl(): string {
+  if (
+    typeof window !== "undefined" &&
+    process.env.NODE_ENV === "development" &&
+    process.env.NEXT_PUBLIC_USE_API_PROXY === "1"
+  ) {
+    return `${window.location.origin}/api/laravel`;
+  }
+  return resolvedPublicApiBase;
+}
 
 /** Browser redirect to Laravel Socialite. */
 export function getGoogleOAuthApiBaseUrl(): string {
   const raw =
-    process.env.NEXT_PUBLIC_GOOGLE_OAUTH_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    DEFAULT_PUBLIC_API_BASE;
+    process.env.NEXT_PUBLIC_GOOGLE_OAUTH_API_BASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
+    LIVE_API_BASE;
   return raw.replace(/\/+$/, '');
 }
 
@@ -344,7 +367,7 @@ export const apiRequest = async <T>(
   } = {}
 ): Promise<ApiEnvelope<T>> => {
   const { method = 'GET', body, requiresAuth = false } = options;
-  const url = `${API_BASE_URL}${path}`;
+  const url = `${getApiRequestBaseUrl()}${path}`;
 
   ensureAuthToken();
 
@@ -589,7 +612,7 @@ const normalizeStore = (
     phone: store.phone ?? undefined,
     email: store.email?.trim() ? store.email.trim() : undefined,
     showPhone: store.show_phone !== false,
-    whatsapp: store.whatsapp ?? store.phone ?? '+91 90000 00000',
+    whatsapp: (store.whatsapp ?? store.phone ?? '').trim() || '',
     socialLinks: {
       facebook: store.facebook_url ?? null,
       instagram: store.instagram_url ?? null,
@@ -1038,8 +1061,14 @@ export const getAllStores = async (params?: {
   const url = `/stores${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
   const response = await apiRequest<BackendStore[]>(url);
 
-  const normalizedStores = response.data.map((store) => normalizeStore(store));
-  return normalizedStores;
+  const raw = response.data as unknown;
+  const rows: BackendStore[] = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object' && Array.isArray((raw as { data?: unknown }).data)
+      ? ((raw as { data: BackendStore[] }).data)
+      : [];
+
+  return rows.map((store) => normalizeStore(store));
 };
 
 export const getBoostPlans = async (): Promise<BoostPlan[]> => {
