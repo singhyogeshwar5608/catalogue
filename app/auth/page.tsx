@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, Lock } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
 import { getGoogleOAuthApiBaseUrl } from '@/src/lib/api';
 import { GoogleAuthButton } from '@/components/GoogleAuthButton';
@@ -29,6 +29,8 @@ export default function AuthPage() {
   const [signupError, setSignupError] = useState<string | null>(null);
   const [shouldRedirect, setShouldRedirect] = useState(false);
   const [externalLoading, setExternalLoading] = useState(false);
+  const [loginPasswordVisible, setLoginPasswordVisible] = useState(false);
+  const [signupPasswordVisible, setSignupPasswordVisible] = useState(false);
 
   const redirectTarget = useMemo(() => {
     const param = searchParams?.get('redirect');
@@ -211,16 +213,29 @@ export default function AuthPage() {
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4 pointer-events-none" />
                 <input
                   id="password"
-                  type="password"
+                  type={loginPasswordVisible ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
                   required
-                  className="w-full rounded-xl border border-gray-200 pl-10 pr-3 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
+                  autoComplete="current-password"
+                  className="w-full rounded-xl border border-gray-200 pl-10 pr-11 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
                 />
+                <button
+                  type="button"
+                  onClick={() => setLoginPasswordVisible((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  aria-label={loginPasswordVisible ? 'Hide password' : 'Show password'}
+                >
+                  {loginPasswordVisible ? (
+                    <EyeOff className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                  ) : (
+                    <Eye className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -273,16 +288,29 @@ export default function AuthPage() {
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4 pointer-events-none" />
                 <input
                   id="signup-password"
-                  type="password"
+                  type={signupPasswordVisible ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Create password"
                   required
-                  className="w-full rounded-xl border border-gray-200 pl-10 pr-3 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
+                  autoComplete="new-password"
+                  className="w-full rounded-xl border border-gray-200 pl-10 pr-11 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
                 />
+                <button
+                  type="button"
+                  onClick={() => setSignupPasswordVisible((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  aria-label={signupPasswordVisible ? 'Hide password' : 'Show password'}
+                >
+                  {signupPasswordVisible ? (
+                    <EyeOff className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                  ) : (
+                    <Eye className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                  )}
+                </button>
               </div>
             </div>
             <button
