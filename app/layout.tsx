@@ -37,7 +37,10 @@ export default function RootLayout({
   const hideBottomNav = isAdminRoute;
 
   const showFixedNavbar = !hideNavbar && !isStorePage;
-  const mainPaddingClass = `${hideBottomNav ? '' : 'pb-0 md:pb-0'} ${showFixedNavbar ? 'pt-2' : ''}`.trim();
+  // Navbar is fixed h-16 (64px); need clear space below it so page headings are not clipped.
+  const mainTopPadding = showFixedNavbar ? 'pt-20 md:pt-24' : '';
+
+  const mainPaddingClass = `${hideBottomNav ? '' : 'pb-0 md:pb-0'} ${mainTopPadding}`.trim();
 
   const bodyClassName = `${inter.className} ${isAuthPage ? 'h-screen overflow-hidden' : ''}`;
 
@@ -77,7 +80,7 @@ export default function RootLayout({
                     <Navbar />
                   </div>
                 )}
-                <main className={`min-h-screen ${mainPaddingClass} pt-10`}>{children}</main>
+                <main className={`min-h-screen ${mainPaddingClass}`}>{children}</main>
                 {!hideFooter && (
                   <div className={isCreateStorePage || isAuthPage ? 'hidden md:block' : ''}>
                     <Footer />
