@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/src/context/AuthContext';
+import { resolvePostAuthRedirect } from '@/src/lib/auth-redirect';
 
 export default function GoogleCallback() {
   const router = useRouter();
@@ -32,10 +33,9 @@ export default function GoogleCallback() {
         if (token) {
           console.log('Received token from backend redirect');
           try {
-            await completeExternalLogin(token);
-            // Redirect to intended page or dashboard
-            const redirect = searchParams.get('redirect') || '/dashboard';
-            router.push(redirect);
+            const loggedInUser = await completeExternalLogin(token);
+            const redirect = searchParams.get('redirect');
+            router.push(resolvePostAuthRedirect(redirect, loggedInUser));
             return;
           } catch (loginError) {
             console.error('Login completion error:', loginError);

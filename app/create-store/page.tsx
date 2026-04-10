@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useAuth } from '@/src/context/AuthContext';
 import { ApiError, createStore, getCategories, isApiError, type Category } from '@/src/lib/api';
 import { lookupPinCode } from '@/src/lib/location';
-import { Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 
 const defaultLogo = 'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?w=200&h=200&fit=crop';
 const MAX_LOGO_DIMENSION = 600;
@@ -63,7 +63,7 @@ async function compressImageToDataUrl(file: File): Promise<string> {
 
 export default function CreateStorePage() {
   const router = useRouter();
-  const { isLoggedIn, user, setUser } = useAuth();
+  const { isLoggedIn, user, setUser, logout } = useAuth();
   const [loading, setLoading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -76,6 +76,7 @@ export default function CreateStorePage() {
     storeName: '',
     logo: null as File | null,
     phone: '',
+    email: '',
     description: '',
     address: '',
     pinCode: '',
@@ -92,6 +93,10 @@ export default function CreateStorePage() {
 
     setIsAuthorized(true);
 
+    if (user?.email) {
+      setFormData((prev) => (prev.email ? prev : { ...prev, email: user.email }));
+    }
+
     const fetchCategories = async () => {
       try {
         const cats = await getCategories();
@@ -104,7 +109,7 @@ export default function CreateStorePage() {
     };
 
     fetchCategories();
-  }, [isLoggedIn, router]);
+  }, [isLoggedIn, router, user?.email]);
 
   useEffect(() => {
     const digits = formData.pinCode.replace(/[^0-9]/g, '');
@@ -172,6 +177,13 @@ export default function CreateStorePage() {
       return;
     }
 
+    const emailTrimmed = formData.email.trim();
+    if (!emailTrimmed) {
+      setErrorMessage('Please enter your business email');
+      setLoading(false);
+      return;
+    }
+
     const selectedCategory = categories.find(c => c.id === formData.categoryId);
     const normalizedDescription =
       formData.description?.trim() || `Discover curated ${selectedCategory?.name.toLowerCase() || 'products'} in your area.`;
@@ -192,6 +204,7 @@ export default function CreateStorePage() {
         logo: logoPreview ?? defaultLogo,
         address: fullAddress,
         phone: formData.phone,
+        email: emailTrimmed,
         description: normalizedDescription,
         location: locationLabel || undefined,
       });
@@ -225,13 +238,41 @@ export default function CreateStorePage() {
     }
   };
 
+  const handleBackToLogin = () => {
+    logout();
+    router.replace('/auth');
+  };
+
   if (!isAuthorized) {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 pt-6 pb-8">
+    <div className="min-h-screen bg-gray-50 px-4 pt-6 pb-[calc(68px+env(safe-area-inset-bottom,0px)+1.5rem)] md:pb-8">
       <div className="w-full max-w-md mx-auto space-y-6">
+        <button
+          type="button"
+          onClick={handleBackToLogin}
+          aria-label="Sign out and go back to login"
+          className="group relative isolate flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200/90 bg-white/90 px-4 py-3.5 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm transition-all duration-300 hover:border-indigo-300/70 hover:shadow-md hover:shadow-indigo-500/[0.12] active:scale-[0.98] md:w-auto md:justify-start"
+        >
+          <span
+            className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-indigo-500/0 via-indigo-500/[0.07] to-violet-500/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+            aria-hidden
+          />
+          <span
+            className="pointer-events-none absolute inset-0 -z-10 -translate-x-full bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 transition duration-700 ease-out group-hover:translate-x-full group-hover:opacity-100"
+            aria-hidden
+          />
+          <ArrowLeft
+            className="h-4 w-4 shrink-0 text-indigo-600 transition-transform duration-300 ease-out group-hover:-translate-x-1"
+            aria-hidden
+          />
+          <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent transition-all duration-300 group-hover:from-indigo-700 group-hover:to-violet-600">
+            Back to login
+          </span>
+        </button>
+
         <header className="space-y-1">
           <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Create store</p>
           <h1 className="text-2xl font-semibold text-gray-900">Set up your store</h1>
@@ -302,7 +343,7 @@ export default function CreateStorePage() {
               <option value="0">{loadingCategories ? 'Loading categories...' : 'Select a category'}</option>
               {categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
-                  {cat.name} ({cat.business_type})
+                  {cat.name}
                 </option>
               ))}
             </select>
@@ -323,6 +364,23 @@ export default function CreateStorePage() {
               className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
             />
             {fieldErrors.phone && <p className="text-sm text-red-600">{fieldErrors.phone[0]}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="email" className="text-sm font-medium text-gray-700">
+              Business email
+            </label>
+            <input
+              id="email"
+              type="email"
+              autoComplete="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              placeholder="contact@yourbusiness.com"
+              required
+              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+            />
+            {fieldErrors.email && <p className="text-sm text-red-600">{fieldErrors.email[0]}</p>}
           </div>
 
           <div className="space-y-2">

@@ -15,7 +15,9 @@ import { getAllStores } from '@/src/lib/api';
 import type { Product, Service, Store } from '@/types';
 import { useLocationContext } from '@/src/context/LocationContext';
 import { useSearch } from '@/src/context/SearchContext';
+import { useAuth } from '@/src/context/AuthContext';
 import { extractCityTokens } from '@/src/lib/location';
+import { prioritizeCurrentUserStore } from '@/src/lib/prioritize-user-store';
 
 export default function HomePage() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -26,6 +28,7 @@ export default function HomePage() {
   const [fallbackQueryUsed, setFallbackQueryUsed] = useState<string | null>(null);
   const { location, isLoading: locationDetecting } = useLocationContext();
   const { searchQuery, setSearchQuery } = useSearch();
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const [activeCategory, setActiveCategory] = useState('all');
 
@@ -142,9 +145,17 @@ export default function HomePage() {
     };
   }, [location]);
 
+  const orderedStores = useMemo(() => prioritizeCurrentUserStore(stores, user), [stores, user]);
+
+  const orderedNearbyStores = useMemo(
+    () => prioritizeCurrentUserStore(nearbyStores, user),
+    [nearbyStores, user]
+  );
+
   const verifiedStores = useMemo(
-    () => stores.filter((s) => s.isVerified || s.isBoosted || s.activeSubscription).slice(0, 6),
-    [stores]
+    () =>
+      orderedStores.filter((s) => s.isVerified || s.isBoosted || s.activeSubscription).slice(0, 6),
+    [orderedStores]
   );
 
   // Per-category position counters so each card in the same category shows a different banner image.
@@ -160,11 +171,11 @@ export default function HomePage() {
     return map;
   };
 
-  const nearbyCatIdx = useMemo(() => computeCategoryIndices(nearbyStores), [nearbyStores]);
+  const nearbyCatIdx = useMemo(() => computeCategoryIndices(orderedNearbyStores), [orderedNearbyStores]);
   const verifiedCatIdx = useMemo(() => computeCategoryIndices(verifiedStores), [verifiedStores]);
 
   const filteredStoresByCategory = useMemo(() => {
-    let filtered = stores;
+    let filtered = orderedStores;
     
     // Filter by category
     if (activeCategory !== 'all') {
@@ -190,7 +201,7 @@ export default function HomePage() {
     }
     
     return filtered;
-  }, [stores, activeCategory, searchQuery]);
+  }, [orderedStores, activeCategory, searchQuery]);
 
   const handleCategoryChange = useCallback((category: string) => {
     setActiveCategory(category);
@@ -199,7 +210,7 @@ export default function HomePage() {
   const locationLabel = location?.label || '';
   const trendingProducts = useMemo(
     () =>
-      stores.flatMap((store) => {
+      orderedStores.flatMap((store) => {
         const storeProducts = (store.products ?? []).map((product: Product) => ({
           ...product,
           storeUsername: store.username,
@@ -243,14 +254,14 @@ export default function HomePage() {
 
           if (isFullWidth) {
             return (
-              <div key={store.id} className="col-span-2">
+              <div key={store.id} className="col-span-2 h-full min-h-0">
                 <VerifiedSellerCard store={store} categoryBannerIndex={categoryBannerIndex} />
               </div>
             );
           }
 
           return (
-            <div key={store.id} className="col-span-1 min-w-0">
+            <div key={store.id} className="col-span-1 min-h-0 min-w-0 h-full">
               <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />
             </div>
           );
@@ -270,7 +281,9 @@ export default function HomePage() {
 
       <div className="hidden grid-cols-1 gap-6 sm:grid md:grid-cols-2 lg:grid-cols-3">
         {list.map((store) => (
-          <VerifiedSellerCard key={store.id} store={store} categoryBannerIndex={bannerIndexMap?.get(store.id) ?? 0} />
+          <div key={store.id} className="h-full min-h-0">
+            <VerifiedSellerCard store={store} categoryBannerIndex={bannerIndexMap?.get(store.id) ?? 0} />
+          </div>
         ))}
       </div>
     </>
@@ -364,18 +377,18 @@ export default function HomePage() {
             <p className="text-center text-gray-500 py-8">Loading stores near you…</p>
           )}
           {nearbyError && <p className="text-center text-red-500 py-8">{nearbyError}</p>}
-          {!nearbyLoading && !nearbyError && nearbyStores.length === 0 && location && (
+          {!nearbyLoading && !nearbyError && orderedNearbyStores.length === 0 && location && (
             <p className="text-center text-gray-500 py-8">
               No stores found within 50 km. Try expanding your search radius from the header.
             </p>
           )}
-          {!nearbyLoading && !nearbyError && nearbyStores.length === 0 && !location && (
+          {!nearbyLoading && !nearbyError && orderedNearbyStores.length === 0 && !location && (
             <p className="text-center text-gray-500 py-8">
               Use the location selector at the top to see stores near you.
             </p>
           )}
-          {!nearbyLoading && nearbyStores.length > 0 && (
-            renderResponsiveStoreGrid(nearbyStores, nearbyCatIdx, true)
+          {!nearbyLoading && orderedNearbyStores.length > 0 && (
+            renderResponsiveStoreGrid(orderedNearbyStores, nearbyCatIdx, true)
           )}
           {fallbackQueryUsed && (
             <p className="text-xs text-gray-400 text-center mt-4">

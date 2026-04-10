@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { MessageCircle, Check, MapPin, Star, Shield, Zap, Phone } from 'lucide-react';
+import { Check, MapPin, Star, Shield, Zap, Phone } from 'lucide-react';
 import type { Store } from '@/types';
 import { getStoreBannerImage } from '@/utils/storeBanner';
-
-const whatsappLink = (number: string) => `https://wa.me/${number.replace(/[^0-9]/g, '')}`;
+import { StoreBannerPreviewModal } from '@/components/StoreBannerPreviewModal';
 
 type VerifiedSellerCardProps = {
   store: Store;
@@ -25,7 +24,7 @@ const renderRatingStars = (rating: number) =>
     return (
       <Star
         key={`${rating}-star-${index}`}
-        className={`${filled ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'} h-5 w-5`}
+        className={`${filled ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'} h-4 w-4`}
       />
     );
   });
@@ -75,16 +74,29 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex }: Verif
     preferredIndex: typeof categoryBannerIndex === 'number' ? categoryBannerIndex : null,
   });
   const [bannerError, setBannerError] = useState(false);
+  const [bannerPreviewOpen, setBannerPreviewOpen] = useState(false);
   const showBannerImage = Boolean(heroImage) && !bannerError;
   const bannerImageSrc = showBannerImage && heroImage ? heroImage : undefined;
   const gradientBackground = `linear-gradient(135deg, ${fallbackColor} 0%, ${fallbackColor}cc 45%, #0f172a 100%)`;
 
   return (
-    <div className="rounded-[25.6px] border-2 border-slate-700 bg-white shadow-[0_14px_24px_rgba(15,23,42,0.16),0_28px_50px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.18)] overflow-hidden flex flex-col">
-      <div className="relative h-44 w-full overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden rounded-[25.6px] border-2 border-slate-700 bg-white shadow-[0_14px_24px_rgba(15,23,42,0.16),0_28px_50px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.18)]">
+      <div
+        className="relative z-[1] h-44 w-full shrink-0 cursor-zoom-in overflow-hidden transition-[filter] hover:brightness-[1.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400"
+        role="button"
+        tabIndex={0}
+        onClick={() => setBannerPreviewOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setBannerPreviewOpen(true);
+          }
+        }}
+        aria-label={`View ${store.name} banner larger`}
+      >
         {topBadge ? (
           <span
-            className="absolute top-3 left-3 inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white shadow"
+            className="pointer-events-none absolute top-3 left-3 z-[1] inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white shadow"
             style={{
               background: topBadge.color,
               clipPath:
@@ -100,16 +112,23 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex }: Verif
             src={bannerImageSrc}
             alt={store.name}
             fill
-            className="object-cover"
+            className="pointer-events-none object-cover"
             onError={() => setBannerError(true)}
             sizes="(max-width:768px) 100vw, 33vw"
           />
         ) : (
-          <div className="absolute inset-0" style={{ background: gradientBackground }} />
+          <div className="pointer-events-none absolute inset-0" style={{ background: gradientBackground }} />
         )}
       </div>
-      <div className="px-5 pb-5 flex flex-col gap-4 pt-10">
-        <div className="relative z-10 -mt-14 flex items-start gap-4">
+      <StoreBannerPreviewModal
+        open={bannerPreviewOpen}
+        onClose={() => setBannerPreviewOpen(false)}
+        imageSrc={bannerImageSrc}
+        fallbackStyle={{ background: gradientBackground }}
+        storeName={store.name}
+      />
+      <div className="relative z-[2] flex min-h-0 flex-1 flex-col gap-2 bg-white px-5 pb-4 pt-7">
+        <div className="relative -mt-12 flex shrink-0 items-start gap-3">
           <div className="relative inline-flex items-center flex-shrink-0">
             <div className="h-20 w-20 overflow-hidden rounded-3xl border-4 border-white bg-white shadow-lg">
               <Image src={store.logo} alt={store.name} width={80} height={80} className="h-full w-full object-cover" />
@@ -127,49 +146,40 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex }: Verif
               </span>
             )}
           </div>
-          <div className="mt-3 min-w-0 flex-1">
-            <h3 className="break-words text-[1.9rem] font-bold leading-tight text-slate-950 line-clamp-2">{store.name}</h3>
-            <div className="mt-2 inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="min-w-0 flex-1 pt-6">
+            <h3 className="break-words text-[1.65rem] font-bold leading-snug text-slate-950 line-clamp-2">{store.name}</h3>
+            <div className="mt-1 inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <div className="flex items-center gap-0.5">
                 {renderRatingStars(store.rating)}
               </div>
-              <span className="text-[15px] font-semibold text-slate-700">
+              <span className="text-[14px] font-semibold text-slate-700">
                 {store.totalReviews} reviews
               </span>
             </div>
           </div>
         </div>
-        <div className="space-y-3">
-          <p className="break-words text-[1rem] leading-7 text-slate-700 line-clamp-2">{shortSummary}</p>
+        <div className="shrink-0">
+          <p className="line-clamp-2 break-words text-[0.9375rem] leading-snug text-slate-700">{shortSummary}</p>
         </div>
-        <div className="flex flex-col gap-2 text-[15px] font-medium text-slate-700">
-          <span className="inline-flex items-center gap-2">
-            <MapPin className="h-[18px] w-[18px] flex-shrink-0 text-slate-500" />
-            <span className="break-words line-clamp-1">{store.location}</span>
+        <div className="flex shrink-0 flex-col gap-1 text-[14px] font-medium text-slate-700">
+          <span className="inline-flex items-center gap-1.5">
+            <MapPin className="h-4 w-4 flex-shrink-0 text-slate-500" />
+            <span className="line-clamp-1 break-words">{store.location}</span>
           </span>
           {store.showPhone !== false && store.whatsapp && (
-            <span className="inline-flex items-center gap-2">
-              <Phone className="h-[18px] w-[18px] flex-shrink-0 text-slate-500" />
+            <span className="inline-flex items-center gap-1.5">
+              <Phone className="h-4 w-4 flex-shrink-0 text-slate-500" />
               <span className="break-words">{store.whatsapp}</span>
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="mt-auto flex w-full shrink-0 justify-center pt-0.5">
           <Link
             href={`/store/${store.username}`}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-900 py-3 text-base font-semibold text-white transition hover:bg-blue-950"
+            className="inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl bg-blue-900 py-2.5 text-[0.9375rem] font-semibold text-white transition hover:bg-blue-950"
           >
             Visit store
           </Link>
-          <a
-            href={`${whatsappLink(store.whatsapp)}?text=Hi%2C%20I%27m%20interested%20in%20${encodeURIComponent(store.name)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#25D366] py-3 text-base font-semibold text-white shadow-[0_8px_24px_rgba(37,211,102,0.35)] transition hover:-translate-y-0.5 hover:bg-[#20b45a]"
-          >
-            <MessageCircle className="h-[18px] w-[18px]" />
-            WhatsApp
-          </a>
         </div>
       </div>
     </div>

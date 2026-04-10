@@ -18,6 +18,7 @@ class Store extends Model
         'logo',
         'banner',
         'phone',
+        'email',
         'whatsapp',
         'show_phone',
         'facebook_url',

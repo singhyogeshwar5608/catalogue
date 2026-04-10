@@ -129,7 +129,7 @@ export default function Sidebar() {
             <div className="absolute left-0 right-0 bottom-16 p-4 border-t border-gray-200 bg-white">
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-3 px-4 py-3 w-full text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                className="flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50 rounded-lg transition"
               >
                 <LogOut className="w-5 h-5" />
                 <span className="font-medium">Logout</span>
@@ -174,7 +174,7 @@ export default function Sidebar() {
           <div className="p-4 border-t border-gray-200">
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 px-4 py-3 w-full text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              className="flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50 rounded-lg transition"
             >
               <LogOut className="w-5 h-5" />
               <span className="font-medium">Logout</span>

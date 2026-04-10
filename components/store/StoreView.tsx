@@ -998,7 +998,7 @@ const ProductGrid = ({
                     >
                       <Link
                         href={`/product/${product.id}`}
-                        className="relative block aspect-[4/5] overflow-hidden rounded-2xl border border-white/40"
+                        className="relative block aspect-square overflow-hidden rounded-xl border border-white/40"
                       >
                         <Image
                           src={product.image}

@@ -159,6 +159,7 @@ export type CreateStorePayload = {
   logo?: string | null;
   address: string;
   phone: string;
+  email: string;
   show_phone?: boolean;
   description?: string;
   location?: string;
@@ -175,6 +176,7 @@ export type UpdateStorePayload = {
   logo?: string | null;
   address?: string;
   phone?: string;
+  email?: string | null;
   show_phone?: boolean;
   description?: string;
   is_verified?: boolean;
@@ -389,7 +391,8 @@ const normalizeUser = (user: any): ApiUser => {
         .map((store: any) => ({
           id: String(store?.id ?? ''),
           name: store?.name ?? 'My Store',
-          slug: store?.slug ?? '',
+          // Laravel uses `username` as public store path; `slug` may be empty
+          slug: String(store?.slug ?? store?.username ?? '').trim(),
         }))
         .filter((store: StoreSummary) => Boolean(store.id && store.slug))
     : [];
@@ -398,6 +401,7 @@ const normalizeUser = (user: any): ApiUser => {
     user?.storeSlug ??
     user?.store_slug ??
     user?.store?.slug ??
+    user?.store?.username ??
     stores[0]?.slug ??
     null;
 
@@ -553,9 +557,13 @@ const normalizeStore = (
       }
     : undefined;
 
+  const publicStorePath = String(
+    store.slug ?? (store as BackendStore & { username?: string }).username ?? ''
+  ).trim();
+
   return {
     id: String(store.id),
-    username: store.slug,
+    username: publicStorePath,
     name: formatStoreName(store.name),
     logo: store.logo ?? fallbackLogo,
     banner: resolvedBanner,
@@ -579,6 +587,7 @@ const normalizeStore = (
     longitude: typeof store.longitude === 'number' ? store.longitude : store.longitude ? Number(store.longitude) : null,
     distanceKm: typeof store.distance_km === 'number' ? store.distance_km : store.distance_km ? Number(store.distance_km) : null,
     phone: store.phone ?? undefined,
+    email: store.email?.trim() ? store.email.trim() : undefined,
     showPhone: store.show_phone !== false,
     whatsapp: store.whatsapp ?? store.phone ?? '+91 90000 00000',
     socialLinks: {
@@ -757,44 +766,6 @@ const normalizeReviewListResponse = (payload: BackendReviewListResponse): Review
   reviews: Array.isArray(payload.reviews) ? payload.reviews.map((review) => normalizeReview(review)) : [],
 });
 
-export const loginUser = async (payload: LoginPayload) => {
-  const response = await apiRequest<{ token: string; user: ApiUser }>(
-    '/auth/login',
-    {
-      method: 'POST',
-      body: payload,
-    }
-  );
-
-  const normalizedUser = normalizeUser(response.data.user);
-  setAuthToken(response.data.token);
-  persistAuthUser(normalizedUser);
-  return { token: response.data.token, user: normalizedUser };
-};
-
-export const registerUser = async (payload: RegisterPayload) => {
-  const response = await apiRequest<{ token: string; user: ApiUser }>(
-    '/auth/register',
-    {
-      method: 'POST',
-      body: payload,
-    }
-  );
-
-  const normalizedUser = normalizeUser(response.data.user);
-  setAuthToken(response.data.token);
-  persistAuthUser(normalizedUser);
-  return { token: response.data.token, user: normalizedUser };
-};
-
-export const fetchAuthenticatedUser = async (): Promise<ApiUser> => {
-  const response = await apiRequest<ApiUser>('/auth/me', {
-    requiresAuth: true,
-  });
-
-  return normalizeUser(response.data);
-};
-
 export const getCategories = async (options?: { auth?: boolean }): Promise<Category[]> => {
   const response = await apiRequest<Category[]>('/categories', {
     requiresAuth: options?.auth ?? false,
@@ -870,6 +841,77 @@ export const getMyStores = async (): Promise<Store[]> => {
   });
 
   return response.data.map((store) => normalizeStore(store));
+};
+
+/** When login/me omits store slug, fetch owned stores so redirect can use `/store/{slug}`. */
+const enrichUserWithMyStoresIfNeeded = async (user: ApiUser): Promise<ApiUser> => {
+  if (user.storeSlug?.trim()) {
+    return user;
+  }
+  try {
+    const stores = await getMyStores();
+    const primary = stores[0];
+    const slug = primary?.username?.trim();
+    if (!slug) {
+      return user;
+    }
+    const nextStores: StoreSummary[] =
+      user.stores && user.stores.length > 0
+        ? user.stores
+        : stores.map((s) => ({
+            id: s.id,
+            name: s.name,
+            slug: s.username,
+          }));
+    return {
+      ...user,
+      storeSlug: slug,
+      stores: nextStores,
+    };
+  } catch {
+    return user;
+  }
+};
+
+export const loginUser = async (payload: LoginPayload) => {
+  const response = await apiRequest<{ token: string; user: ApiUser }>(
+    '/auth/login',
+    {
+      method: 'POST',
+      body: payload,
+    }
+  );
+
+  const normalizedUser = normalizeUser(response.data.user);
+  setAuthToken(response.data.token);
+  const enriched = await enrichUserWithMyStoresIfNeeded(normalizedUser);
+  persistAuthUser(enriched);
+  return { token: response.data.token, user: enriched };
+};
+
+export const registerUser = async (payload: RegisterPayload) => {
+  const response = await apiRequest<{ token: string; user: ApiUser }>(
+    '/auth/register',
+    {
+      method: 'POST',
+      body: payload,
+    }
+  );
+
+  const normalizedUser = normalizeUser(response.data.user);
+  setAuthToken(response.data.token);
+  const enriched = await enrichUserWithMyStoresIfNeeded(normalizedUser);
+  persistAuthUser(enriched);
+  return { token: response.data.token, user: enriched };
+};
+
+export const fetchAuthenticatedUser = async (): Promise<ApiUser> => {
+  const response = await apiRequest<ApiUser>('/auth/me', {
+    requiresAuth: true,
+  });
+
+  const normalized = normalizeUser(response.data);
+  return enrichUserWithMyStoresIfNeeded(normalized);
 };
 
 export const getStoreBySlug = async (slug: string): Promise<Store> => {

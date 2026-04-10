@@ -6,8 +6,10 @@ import { MapPin, Search, X } from 'lucide-react';
 import VerifiedSellerCard from '@/components/VerifiedSellerCard';
 import StoreCard from '@/components/StoreCard';
 import { getAllStores } from '@/src/lib/api';
+import { useAuth } from '@/src/context/AuthContext';
 import { useLocationContext } from '@/src/context/LocationContext';
 import { extractCityTokens } from '@/src/lib/location';
+import { prioritizeCurrentUserStore } from '@/src/lib/prioritize-user-store';
 import type { Store } from '@/types';
 
 const createSlug = (value: string) =>
@@ -23,6 +25,7 @@ export default function AllStoresPage() {
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [fallbackQueryUsed, setFallbackQueryUsed] = useState<string | null>(null);
   const { location, isLoading: locationDetecting } = useLocationContext();
+  const { user } = useAuth();
 
   useEffect(() => {
     const loadStores = async () => {
@@ -118,18 +121,25 @@ export default function AllStoresPage() {
     };
   }, [location]);
 
+  const orderedStores = useMemo(() => prioritizeCurrentUserStore(stores, user), [stores, user]);
+
+  const orderedNearbyStores = useMemo(
+    () => prioritizeCurrentUserStore(nearbyStores, user),
+    [nearbyStores, user]
+  );
+
   const categoryOptions = useMemo(() => {
     const labels = Array.from(
-      new Set(stores.map((store) => (store.categoryName ?? store.businessType).trim()).filter(Boolean))
+      new Set(orderedStores.map((store) => (store.categoryName ?? store.businessType).trim()).filter(Boolean))
     );
 
     return [{ id: 'all', label: 'All stores' }, ...labels.map((label) => ({ id: createSlug(label), label }))];
-  }, [stores]);
+  }, [orderedStores]);
 
   const filteredStores = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return stores.filter((store) => {
+    return orderedStores.filter((store) => {
       const categoryLabel = store.categoryName ?? store.businessType;
       const matchesCategory = activeCategory === 'all' || createSlug(categoryLabel) === activeCategory;
       if (!matchesCategory) return false;
@@ -140,7 +150,7 @@ export default function AllStoresPage() {
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(query));
     });
-  }, [activeCategory, searchQuery, stores]);
+  }, [activeCategory, searchQuery, orderedStores]);
 
   const featuredStores = useMemo(
     () => filteredStores.filter((store) => store.isVerified || store.activeSubscription || store.isBoosted).slice(0, 3),
@@ -159,7 +169,7 @@ export default function AllStoresPage() {
     return map;
   };
 
-  const nearbyCatIdx = useMemo(() => computeCategoryIndices(nearbyStores), [nearbyStores]);
+  const nearbyCatIdx = useMemo(() => computeCategoryIndices(orderedNearbyStores), [orderedNearbyStores]);
   const featuredCatIdx = useMemo(() => computeCategoryIndices(featuredStores), [featuredStores]);
   const filteredCatIdx = useMemo(() => computeCategoryIndices(filteredStores), [filteredStores]);
 
@@ -173,14 +183,14 @@ export default function AllStoresPage() {
 
           if (isFullWidth) {
             return (
-              <div key={store.id} className="col-span-2">
+              <div key={store.id} className="col-span-2 h-full min-h-0">
                 <VerifiedSellerCard store={store} categoryBannerIndex={categoryBannerIndex} />
               </div>
             );
           }
 
           return (
-            <div key={store.id} className="col-span-1 min-w-0">
+            <div key={store.id} className="col-span-1 min-h-0 min-w-0 h-full">
               <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />
             </div>
           );
@@ -189,7 +199,9 @@ export default function AllStoresPage() {
 
       <div className="hidden grid-cols-1 gap-6 sm:grid lg:grid-cols-3">
         {list.map((store) => (
-          <VerifiedSellerCard key={store.id} store={store} categoryBannerIndex={bannerIndexMap?.get(store.id) ?? 0} />
+          <div key={store.id} className="h-full min-h-0">
+            <VerifiedSellerCard store={store} categoryBannerIndex={bannerIndexMap?.get(store.id) ?? 0} />
+          </div>
         ))}
       </div>
     </>
@@ -240,8 +252,8 @@ export default function AllStoresPage() {
           <div className="flex flex-col gap-4 rounded-[32px] border border-white/60 bg-white/80 p-6 shadow-[0_30px_60px_-25px_rgba(15,23,42,0.35)] backdrop-blur">
             <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">Trusted Retailers</p>
             <div className="space-y-4 text-slate-700">
-              {stores.length > 0 ? (
-                stores.slice(0, 3).map((store) => (
+              {orderedStores.length > 0 ? (
+                orderedStores.slice(0, 3).map((store) => (
                   <div key={store.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                     <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Featured store</p>
                     <p className="text-lg font-semibold text-slate-900">{store.name}</p>
@@ -355,8 +367,8 @@ export default function AllStoresPage() {
           <div className="rounded-[28px] border border-red-200 bg-white px-4 py-20 text-center shadow-sm">
             <p className="text-sm text-red-600">{nearbyError}</p>
           </div>
-        ) : nearbyStores.length > 0 ? (
-          renderResponsiveStoreGrid(nearbyStores, nearbyCatIdx)
+        ) : orderedNearbyStores.length > 0 ? (
+          renderResponsiveStoreGrid(orderedNearbyStores, nearbyCatIdx)
         ) : (
           <div className="rounded-[28px] border border-dashed border-slate-300 bg-white px-4 py-20 text-center shadow-sm">
             <p className="text-slate-500">

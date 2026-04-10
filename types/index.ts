@@ -48,6 +48,8 @@ export interface Store {
   longitude?: number | null;
   distanceKm?: number | null;
   phone?: string;
+  /** Business / contact email stored on the store record */
+  email?: string;
   showPhone?: boolean;
   whatsapp: string;
   gstVerified?: boolean;

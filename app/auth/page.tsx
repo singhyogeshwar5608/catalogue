@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
 import { getGoogleOAuthApiBaseUrl } from '@/src/lib/api';
+import { resolvePostAuthRedirect } from '@/src/lib/auth-redirect';
 import { GoogleAuthButton } from '@/components/GoogleAuthButton';
 
 const GoogleGlyph = () => (
@@ -41,28 +42,11 @@ export default function AuthPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    console.log('Redirect check:', { shouldRedirect, isLoggedIn, user });
-    
     if (!shouldRedirect || !isLoggedIn) {
-      console.log('Redirect blocked:', { shouldRedirect, isLoggedIn });
       return;
     }
 
-    console.log('Redirecting user:', user);
-    
-    if (redirectTarget) {
-      console.log('Redirecting to:', redirectTarget);
-      router.replace(redirectTarget);
-      return;
-    }
-
-    if (user?.storeSlug) {
-      console.log('Redirecting to store:', user.storeSlug);
-      router.replace(`/store/${user.storeSlug}`);
-    } else {
-      console.log('Redirecting to create-store');
-      router.replace('/create-store');
-    }
+    router.replace(resolvePostAuthRedirect(redirectTarget, user));
   }, [shouldRedirect, isLoggedIn, user, router, redirectTarget]);
 
   const googleRedirectUrl = useMemo(() => {

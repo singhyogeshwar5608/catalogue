@@ -44,6 +44,7 @@ export interface BackendStore {
   logo?: string | null;
   banner?: string | null;
   phone?: string | null;
+  email?: string | null;
   show_phone?: boolean | null;
   whatsapp?: string | null;
   facebook_url?: string | null;

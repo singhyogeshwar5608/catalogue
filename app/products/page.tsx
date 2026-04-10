@@ -5,6 +5,8 @@ import Link from 'next/link';
 import SectionHeader from '@/components/SectionHeader';
 import ProductCard from '@/components/ProductCard';
 import { getAllStores } from '@/src/lib/api';
+import { useAuth } from '@/src/context/AuthContext';
+import { prioritizeCurrentUserStore } from '@/src/lib/prioritize-user-store';
 import type { Product, Service, Store } from '@/types';
 
 type ListingItem = Product & {
@@ -15,6 +17,7 @@ type ListingItem = Product & {
 export default function ProductsPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchStores = async () => {
@@ -31,9 +34,11 @@ export default function ProductsPage() {
     fetchStores();
   }, []);
 
+  const orderedStores = useMemo(() => prioritizeCurrentUserStore(stores, user), [stores, user]);
+
   const items = useMemo<ListingItem[]>(
     () =>
-      stores.flatMap((store) => {
+      orderedStores.flatMap((store) => {
         const storeProducts = (store.products ?? []).map((product: Product) => ({
           ...product,
           storeUsername: store.username,
@@ -60,7 +65,7 @@ export default function ProductsPage() {
 
         return [...storeProducts, ...storeServices];
       }),
-    [stores]
+    [orderedStores]
   );
 
   return (

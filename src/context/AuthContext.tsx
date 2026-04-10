@@ -46,7 +46,7 @@ type AuthContextValue = {
   loading: boolean;
   login: (payload: LoginPayload) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
-  completeExternalLogin: (token: string) => Promise<void>;
+  completeExternalLogin: (token: string) => Promise<ApiUser>;
   logout: () => void;
   setUser: (user: ApiUser | null) => void;
 };
@@ -206,13 +206,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const completeExternalLogin = useCallback(async (token: string) => {
+  const completeExternalLogin = useCallback(async (token: string): Promise<ApiUser> => {
     setLoading(true);
     try {
       setAuthToken(token);
       const user = await fetchAuthenticatedUser();
       persistState(user, token);
       setState({ user, token, isInitialized: true });
+      return user;
     } catch (error) {
       clearAuthToken();
       persistState(null, null);
