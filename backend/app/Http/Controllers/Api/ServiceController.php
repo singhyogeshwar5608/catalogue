@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Service;
 use App\Models\Store;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class ServiceController extends Controller
@@ -109,7 +110,12 @@ class ServiceController extends Controller
 
     public function getServiceById(int $id)
     {
-        $service = Service::with('store')->find($id);
+        $storeWith = ['store.category'];
+        if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+            $storeWith[] = 'store.activeSubscription.plan';
+        }
+
+        $service = Service::with($storeWith)->find($id);
 
         if (! $service) {
             return $this->errorResponse('Service not found.', 404);

@@ -1,19 +1,17 @@
 'use client';
 
-import type { Metadata } from "next";
 import { useEffect } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MobileBottomNav from "@/components/MobileBottomNav";
-import AutoTranslate from "@/components/AutoTranslate";
+import GoogleTranslateScripts from "@/components/GoogleTranslateScripts";
 import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/src/context/AuthContext";
 import { StoreProvider } from "@/src/context/StoreContext";
 import { LocationProvider } from "@/src/context/LocationContext";
 import { SearchProvider } from "@/src/context/SearchContext";
-import Script from "next/script";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -40,7 +38,11 @@ export default function RootLayout({
   // Navbar is fixed h-16 (64px); need clear space below it so page headings are not clipped.
   const mainTopPadding = showFixedNavbar ? 'pt-20 md:pt-24' : '';
 
-  const mainPaddingClass = `${hideBottomNav ? '' : 'pb-0 md:pb-0'} ${mainTopPadding}`.trim();
+  // Clear fixed MobileBottomNav (h-[68px] + safe area); md:hidden on nav so reset on desktop.
+  const mainBottomPaddingClass = hideBottomNav
+    ? ''
+    : 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+1rem)] md:pb-0';
+  const mainPaddingClass = `${mainBottomPaddingClass} ${mainTopPadding}`.trim();
 
   const bodyClassName = `${inter.className} ${isAuthPage ? 'h-screen overflow-hidden' : ''}`;
 
@@ -51,26 +53,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={bodyClassName} suppressHydrationWarning>
-        <Script
-          src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
-          strategy="afterInteractive"
-        />
-        <Script id="google-translate-init" strategy="afterInteractive">
-          {`
-            window.googleTranslateElementInit = function() {
-              new window.google.translate.TranslateElement(
-                { pageLanguage: 'en', autoDisplay: false },
-                'google_translate_element'
-              );
-            }
-          `}
-        </Script>
-        {/* Hidden Google Translate element */}
-        <div id="google_translate_element" style={{ display: 'none' }}></div>
-        
-        {/* Auto-detect and translate based on user's state */}
-        {/* <AutoTranslate /> */}
-        
+        <div id="google_translate_element" style={{ display: 'none' }} aria-hidden="true" />
+        <GoogleTranslateScripts />
         <AuthProvider>
           <StoreProvider>
             <LocationProvider>

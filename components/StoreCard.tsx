@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Store } from '@/types';
-import { Star, MapPin, Check, ArrowUpRight, BadgeCheck, Mail, Phone, ShieldCheck, UserRound } from 'lucide-react';
+import { MapPin, Check, ArrowUpRight, BadgeCheck, Mail, Phone, ShieldCheck, UserRound } from 'lucide-react';
+import RatingStars from '@/components/RatingStars';
 import BoostBadge from './BoostBadge';
 import { getStoreBannerImage } from '@/utils/storeBanner';
 import { StoreBannerPreviewModal } from '@/components/StoreBannerPreviewModal';
@@ -32,6 +33,12 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
     if (typeof store.membershipYears === 'number' && store.membershipYears > 0) items.push({ label: `Member · ${store.membershipYears} yrs`, icon: UserRound });
     return items;
   }, [store.gstVerified, store.emailVerified, store.mobileVerified, store.showPhone, store.membershipYears]);
+
+  const displayedVerificationBadges = useMemo(
+    () =>
+      isCompact ? verificationBadges.filter((b) => b.label !== 'Mobile') : verificationBadges,
+    [verificationBadges, isCompact],
+  );
 
   const heroBannerImage = useMemo(() => {
     return getStoreBannerImage({
@@ -146,15 +153,14 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className={`flex items-start gap-2 font-semibold text-slate-900 ${isCompact ? 'justify-between text-sm' : 'text-lg'}`}>
-              <span className={`${isCompact ? 'line-clamp-2' : 'break-words'}`}>{store.name}</span>
-              {isCompact ? (
-                <div className="flex shrink-0 items-center gap-1 text-xs text-slate-900">
-                  <Star className="h-3 w-3 text-amber-400 fill-amber-400" />
-                  <span className="font-semibold">{store.rating}</span>
-                  <span className="text-slate-500">({store.totalReviews})</span>
-                </div>
-              ) : null}
+            <div
+              className={`flex flex-wrap items-start gap-2 font-semibold text-slate-900 ${
+                isCompact ? 'text-sm' : 'text-lg'
+              }`}
+            >
+              <span className={`min-w-0 flex-1 basis-[min(100%,12rem)] ${isCompact ? 'line-clamp-2' : 'break-words'}`}>
+                {store.name}
+              </span>
               {distanceLabel && (
                 <span className={`ml-auto rounded-full bg-slate-100 font-semibold text-slate-600 ${
                 isCompact ? 'px-1.5 py-0.5 text-[9px]' : 'px-3 py-1 text-[11px]'
@@ -162,9 +168,9 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
                 {distanceLabel}
               </span>
               )}
-              {verificationBadges.length > 0 && (
+              {displayedVerificationBadges.length > 0 && (
                 <div className={`flex flex-wrap items-center gap-1.5 ${isCompact ? 'text-[10px]' : 'text-xs'} text-slate-600`}>
-                  {verificationBadges.map(({ label, icon: Icon }) => (
+                  {displayedVerificationBadges.map(({ label, icon: Icon }) => (
                     <span
                       key={label}
                       className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 font-semibold"
@@ -178,7 +184,15 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
             </div>
             {!isCompact ? (
               <p className="text-sm text-slate-500 break-words">{categoryLabel}</p>
-            ) : null}
+            ) : (
+              <div className="mt-0.5 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <RatingStars rating={Number(store.rating) || 0} size="xs" />
+                <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-900">
+                  {Number(store.rating || 0).toFixed(1)}
+                </span>
+                <span className="shrink-0 text-xs text-slate-500">({store.totalReviews})</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -190,10 +204,12 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
           className={`flex shrink-0 ${isCompact ? 'flex-col items-start gap-1 text-xs' : 'items-center justify-between text-sm'}`}
         >
           {!isCompact ? (
-            <div className="flex items-center gap-2 text-slate-900">
-              <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-              <span className="font-semibold">{store.rating}</span>
-              <span className="text-slate-500">({store.totalReviews})</span>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-slate-900">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <RatingStars rating={Number(store.rating) || 0} size="sm" />
+                <span className="font-semibold tabular-nums">{Number(store.rating || 0).toFixed(1)}</span>
+                <span className="text-slate-500">({store.totalReviews})</span>
+              </div>
               {store.trustSeal ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-600">
                   <ShieldCheck className="h-3.5 w-3.5" />
@@ -202,17 +218,21 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
               ) : null}
             </div>
           ) : null}
-          <div className={`flex items-center gap-1 text-slate-500 ${isCompact ? 'w-full text-xs' : ''}`}>
-            <MapPin className={`${isCompact ? 'w-3 h-3' : 'w-4 h-4'} flex-shrink-0`} />
-            <span className={isCompact ? 'truncate' : 'break-words'}>{store.location}</span>
+          <div
+            className={`flex gap-1 ${isCompact ? 'w-full min-w-0 items-start text-xs text-black' : 'items-center text-slate-500'}`}
+          >
+            <MapPin
+              className={`${isCompact ? 'mt-0.5 h-3 w-3 text-black' : 'h-4 w-4'} flex-shrink-0`}
+            />
+            <span className="min-w-0 break-words">{store.location}</span>
           </div>
         </div>
 
-        {verificationBadges.length > 0 || store.trustSeal ? (
+        {displayedVerificationBadges.length > 0 || store.trustSeal ? (
           <div
             className={`flex shrink-0 flex-wrap items-center gap-1.5 ${isCompact ? 'text-[10px]' : 'text-xs'} text-slate-600`}
           >
-            {verificationBadges.map(({ label, icon: Icon }) => (
+            {displayedVerificationBadges.map(({ label, icon: Icon }) => (
               <span
                 key={label}
                 className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 font-semibold"

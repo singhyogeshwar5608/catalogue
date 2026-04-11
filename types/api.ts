@@ -68,6 +68,12 @@ export interface BackendStore {
   is_boosted?: boolean | null;
   is_active: boolean;
   created_at?: string | null;
+  trial_ends_at?: string | null;
+  subscription_addons?: {
+    payment_gateway?: boolean;
+    qr_code?: boolean;
+    payment_gateway_help?: boolean;
+  } | null;
   products?: BackendProduct[];
   services?: BackendService[];
   active_boost?: BackendStoreBoost | null;

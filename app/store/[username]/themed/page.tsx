@@ -2,6 +2,7 @@ import { getStoreBySlug, getProductsByStore } from '@/src/lib/api';
 import { getThemeById } from '@/data/themes';
 import BasicTheme from '@/components/themes/BasicTheme';
 import PremiumTheme from '@/components/themes/PremiumTheme';
+import StorefrontTrialShell from '@/components/StorefrontTrialShell';
 import { notFound } from 'next/navigation';
 
 export default async function ThemedStorePage({ params }: { params: Promise<{ username: string }> }) {
@@ -26,17 +27,19 @@ export default async function ThemedStorePage({ params }: { params: Promise<{ us
     const ThemeComponent = theme.plan === 'premium' ? PremiumTheme : BasicTheme;
 
     return (
-      <ThemeComponent
-        theme={theme}
-        products={storeProducts}
-        storeName={store.name}
-        storeLogo={store.logo}
-        storeBanner={store.banner}
-        storeDescription={store.description}
-        storeRating={store.rating}
-        storeLocation={store.location}
-        storePhone={store.whatsapp}
-      />
+      <StorefrontTrialShell store={store}>
+        <ThemeComponent
+          theme={theme}
+          products={storeProducts}
+          storeName={store.name}
+          storeLogo={store.logo}
+          storeBanner={store.banner}
+          storeDescription={store.description}
+          storeRating={store.rating}
+          storeLocation={store.location}
+          storePhone={store.whatsapp}
+        />
+      </StorefrontTrialShell>
     );
   } catch (error) {
     console.error('Failed to load themed store:', error);

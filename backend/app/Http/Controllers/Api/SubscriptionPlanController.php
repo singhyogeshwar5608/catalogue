@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PlatformSetting;
 use App\Models\SubscriptionPlan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -34,6 +35,12 @@ class SubscriptionPlanController extends Controller
         return $this->successResponse('Subscription plans retrieved successfully.', $plans);
     }
 
+    /** Read-only add-on prices for checkout (any authenticated merchant). */
+    public function publicAddonPrices()
+    {
+        return $this->successResponse('Subscription add-on charges retrieved.', PlatformSetting::subscriptionAddonChargesPayload());
+    }
+
     public function index()
     {
         $query = SubscriptionPlan::query();
@@ -62,7 +69,7 @@ class SubscriptionPlanController extends Controller
         $rules = [
             'name' => 'required|string|max:255',
             'price' => 'required|integer|min:0',
-            'billing_cycle' => 'required|in:monthly,yearly',
+            'billing_cycle' => 'nullable|in:monthly,yearly',
             'duration_days' => 'nullable|integer|min:1|max:365',
             'max_products' => 'required|integer|min:1',
             'is_popular' => 'nullable|boolean',
@@ -82,11 +89,12 @@ class SubscriptionPlanController extends Controller
         }
 
         $data = $validator->validated();
-        
+        $data['billing_cycle'] = $data['billing_cycle'] ?? 'monthly';
+
         if (Schema::hasColumn('subscription_plans', 'slug')) {
             $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? Str::slug($data['name']));
         }
-        
+
         $data['features'] = $this->normalizeFeatures($data['features'] ?? []);
 
         $plan = SubscriptionPlan::create($data);
@@ -99,7 +107,7 @@ class SubscriptionPlanController extends Controller
         $rules = [
             'name' => 'sometimes|required|string|max:255',
             'price' => 'sometimes|required|integer|min:0',
-            'billing_cycle' => 'sometimes|required|in:monthly,yearly',
+            'billing_cycle' => 'sometimes|nullable|in:monthly,yearly',
             'duration_days' => 'sometimes|nullable|integer|min:1|max:365',
             'max_products' => 'sometimes|required|integer|min:1',
             'is_popular' => 'nullable|boolean',
@@ -109,7 +117,7 @@ class SubscriptionPlanController extends Controller
         ];
 
         if (Schema::hasColumn('subscription_plans', 'slug')) {
-            $rules['slug'] = 'sometimes|nullable|string|max:255|unique:subscription_plans,slug,' . $plan->id;
+            $rules['slug'] = 'sometimes|nullable|string|max:255|unique:subscription_plans,slug,'.$plan->id;
         }
 
         $validator = Validator::make($request->all(), $rules);
@@ -119,7 +127,10 @@ class SubscriptionPlanController extends Controller
         }
 
         $data = $validator->validated();
-        
+        if (array_key_exists('billing_cycle', $data) && ($data['billing_cycle'] === null || $data['billing_cycle'] === '')) {
+            unset($data['billing_cycle']);
+        }
+
         if (Schema::hasColumn('subscription_plans', 'slug')) {
             if (array_key_exists('slug', $data)) {
                 $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? ($data['name'] ?? $plan->name), $plan->id);
@@ -159,7 +170,7 @@ class SubscriptionPlanController extends Controller
         while (SubscriptionPlan::where('slug', $slug)
             ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
             ->exists()) {
-            $slug = $original . '-' . $counter++;
+            $slug = $original.'-'.$counter++;
         }
 
         return $slug;
@@ -173,6 +184,7 @@ class SubscriptionPlanController extends Controller
 
         if (is_string($features)) {
             $items = preg_split('/\r\n|\n|\r|,/', $features) ?: [];
+
             return array_values(array_filter(array_map('trim', $items)));
         }
 

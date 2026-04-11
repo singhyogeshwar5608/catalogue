@@ -9,9 +9,12 @@ import type {
   Service,
   ServiceBillingUnit,
   Store,
+  StoreSubscriptionAddons,
+  StorePaymentIntegrationSettings,
   StoreBoost,
   AdminDashboardStats,
   SubscriptionPlan,
+  SubscriptionAddonCharges,
   StoreSubscription,
 } from '@/types';
 import type {
@@ -24,7 +27,22 @@ import type {
   StoreSummary,
   BackendSearchResponse,
 } from '@/types/api';
+import {
+  purgeProductsCatalogCacheClient,
+  purgeStoresCatalogCacheClient,
+  purgeUsersCatalogCacheClient,
+} from '@/src/lib/catalogCacheClient';
+import { absolutizeStorageUrl } from '@/src/lib/api-shared';
 import { formatStoreName } from '@/src/lib/format';
+import {
+  clearFreeTrialDaysClientCache,
+  DEFAULT_FREE_TRIAL_DAYS,
+  ensureStoreTrialEndsAt,
+  prefetchFreeTrialDays,
+  setFreeTrialDaysClientCache,
+  trialEndsAtFallbackFromCreated,
+} from '@/src/lib/freeTrialDays';
+import { dispatchStoreProfileRefresh } from '@/src/lib/storeSubscriptionAddons';
 
 type ReviewListParams = {
   page?: number;
@@ -113,6 +131,8 @@ export const updateProduct = async (payload: UpdateProductPayload) => {
     requiresAuth: true,
   });
 
+  await purgeProductsCatalogCacheClient();
+
   return {
     product: normalizeProduct(response.data, {
       id: Number(response.data.store_id ?? 0),
@@ -131,6 +151,7 @@ export const deleteProduct = async (productId: number | string) => {
     method: 'DELETE',
     requiresAuth: true,
   });
+  await purgeProductsCatalogCacheClient();
 };
 
 export type ApiUser = {
@@ -256,19 +277,35 @@ const resolvedPublicApiBase = (() => {
 export const API_BASE_URL = resolvedPublicApiBase;
 
 /**
+ * In development, default to same-origin `/api/laravel` (see `next.config.ts` rewrites) so the
+ * browser does not call the live API directly — avoids CORS preflight failures (e.g. OPTIONS 500
+ * from some CDNs) and "Failed to fetch". Set `NEXT_PUBLIC_USE_API_PROXY=0` to force direct API URL.
+ */
+function useDevLaravelProxy(): boolean {
+  if (typeof window === "undefined" || process.env.NODE_ENV !== "development") return false;
+  if (process.env.NEXT_PUBLIC_USE_API_PROXY === "0") return false;
+  if (process.env.NEXT_PUBLIC_USE_API_PROXY === "1") return true;
+  const h = window.location.hostname;
+  if (h === "localhost" || h === "127.0.0.1" || h === "[::1]") return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h) || /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  return false;
+}
+
+/**
  * Base URL for fetch(). Default: direct hit to {@link resolvedPublicApiBase} (live or whatever
- * `NEXT_PUBLIC_API_BASE_URL` is). Optional dev-only same-origin proxy (CORS bypass):
- * set `NEXT_PUBLIC_USE_API_PROXY=1` and keep `rewrites` in `next.config.ts`.
+ * `NEXT_PUBLIC_API_BASE_URL` is). In local dev, defaults to same-origin proxy unless opted out.
  */
 export function getApiRequestBaseUrl(): string {
-  if (
-    typeof window !== "undefined" &&
-    process.env.NODE_ENV === "development" &&
-    process.env.NEXT_PUBLIC_USE_API_PROXY === "1"
-  ) {
+  if (useDevLaravelProxy()) {
     return `${window.location.origin}/api/laravel`;
   }
   return resolvedPublicApiBase;
+}
+
+if (typeof window !== 'undefined') {
+  queueMicrotask(() => {
+    void prefetchFreeTrialDays(getApiRequestBaseUrl());
+  });
 }
 
 /** Browser redirect to Laravel Socialite. */
@@ -303,6 +340,68 @@ export class ApiError extends Error {
 }
 
 export const isApiError = (error: unknown): error is ApiError => error instanceof ApiError;
+
+/**
+ * Reads Laravel-style validation from our JSON envelope (`data`) or plain Laravel (`errors`).
+ */
+export function parseApiValidationErrors(payload: unknown): Record<string, string[]> | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as Record<string, unknown>;
+  const raw = p.data ?? p.errors;
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const out: Record<string, string[]> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(val)) {
+      const strs = val.filter((x): x is string => typeof x === 'string');
+      if (strs.length) out[key] = strs;
+    } else if (typeof val === 'string') {
+      out[key] = [val];
+    } else if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const strs = Object.values(val as Record<string, unknown>).filter((x): x is string => typeof x === 'string');
+      if (strs.length) out[key] = strs;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+const VALIDATION_LABELS_STORE: Record<string, string> = {
+  name: 'Store name',
+  category_id: 'Category',
+  phone: 'Phone',
+  email: 'Business email',
+  address: 'Address',
+  description: 'Description',
+  logo: 'Logo',
+  location: 'Location / area',
+  slug: 'Store link',
+  facebook_url: 'Facebook URL',
+  instagram_url: 'Instagram URL',
+  youtube_url: 'YouTube URL',
+  linkedin_url: 'LinkedIn URL',
+  show_phone: 'Phone visibility',
+  password: 'Password',
+};
+
+const VALIDATION_LABELS_AUTH: Record<string, string> = {
+  ...VALIDATION_LABELS_STORE,
+  name: 'Full name',
+  email: 'Email',
+  password: 'Password',
+};
+
+/** One readable banner string from validation map (e.g. "Email: must be valid."). */
+export function formatValidationErrorsForDisplay(
+  errors: Record<string, string[]>,
+  context: 'store' | 'auth' = 'store',
+): string {
+  const map = context === 'auth' ? VALIDATION_LABELS_AUTH : VALIDATION_LABELS_STORE;
+  const label = (field: string) => map[field] ?? field.replace(/_/g, ' ');
+
+  return Object.entries(errors)
+    .flatMap(([field, msgs]) => msgs.map((m) => `${label(field)}: ${m}`))
+    .join('\n');
+}
 
 const isBrowser = () => typeof window !== 'undefined';
 
@@ -407,6 +506,24 @@ export const apiRequest = async <T>(
 
   return responseData as ApiEnvelope<T>;
 };
+
+/**
+ * Public catalog fetches that should hit Next `/api/*` so Upstash cache is used.
+ * Same JSON envelope as Laravel (`success`, `message`, `data`).
+ */
+async function fetchFromNextCache<T>(path: string): Promise<ApiEnvelope<T>> {
+  const res = await fetch(path, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  const contentType = res.headers.get('content-type');
+  const responseData = contentType?.includes('application/json') ? await res.json() : null;
+  if (!res.ok) {
+    throw new ApiError(responseData?.message ?? 'Request failed', res.status, responseData);
+  }
+  return responseData as ApiEnvelope<T>;
+}
 
 const normalizeUser = (user: any): ApiUser => {
   const stores: StoreSummary[] = Array.isArray(user?.stores)
@@ -513,6 +630,18 @@ const normalizeStoreBoost = (
   };
 };
 
+function resolveTrialEndsAt(store: BackendStore): string | null {
+  const loose = store as BackendStore & {
+    trialEndsAt?: string | null;
+    createdAt?: string | null;
+  };
+  const direct = store.trial_ends_at ?? loose.trialEndsAt ?? null;
+  if (direct) return direct;
+  const createdRaw = store.created_at ?? loose.createdAt ?? null;
+  if (!createdRaw) return null;
+  return trialEndsAtFallbackFromCreated(String(createdRaw));
+}
+
 const normalizeStore = (
   store: BackendStore,
   options: { includeActiveBoost?: boolean } = {}
@@ -562,6 +691,16 @@ const normalizeStore = (
       }
     : null;
 
+  let subscriptionAddons: Store['subscriptionAddons'];
+  const rawAddons = (store as BackendStore).subscription_addons;
+  if (rawAddons != null && typeof rawAddons === 'object' && !Array.isArray(rawAddons)) {
+    subscriptionAddons = {
+      paymentGateway: Boolean(rawAddons.payment_gateway),
+      qrCode: Boolean(rawAddons.qr_code),
+      paymentGatewayHelp: Boolean(rawAddons.payment_gateway_help),
+    };
+  }
+
   const normalizedCategory = store.category
     ? {
         id: store.category.id,
@@ -584,11 +723,16 @@ const normalizeStore = (
     store.slug ?? (store as BackendStore & { username?: string }).username ?? ''
   ).trim();
 
+  const logoRaw = store.logo;
+  const logoTrimmed =
+    typeof logoRaw === 'string' && logoRaw.trim() !== '' ? logoRaw.trim() : null;
+  const resolvedLogo = logoTrimmed ? absolutizeStorageUrl(logoTrimmed) : null;
+
   return {
     id: String(store.id),
     username: publicStorePath,
     name: formatStoreName(store.name),
-    logo: store.logo ?? fallbackLogo,
+    logo: resolvedLogo ?? fallbackLogo,
     banner: resolvedBanner,
     storeBannerImage,
     categoryBannerImage,
@@ -620,9 +764,14 @@ const normalizeStore = (
       linkedin: store.linkedin_url ?? null,
     },
     layoutType: layout,
-    createdAt: store.created_at ?? new Date().toISOString(),
+    createdAt:
+      store.created_at ??
+      (store as BackendStore & { createdAt?: string | null }).createdAt ??
+      new Date().toISOString(),
+    trialEndsAt: resolveTrialEndsAt(store),
     activeBoost,
     activeSubscription: normalizedSubscription,
+    subscriptionAddons,
     productsCount: (store as any).products_count ?? (store.products ? store.products.length : undefined),
     servicesCount: (store as any).services_count ?? undefined,
     user: store.user
@@ -854,6 +1003,9 @@ export const createStore = async (payload: CreateStorePayload) => {
     persistAuthUser(updatedUser);
   }
 
+  await purgeStoresCatalogCacheClient();
+  dispatchStoreProfileRefresh();
+
   return { store: normalizedStore, businessType: response.data.business_type };
 };
 
@@ -925,6 +1077,7 @@ export const registerUser = async (payload: RegisterPayload) => {
   setAuthToken(response.data.token);
   const enriched = await enrichUserWithMyStoresIfNeeded(normalizedUser);
   persistAuthUser(enriched);
+  await purgeUsersCatalogCacheClient();
   return { token: response.data.token, user: enriched };
 };
 
@@ -937,12 +1090,63 @@ export const fetchAuthenticatedUser = async (): Promise<ApiUser> => {
   return enrichUserWithMyStoresIfNeeded(normalized);
 };
 
+/** Payload from GET `/api/stores*` is already a client `Store` (camelCase); Laravel rows are snake_case `BackendStore`. */
+function isNextCachedStorePayload(value: unknown): value is Store {
+  if (!value || typeof value !== 'object') return false;
+  const o = value as Record<string, unknown>;
+  return typeof o.id === 'string' && typeof o.username === 'string' && typeof o.layoutType === 'string';
+}
+
+function adaptStoreListEntry(row: unknown): Store {
+  if (isNextCachedStorePayload(row)) return row;
+  return normalizeStore(row as BackendStore);
+}
+
 export const getStoreBySlug = async (slug: string): Promise<Store> => {
-  const response = await apiRequest<BackendStore>(`/store/${slug}`, {
+  const prefetchBase = typeof window !== 'undefined' ? getApiRequestBaseUrl() : API_BASE_URL;
+  await prefetchFreeTrialDays(prefetchBase, { force: true });
+
+  const path = `/api/stores/${encodeURIComponent(slug.trim())}`;
+  const response = await fetchFromNextCache<Store | BackendStore>(path);
+  const data = response.data as unknown;
+  const store: Store = isNextCachedStorePayload(data)
+    ? data
+    : normalizeStore(data as BackendStore);
+  return ensureStoreTrialEndsAt(store);
+};
+
+/**
+ * Single-store payload directly from Laravel (`GET /store/:slug`), not from Next `/api/stores/*` Redis cache.
+ * Use in dashboard shell after fields like `subscription_addons` change without a route navigation.
+ */
+export const getStoreBySlugFromApi = async (slug: string): Promise<Store> => {
+  const key = slug.trim();
+  const prefetchBase = typeof window !== 'undefined' ? getApiRequestBaseUrl() : API_BASE_URL;
+  await prefetchFreeTrialDays(prefetchBase, { force: true });
+
+  const base = getApiRequestBaseUrl().replace(/\/+$/, '');
+  const res = await fetch(`${base}/store/${encodeURIComponent(key)}`, {
     method: 'GET',
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
   });
 
-  return normalizeStore(response.data);
+  if (res.status === 404) {
+    throw new ApiError('Store not found', 404);
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(`Store request failed (${res.status}): ${text.slice(0, 120)}`, res.status);
+  }
+
+  const envelope = (await res.json()) as ApiEnvelope<BackendStore>;
+  const raw = envelope?.data;
+  if (!raw || typeof raw !== 'object') {
+    throw new ApiError('Invalid store response', 502);
+  }
+
+  return ensureStoreTrialEndsAt(normalizeStore(raw as BackendStore));
 };
 
 export const searchAll = async (params: SearchAllParams) => {
@@ -1002,7 +1206,9 @@ export const updateStore = async (payload: UpdateStorePayload) => {
   console.log('Update store API response:', response.data);
   const normalizedStore = normalizeStore(response.data);
   console.log('Normalized store:', normalizedStore);
-  
+
+  await purgeStoresCatalogCacheClient();
+
   return { store: normalizedStore };
 };
 
@@ -1011,6 +1217,7 @@ export const deleteStore = async (storeId: number | string) => {
     method: 'DELETE',
     requiresAuth: true,
   });
+  await purgeStoresCatalogCacheClient();
 };
 
 export const addProduct = async (payload: AddProductPayload) => {
@@ -1019,6 +1226,8 @@ export const addProduct = async (payload: AddProductPayload) => {
     body: payload,
     requiresAuth: true,
   });
+
+  await purgeProductsCatalogCacheClient();
 
   // We don't have the store context in this response, so return minimal data.
   return {
@@ -1058,17 +1267,24 @@ export const getAllStores = async (params?: {
   if (typeof params?.radiusKm === 'number') queryParams.append('radius_km', params.radiusKm.toString());
   if (params?.include_inactive) queryParams.append('include_inactive', '1');
 
-  const url = `/stores${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-  const response = await apiRequest<BackendStore[]>(url);
+  const qs = queryParams.toString();
 
-  const raw = response.data as unknown;
-  const rows: BackendStore[] = Array.isArray(raw)
-    ? raw
-    : raw && typeof raw === 'object' && Array.isArray((raw as { data?: unknown }).data)
-      ? ((raw as { data: BackendStore[] }).data)
-      : [];
+  const path = qs ? `/api/stores?${qs}` : '/api/stores';
+  try {
+    const response = await fetchFromNextCache<BackendStore[]>(path);
 
-  return rows.map((store) => normalizeStore(store));
+    const raw = response.data as unknown;
+    const rows: unknown[] = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === 'object' && Array.isArray((raw as { data?: unknown }).data)
+        ? ((raw as { data: unknown[] }).data)
+        : [];
+
+    return rows.map(adaptStoreListEntry);
+  } catch (e) {
+    console.error('[getAllStores] /api/stores failed — check Laravel logs and NEXT_PUBLIC_API_BASE_URL', e);
+    return [];
+  }
 };
 
 export const getBoostPlans = async (): Promise<BoostPlan[]> => {
@@ -1424,16 +1640,96 @@ export const deleteSubscriptionPlan = async (planId: number | string) => {
   });
 };
 
+/** Super admin: global free-trial length for new stores (days). */
+export const getAdminFreeTrialDays = async (): Promise<number> => {
+  const response = await apiRequest<{ free_trial_days: number }>('/admin/settings/free-trial', {
+    requiresAuth: true,
+  });
+  const raw = response.data as { free_trial_days?: number };
+  const n = Number(raw?.free_trial_days);
+  const days = Number.isFinite(n) && n > 0 ? n : DEFAULT_FREE_TRIAL_DAYS;
+  setFreeTrialDaysClientCache(days);
+  return days;
+};
+
+export const updateAdminFreeTrialDays = async (freeTrialDays: number): Promise<number> => {
+  const response = await apiRequest<{ free_trial_days: number }>('/admin/settings/free-trial', {
+    method: 'PUT',
+    body: { free_trial_days: freeTrialDays },
+    requiresAuth: true,
+  });
+  const raw = response.data as { free_trial_days?: number };
+  const n = Number(raw?.free_trial_days);
+  const days = Number.isFinite(n) && n > 0 ? n : DEFAULT_FREE_TRIAL_DAYS;
+  clearFreeTrialDaysClientCache();
+  setFreeTrialDaysClientCache(days);
+  return days;
+};
+
+const clampAddonRupees = (v: unknown): number => {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(99_999_999, Math.floor(n));
+};
+
+const parseSubscriptionAddonPayload = (raw: unknown): SubscriptionAddonCharges => {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    payment_gateway_integration_inr: clampAddonRupees(o.payment_gateway_integration_inr),
+    qr_code_inr: clampAddonRupees(o.qr_code_inr),
+    payment_gateway_help_inr: clampAddonRupees(o.payment_gateway_help_inr),
+  };
+};
+
+/** Super admin: global subscription checkout add-ons (₹). */
+export const getAdminSubscriptionAddonCharges = async (): Promise<SubscriptionAddonCharges> => {
+  const response = await apiRequest<SubscriptionAddonCharges>('/admin/settings/subscription-addons', {
+    requiresAuth: true,
+  });
+  return parseSubscriptionAddonPayload(response.data);
+};
+
+export const updateAdminSubscriptionAddonCharges = async (
+  charges: SubscriptionAddonCharges
+): Promise<SubscriptionAddonCharges> => {
+  const response = await apiRequest<SubscriptionAddonCharges>('/admin/settings/subscription-addons', {
+    method: 'PUT',
+    body: {
+      payment_gateway_integration_inr: clampAddonRupees(charges.payment_gateway_integration_inr),
+      qr_code_inr: clampAddonRupees(charges.qr_code_inr),
+      payment_gateway_help_inr: clampAddonRupees(charges.payment_gateway_help_inr),
+    },
+    requiresAuth: true,
+  });
+  return parseSubscriptionAddonPayload(response.data);
+};
+
+/** Authenticated store owner: read global subscription add-on prices (same keys as admin). */
+export const getSubscriptionAddonPrices = async (): Promise<SubscriptionAddonCharges> => {
+  const response = await apiRequest<SubscriptionAddonCharges>('/subscription-plans/addon-prices', {
+    requiresAuth: true,
+  });
+  return parseSubscriptionAddonPayload(response.data);
+};
+
 export const getStoreSubscription = async (storeId: number | string) => {
-  const response = await apiRequest<{ activeSubscription: any | null }>(`/stores/${storeId}/subscription`, {
+  const response = await apiRequest<Record<string, unknown>>(`/stores/${storeId}/subscription`, {
     requiresAuth: true,
   });
 
-  if (!response.data.activeSubscription) {
+  const payload = response.data as Record<string, unknown>;
+  const rawSub = payload?.activeSubscription ?? payload?.active_subscription;
+
+  if (!rawSub || typeof rawSub !== 'object') {
     return { activeSubscription: null };
   }
 
-  const sub = response.data.activeSubscription;
+  const sub = rawSub as Record<string, any>;
+  const plan = sub.plan;
+  if (!plan || typeof plan !== 'object') {
+    return { activeSubscription: null };
+  }
+
   return {
     activeSubscription: {
       id: String(sub.id),
@@ -1446,17 +1742,17 @@ export const getStoreSubscription = async (storeId: number | string) => {
       autoRenew: Boolean(sub.auto_renew),
       activatedBy: sub.activated_by ? String(sub.activated_by) : undefined,
       plan: {
-        id: String(sub.plan.id),
-        name: sub.plan.name,
-        slug: sub.plan.slug,
-        price: Number(sub.plan.price),
-        billingCycle: sub.plan.billing_cycle,
-        durationDays: sub.plan.duration_days ? Number(sub.plan.duration_days) : undefined,
-        maxProducts: Number(sub.plan.max_products),
-        isPopular: Boolean(sub.plan.is_popular),
-        isActive: Boolean(sub.plan.is_active),
-        features: Array.isArray(sub.plan.features) ? sub.plan.features : [],
-        description: sub.plan.description || '',
+        id: String(plan.id),
+        name: plan.name,
+        slug: plan.slug,
+        price: Number(plan.price),
+        billingCycle: plan.billing_cycle,
+        durationDays: plan.duration_days ? Number(plan.duration_days) : undefined,
+        maxProducts: Number(plan.max_products),
+        isPopular: Boolean(plan.is_popular),
+        isActive: Boolean(plan.is_active),
+        features: Array.isArray(plan.features) ? plan.features : [],
+        description: plan.description || '',
       },
     },
   };
@@ -1464,13 +1760,24 @@ export const getStoreSubscription = async (storeId: number | string) => {
 
 export const activateStoreSubscription = async (
   storeId: number | string,
-  payload: { planId: number | string; startsAt?: string }
+  payload: {
+    planId: number | string;
+    startsAt?: string;
+    addons?: StoreSubscriptionAddons;
+  }
 ): Promise<StoreSubscription> => {
   const response = await apiRequest<any>(`/stores/${storeId}/subscription`, {
     method: 'POST',
     body: {
       plan_id: payload.planId,
       ...(payload.startsAt ? { starts_at: payload.startsAt } : {}),
+      ...(payload.addons !== undefined
+        ? {
+            addon_payment_gateway: Boolean(payload.addons.paymentGateway),
+            addon_qr_code: Boolean(payload.addons.qrCode),
+            addon_payment_gateway_help: Boolean(payload.addons.paymentGatewayHelp),
+          }
+        : {}),
     },
     requiresAuth: true,
   });
@@ -1498,6 +1805,67 @@ export const activateStoreSubscription = async (
       features: Array.isArray(sub.plan.features) ? sub.plan.features : [],
       description: sub.plan.description || '',
     },
+  };
+};
+
+/** Save subscription add-on toggles (e.g. paid checkout intent). Requires migrated `stores.subscription_addons`. */
+const normalizeStorePaymentIntegration = (raw: unknown): StorePaymentIntegrationSettings => {
+  const o = raw as Record<string, unknown> | null | undefined;
+  const a = (o?.subscription_addons ?? {}) as Record<string, unknown>;
+  return {
+    subscriptionAddons: {
+      paymentGateway: Boolean(a.payment_gateway),
+      qrCode: Boolean(a.qr_code),
+      paymentGatewayHelp: Boolean(a.payment_gateway_help),
+    },
+    razorpayKeyId: o?.razorpay_key_id != null && o.razorpay_key_id !== '' ? String(o.razorpay_key_id) : null,
+    hasRazorpaySecret: Boolean(o?.has_razorpay_secret),
+    paymentQrUrl: o?.payment_qr_url != null && o.payment_qr_url !== '' ? String(o.payment_qr_url) : null,
+    helpWhatsappE164: String(o?.help_whatsapp_e164 ?? ''),
+    helpWhatsappUrl: String(o?.help_whatsapp_url ?? ''),
+  };
+};
+
+export const getStorePaymentIntegration = async (
+  storeId: number | string
+): Promise<StorePaymentIntegrationSettings> => {
+  const response = await apiRequest(`/stores/${storeId}/payment-integration`, { requiresAuth: true });
+  return normalizeStorePaymentIntegration(response.data);
+};
+
+export const updateStorePaymentIntegration = async (
+  storeId: number | string,
+  form: FormData
+): Promise<StorePaymentIntegrationSettings> => {
+  const response = await apiRequest(`/stores/${storeId}/payment-integration`, {
+    method: 'POST',
+    body: form,
+    requiresAuth: true,
+  });
+  return normalizeStorePaymentIntegration(response.data);
+};
+
+export const saveStoreSubscriptionAddons = async (
+  storeId: number | string,
+  addons: StoreSubscriptionAddons
+): Promise<StoreSubscriptionAddons> => {
+  const response = await apiRequest<{ subscription_addons: Record<string, boolean> }>(
+    `/stores/${storeId}/subscription/addons`,
+    {
+      method: 'POST',
+      body: {
+        addon_payment_gateway: addons.paymentGateway,
+        addon_qr_code: addons.qrCode,
+        addon_payment_gateway_help: addons.paymentGatewayHelp,
+      },
+      requiresAuth: true,
+    }
+  );
+  const raw = response.data?.subscription_addons ?? {};
+  return {
+    paymentGateway: Boolean(raw.payment_gateway),
+    qrCode: Boolean(raw.qr_code),
+    paymentGatewayHelp: Boolean(raw.payment_gateway_help),
   };
 };
 

@@ -4,7 +4,14 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/src/context/AuthContext';
-import { ApiError, createStore, getCategories, isApiError, type Category } from '@/src/lib/api';
+import {
+  createStore,
+  formatValidationErrorsForDisplay,
+  getCategories,
+  isApiError,
+  parseApiValidationErrors,
+  type Category,
+} from '@/src/lib/api';
 import { lookupPinCode } from '@/src/lib/location';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 
@@ -221,15 +228,13 @@ export default function CreateStorePage() {
           return;
         }
 
-        if (error.status === 422 && error.payload && typeof error.payload === 'object') {
-          const payload = error.payload as ApiError['payload'];
-          const validationErrors = (payload as Record<string, any>)?.data as Record<string, string[]> | undefined;
-          if (validationErrors) {
-            setFieldErrors(validationErrors);
-          }
+        const validationErrors = parseApiValidationErrors(error.payload);
+        if (validationErrors) {
+          setFieldErrors(validationErrors);
+          setErrorMessage(formatValidationErrorsForDisplay(validationErrors, 'store'));
+        } else {
+          setErrorMessage(error.message || 'Unable to create store.');
         }
-
-        setErrorMessage(error.message || 'Unable to create store.');
       } else {
         setErrorMessage('Something went wrong. Please try again.');
       }
@@ -248,7 +253,7 @@ export default function CreateStorePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 pt-6 pb-[calc(68px+env(safe-area-inset-bottom,0px)+1.5rem)] md:pb-8">
+    <div className="min-h-screen bg-gray-50 px-4 pt-6 pb-0 md:pb-8">
       <div className="w-full max-w-md mx-auto space-y-6">
         <button
           type="button"
@@ -476,7 +481,21 @@ export default function CreateStorePage() {
             {fieldErrors.description && <p className="text-sm text-red-600">{fieldErrors.description[0]}</p>}
           </div>
 
-          {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+          {fieldErrors.location && (
+            <p className="text-sm text-red-600">
+              <span className="font-medium">Location: </span>
+              {fieldErrors.location[0]}
+            </p>
+          )}
+
+          {errorMessage && (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 whitespace-pre-line"
+            >
+              {errorMessage}
+            </div>
+          )}
 
           <button
             type="submit"

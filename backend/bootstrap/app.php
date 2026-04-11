@@ -36,19 +36,29 @@ return Application::configure(basePath: dirname(__DIR__))
             if (! $origin) {
                 return $response;
             }
-            if (in_array($origin, config('cors.allowed_origins', []), true)) {
-                $response->headers->set('Access-Control-Allow-Origin', $origin);
+            $vary = static function (Response $r) use ($origin, $request): void {
+                $r->headers->set('Access-Control-Allow-Origin', $origin);
                 if (config('cors.supports_credentials')) {
-                    $response->headers->set('Access-Control-Allow-Credentials', 'true');
+                    $r->headers->set('Access-Control-Allow-Credentials', 'true');
                 }
+                $h = $request->headers->get('Access-Control-Request-Headers');
+                $r->headers->set(
+                    'Access-Control-Allow-Headers',
+                    $h ?: 'Content-Type, Authorization, Accept, X-Requested-With, X-XSRF-TOKEN',
+                );
+                $r->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+                $r->headers->set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
+            };
+
+            if (in_array($origin, config('cors.allowed_origins', []), true)) {
+                $vary($response);
+
                 return $response;
             }
             foreach (config('cors.allowed_origins_patterns', []) as $pattern) {
                 if (is_string($pattern) && @preg_match($pattern, $origin)) {
-                    $response->headers->set('Access-Control-Allow-Origin', $origin);
-                    if (config('cors.supports_credentials')) {
-                        $response->headers->set('Access-Control-Allow-Credentials', 'true');
-                    }
+                    $vary($response);
+
                     return $response;
                 }
             }

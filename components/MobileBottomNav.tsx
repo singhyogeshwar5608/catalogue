@@ -21,9 +21,11 @@ import {
   LogOut,
   ChevronRight,
   CircleHelp,
+  Plug2,
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { getStoreBySlug } from '@/src/lib/api';
+import { getStoreBySlugFromApi } from '@/src/lib/api';
+import { STORE_PROFILE_REFRESH_EVENT, storeHasSubscriptionAddonAccess } from '@/src/lib/storeSubscriptionAddons';
 
 type NavItem = {
   key: string;
@@ -283,6 +285,7 @@ export default function MobileBottomNav() {
   const [appOrigin, setAppOrigin] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [storeBusinessType, setStoreBusinessType] = useState<'product' | 'service' | 'hybrid' | null>(null);
+  const [paymentsHubEligible, setPaymentsHubEligible] = useState(false);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -373,7 +376,7 @@ export default function MobileBottomNav() {
 
     (async () => {
       try {
-        const store = await getStoreBySlug(derivedStoreSlug);
+        const store = await getStoreBySlugFromApi(derivedStoreSlug);
         if (!isMounted) return;
         const type = store?.businessType;
         if (type === 'product' || type === 'service' || type === 'hybrid') {
@@ -381,14 +384,45 @@ export default function MobileBottomNav() {
         } else {
           setStoreBusinessType(null);
         }
+        setPaymentsHubEligible(storeHasSubscriptionAddonAccess(store));
       } catch (error) {
         if (!isMounted) return;
         setStoreBusinessType(null);
+        setPaymentsHubEligible(false);
       }
     })();
 
     return () => {
       isMounted = false;
+    };
+  }, [derivedStoreSlug, pathname]);
+
+  useEffect(() => {
+    if (!derivedStoreSlug) return undefined;
+    let isMounted = true;
+    const onRefresh = () => {
+      void (async () => {
+        try {
+          const store = await getStoreBySlugFromApi(derivedStoreSlug);
+          if (!isMounted) return;
+          const type = store?.businessType;
+          if (type === 'product' || type === 'service' || type === 'hybrid') {
+            setStoreBusinessType(type);
+          } else {
+            setStoreBusinessType(null);
+          }
+          setPaymentsHubEligible(storeHasSubscriptionAddonAccess(store));
+        } catch {
+          if (!isMounted) return;
+          setStoreBusinessType(null);
+          setPaymentsHubEligible(false);
+        }
+      })();
+    };
+    window.addEventListener(STORE_PROFILE_REFRESH_EVENT, onRefresh);
+    return () => {
+      isMounted = false;
+      window.removeEventListener(STORE_PROFILE_REFRESH_EVENT, onRefresh);
     };
   }, [derivedStoreSlug]);
 
@@ -553,17 +587,22 @@ export default function MobileBottomNav() {
     return items;
   }, [addCtaHref, addCtaLabel, derivedStoreSlug, isStorePage, onAllStoresPage, onHomePage, onDashboardPage, onPrimaryAddPage, ownerStoreView, pathname]);
 
-  const drawerItems = useMemo<DrawerItem[]>(
-    () => [
+  const drawerItems = useMemo<DrawerItem[]>(() => {
+    const items: DrawerItem[] = [
       { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { href: '/dashboard/products', icon: Package, label: 'My Products' },
       { href: '/dashboard/subscription', icon: CreditCard, label: 'Subscription' },
+    ];
+    if (paymentsHubEligible) {
+      items.push({ href: '/dashboard/payment-integration', icon: Plug2, label: 'Payment settings' });
+    }
+    items.push(
       { icon: QrCode, label: 'QR Code', action: () => setQrModalOpen(true) },
       { href: '/dashboard/settings', icon: Settings, label: 'Settings' },
-      { icon: LogOut, label: 'Logout', action: handleLogout },
-    ],
-    [handleLogout]
-  );
+      { icon: LogOut, label: 'Logout', action: handleLogout }
+    );
+    return items;
+  }, [handleLogout, paymentsHubEligible]);
 
   const publicDrawerItems = useMemo<DrawerItem[]>(
     () => [

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\NextCatalogCacheInvalidate;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -40,6 +41,8 @@ class AuthController extends Controller
 
         $user->loadMissing('stores');
         $token = JWTAuth::fromUser($user);
+
+        NextCatalogCacheInvalidate::users();
 
         return $this->successResponse('Registration successful.', [
             'token' => $token,
@@ -161,6 +164,8 @@ class AuthController extends Controller
 
         $user->loadMissing('stores');
         $token = JWTAuth::fromUser($user);
+
+        NextCatalogCacheInvalidate::users();
 
         return $this->redirectWithToken($token, $redirectPath);
     }

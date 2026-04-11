@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import {
   ShoppingCart,
   Star,
@@ -23,6 +24,7 @@ import type { Product, Store, Review, RatingSummary, ReviewPagination } from '@/
 import { getProductById, getProductReviews, submitProductReview, isApiError } from '@/src/lib/api';
 import RatingStars from '@/components/RatingStars';
 import ReviewCard from '@/components/ReviewCard';
+import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
 import { useAuth } from '@/src/context/AuthContext';
 import { buildReviewColors, getThemeForCategory } from '@/src/lib/reviewTheme';
 
@@ -32,7 +34,7 @@ type ProductDetailPageProps = {
 
 export default function ProductDetailPage({ params }: ProductDetailPageProps) {
   const { id } = use(params);
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [store, setStore] = useState<Store | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
@@ -291,6 +293,23 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
     ? `${minOrderQuantity} ${minOrderQuantity === 1 ? 'item' : 'items'}`
     : null;
 
+  const revealParent = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.09, delayChildren: 0.04 },
+    },
+  } as const;
+
+  const revealItem = {
+    hidden: { opacity: 0, y: 22 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { type: 'spring', stiffness: 380, damping: 32 },
+    },
+  } as const;
+
   const detailCards = [
     {
       icon: Package,
@@ -315,6 +334,7 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
   ];
 
   return (
+    <PublicStorefrontAccessGate store={store} user={user}>
     <div className="min-h-screen bg-slate-50 pb-32">
       <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3 sm:px-6 lg:max-w-[80%]">
@@ -332,32 +352,72 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
         </div>
       </div>
 
-      <div className="mx-auto max-w-3xl space-y-4 px-4 pb-8 pt-4 sm:px-6 lg:max-w-[80%]">
-        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-          <section className="overflow-hidden rounded-[32px] bg-white shadow-sm ring-1 ring-slate-100">
-            <div className="relative aspect-square overflow-hidden bg-gradient-to-b from-slate-100 via-white to-slate-50">
-              <Image
-                src={product.image || galleryImages[0]}
-                alt={product.name}
-                fill
-                className="object-contain"
-                priority
-              />
+      <div className="relative mx-auto max-w-3xl px-4 pb-10 pt-2 sm:px-6 lg:max-w-[80%]">
+        <div className="pointer-events-none absolute inset-x-4 -top-8 h-72 overflow-hidden rounded-[3rem] sm:inset-x-6" aria-hidden>
+          <motion.div
+            className="absolute left-1/4 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-teal-400/25 blur-[80px]"
+            animate={{ scale: [1, 1.15, 1], opacity: [0.35, 0.55, 0.35] }}
+            transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="absolute right-0 top-12 h-56 w-56 rounded-full bg-indigo-400/20 blur-[72px]"
+            animate={{ scale: [1.1, 1, 1.1], opacity: [0.25, 0.45, 0.25] }}
+            transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        </div>
+
+        <motion.div
+          className="relative z-10 space-y-6"
+          variants={revealParent}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.08 }}
+        >
+        <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+          <motion.section
+            variants={revealItem}
+            className="group relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/90 shadow-[0_28px_80px_-28px_rgba(15,23,42,0.22)] ring-1 ring-slate-900/[0.06] backdrop-blur-sm"
+          >
+            <motion.div
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(20,184,166,0.12),transparent_55%)]"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+            />
+            <div className="relative aspect-square overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100/90">
+              <motion.div
+                className="absolute inset-0"
+                initial={{ scale: 1.06, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <Image
+                  src={product.image || galleryImages[0]}
+                  alt={product.name}
+                  fill
+                  className="object-contain transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+                  priority
+                />
+              </motion.div>
               <div className="absolute inset-x-0 top-4 flex items-start justify-between px-4">
                 <div className="flex flex-col gap-2">
-                  <span
-                    className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold shadow-sm ${
-                      product.inStock ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                  <motion.span
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 28, delay: 0.15 }}
+                    className={`inline-flex items-center rounded-full px-3 py-1.5 text-[11px] font-semibold shadow-md backdrop-blur-md ${
+                      product.inStock ? 'bg-emerald-500/90 text-white' : 'bg-amber-500/90 text-white'
                     }`}
                   >
                     {product.inStock ? 'In stock' : 'Available on request'}
-                  </span>
+                  </motion.span>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+                    <span className="rounded-full border border-white/60 bg-white/85 px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-sm backdrop-blur-md">
                       {product.category}
                     </span>
                     {store?.isVerified && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/60 bg-emerald-50/90 px-3 py-1 text-[11px] font-semibold text-emerald-800 shadow-sm backdrop-blur-md">
                         <ShieldCheck className="h-3.5 w-3.5" />
                         Verified store
                       </span>
@@ -365,16 +425,25 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                   </div>
                 </div>
                 {discount > 0 && (
-                  <span className="rounded-full bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-700 shadow-sm">
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 22, delay: 0.2 }}
+                    className="rounded-full bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-lg"
+                  >
                     Save {discount}%
-                  </span>
+                  </motion.span>
                 )}
               </div>
             </div>
-          </section>
+          </motion.section>
 
-          <section className="rounded-[32px] bg-white p-5 shadow-sm ring-1 ring-slate-100 lg:h-full">
-          <div className="mt-3 space-y-3">
+          <motion.section
+            variants={revealItem}
+            className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/95 p-5 shadow-[0_28px_80px_-32px_rgba(15,23,42,0.2)] ring-1 ring-slate-900/[0.05] backdrop-blur-md sm:p-6 lg:h-full"
+          >
+            <div className="pointer-events-none absolute -right-16 top-0 h-40 w-40 rounded-full bg-primary/5 blur-3xl" aria-hidden />
+          <div className="relative mt-1 space-y-4">
             {hasMinimumOrderRequirement && minimumOrderLabel && (
               <div className="relative overflow-hidden rounded-full bg-emerald-500/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-700 ring-1 ring-emerald-200">
                 <span className="absolute inset-0 animate-[pulse_2s_infinite] bg-gradient-to-r from-transparent via-white/25 to-transparent" aria-hidden="true" />
@@ -389,32 +458,34 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                 </span>
               </div>
             )}
-            <h1 className="text-[30px] font-bold leading-none text-slate-900 sm:text-3xl">{product.name}</h1>
+            <h1 className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-600 bg-clip-text text-[clamp(1.65rem,4vw,2rem)] font-bold leading-tight tracking-tight text-transparent sm:text-[2.1rem]">
+              {product.name}
+            </h1>
 
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-              <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5">
-                <StoreIcon className="h-4 w-4 text-slate-400" />
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50/80 px-3 py-1.5 shadow-sm transition-colors hover:border-primary/30 hover:bg-white">
+                <StoreIcon className="h-4 w-4 text-primary/70" />
                 {store ? (
-                  <Link href={`/store/${store.username}`} className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-primary">
+                  <Link href={`/store/${store.username}`} className="inline-flex items-center gap-1 font-medium text-slate-800 transition hover:text-primary">
                     {store.name}
-                    <ArrowUpRight className="h-3.5 w-3.5" />
+                    <ArrowUpRight className="h-3.5 w-3.5 opacity-70" />
                   </Link>
                 ) : (
                   <span className="font-medium text-slate-700">{product.storeName}</span>
                 )}
               </div>
 
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50/80 px-3 py-1.5 shadow-sm">
                 <div className="flex items-center">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <Star
                       key={star}
-                      className={`h-4 w-4 ${star <= Math.round(aggregateRating) ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'}`}
+                      className={`h-4 w-4 transition-transform hover:scale-110 ${star <= Math.round(aggregateRating) ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'}`}
                     />
                   ))}
                 </div>
                 <span className="font-semibold text-slate-900">{aggregateRating.toFixed(1)}</span>
-                <a href="#reviews" className="font-medium text-primary underline-offset-4 hover:underline">
+                <a href="#reviews" className="font-medium text-primary underline-offset-4 transition hover:underline">
                   {(reviewSummary?.totalReviews ?? product.totalReviews).toLocaleString()} reviews
                 </a>
               </div>
@@ -423,7 +494,15 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
             <div className="grid grid-cols-[minmax(0,1fr)_130px] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-4xl font-bold leading-none text-slate-900">₹{selectedPurchaseOption ? selectedPurchaseOption.price.toFixed(0) : product.price.toFixed(0)}</span>
+                  <motion.span
+                    key={selectedPurchaseOption?.price ?? product.price}
+                    initial={{ opacity: 0.5, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                    className="text-4xl font-bold leading-none tracking-tight text-slate-900"
+                  >
+                    ₹{selectedPurchaseOption ? selectedPurchaseOption.price.toFixed(0) : product.price.toFixed(0)}
+                  </motion.span>
                   {product.originalPrice && activePurchaseId === 'single' && (
                     <span className="text-base text-slate-400 line-through">₹{product.originalPrice.toFixed(0)}</span>
                   )}
@@ -433,61 +512,97 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                 </p>
               </div>
 
-              <div className="rounded-[22px] bg-gradient-to-br from-slate-50 to-slate-100 px-3 py-3 text-center ring-1 ring-slate-200">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400">Seller type</p>
+              <motion.div
+                whileHover={{ scale: 1.02, y: -2 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                className="rounded-2xl bg-gradient-to-br from-teal-50 via-white to-slate-50 px-3 py-3 text-center shadow-inner ring-1 ring-teal-100/80"
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-teal-600/80">Seller type</p>
                 <p className="mt-1.5 text-[15px] font-semibold leading-5 text-slate-900">
                   {store?.isVerified ? 'Trusted & verified' : 'Direct store listing'}
                 </p>
-              </div>
+              </motion.div>
             </div>
           </div>
 
           {product.wholesaleEnabled && product.wholesalePrice && (
-            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-[11px] font-semibold text-primary">
+            <motion.div
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-gradient-to-r from-primary/10 to-teal-500/10 px-4 py-2 text-[11px] font-semibold text-primary shadow-sm"
+            >
               <Package className="h-3.5 w-3.5" />
               Wholesale pricing available
-            </div>
+            </motion.div>
           )}
 
-          <div className="mt-5 rounded-3xl bg-slate-50 p-4">
-            <h2 className="text-sm font-semibold text-slate-900">Description</h2>
+          <div className="mt-5 rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50/90 to-white/80 p-4 shadow-inner">
+            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Description</h2>
             <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-600">{productDescription}</p>
           </div>
-          </section>
+          </motion.section>
         </div>
 
-        <section className="grid grid-cols-3 gap-3">
-          {trustHighlights.map((item) => (
-            <div
+        <motion.section
+          variants={revealItem}
+          className="grid grid-cols-3 gap-2 sm:gap-3"
+        >
+          {trustHighlights.map((item, i) => (
+            <motion.div
               key={item.title}
-              className="rounded-[28px] bg-slate-950 p-4 text-center shadow-[0_20px_40px_rgba(15,23,42,0.18)] ring-1 ring-slate-800"
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.08, type: 'spring', stiffness: 380, damping: 28 }}
+              whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 18 } }}
+              className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-3 text-center shadow-[0_20px_50px_-18px_rgba(15,23,42,0.45)] ring-1 ring-white/5 sm:rounded-[1.75rem] sm:p-4"
             >
-              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-primary">
-                <item.icon className="h-5 w-5" />
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-tr from-teal-500/10 via-transparent to-indigo-500/10"
+                animate={{ opacity: [0.5, 0.85, 0.5] }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
+              />
+              <div className="relative mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-teal-300 shadow-inner ring-1 ring-white/10 sm:h-11 sm:w-11 sm:rounded-2xl">
+                <item.icon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
-              <p className="mt-3 text-xs font-semibold text-white sm:text-sm">{item.title}</p>
-              <p className="mt-1 text-[11px] leading-5 text-slate-300 sm:text-xs">{item.copy}</p>
-            </div>
+              <p className="relative mt-2 text-[11px] font-semibold text-white sm:mt-3 sm:text-sm">{item.title}</p>
+              <p className="relative mt-1 text-[10px] leading-snug text-slate-300 sm:text-xs sm:leading-5">{item.copy}</p>
+            </motion.div>
           ))}
-        </section>
+        </motion.section>
 
-        <section className="rounded-[32px] bg-white p-5 shadow-sm ring-1 ring-slate-100">
-          <div className="flex items-center justify-between gap-3">
+        <motion.section
+          variants={revealItem}
+          className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/95 p-5 shadow-[0_28px_80px_-32px_rgba(15,23,42,0.18)] ring-1 ring-slate-900/[0.04] backdrop-blur-md sm:p-6"
+        >
+          <div className="pointer-events-none absolute right-0 top-0 h-32 w-32 rounded-full bg-primary/5 blur-2xl" aria-hidden />
+          <div className="relative flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Choose an order option</h2>
+              <h2 className="text-lg font-bold tracking-tight text-slate-900">Choose an order option</h2>
               <p className="mt-1 text-sm text-slate-500">Select the quantity or buying mode that fits your order.</p>
             </div>
-            <Package className="h-5 w-5 text-primary" />
+            <motion.div animate={{ rotate: [0, -8, 8, 0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}>
+              <Package className="h-6 w-6 text-primary" />
+            </motion.div>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="relative mt-4 space-y-3">
             {purchaseOptions.map((option) => (
               <label
                 key={option.id}
-                className={`flex cursor-pointer items-start justify-between gap-3 rounded-3xl border p-4 transition ${
-                  activePurchaseId === option.id ? 'border-primary bg-primary/5 shadow-sm' : 'border-slate-200 bg-white'
+                className={`group/opt relative flex cursor-pointer items-start justify-between gap-3 overflow-hidden rounded-2xl border p-4 transition-all duration-300 ${
+                  activePurchaseId === option.id
+                    ? 'border-primary/50 bg-gradient-to-br from-primary/[0.08] to-teal-500/[0.06] shadow-[0_12px_40px_-16px_rgba(13,148,136,0.35)] ring-2 ring-primary/20'
+                    : 'border-slate-200/90 bg-white/80 hover:border-slate-300 hover:shadow-md'
                 }`}
               >
+                {activePurchaseId === option.id && (
+                  <motion.span
+                    layoutId="orderOptionGlow"
+                    className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-r from-primary/5 via-transparent to-teal-400/5"
+                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                  />
+                )}
                 <input
                   type="radio"
                   name="orderOption"
@@ -496,9 +611,11 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                   onChange={() => setSelectedPackage(option.id)}
                   className="sr-only"
                 />
-                <div className="flex items-start gap-3">
-                  <div className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${activePurchaseId === option.id ? 'border-primary' : 'border-slate-300'}`}>
-                    {activePurchaseId === option.id && <div className="h-2.5 w-2.5 rounded-full bg-primary" />}
+                <div className="relative flex items-start gap-3">
+                  <div className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${activePurchaseId === option.id ? 'border-primary bg-primary/10' : 'border-slate-300 group-hover/opt:border-slate-400'}`}>
+                    {activePurchaseId === option.id && (
+                      <motion.div layoutId="orderOptionDot" className="h-2.5 w-2.5 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 500, damping: 28 }} />
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{option.title}</p>
@@ -509,38 +626,51 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                     </div>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="relative text-right">
                   <p className="text-lg font-bold text-slate-900">₹{option.price.toFixed(0)}</p>
                 </div>
               </label>
             ))}
           </div>
-        </section>
+        </motion.section>
 
-        <section className="grid grid-cols-2 gap-3">
-          {detailCards.map((item) => (
-            <div
+        <motion.section variants={revealItem} className="grid grid-cols-2 gap-2 sm:gap-3">
+          {detailCards.map((item, i) => (
+            <motion.div
               key={item.title}
-              className="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.22)] ring-1 ring-slate-800"
+              initial={{ opacity: 0, scale: 0.96 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.06, type: 'spring', stiffness: 360, damping: 26 }}
+              whileHover={{ scale: 1.02, y: -3 }}
+              className="rounded-2xl border border-white/5 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-4 shadow-[0_24px_50px_-20px_rgba(15,23,42,0.35)] ring-1 ring-slate-700/50 sm:rounded-[1.75rem]"
             >
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-primary">
-                <item.icon className="h-5 w-5" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-white/15 to-white/5 text-teal-300 ring-1 ring-white/10 sm:h-11 sm:w-11 sm:rounded-2xl">
+                <item.icon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
               <p className="mt-3 text-sm font-semibold text-white">{item.title}</p>
               <p className="mt-1 text-xs leading-6 text-slate-300">{item.value}</p>
-            </div>
+            </motion.div>
           ))}
-        </section>
+        </motion.section>
 
         {store && (
-          <section className="rounded-[32px] bg-white p-5 shadow-sm ring-1 ring-slate-100">
-            <div className="flex items-start gap-4">
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
+          <motion.section
+            variants={revealItem}
+            className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/95 p-5 shadow-[0_28px_80px_-32px_rgba(15,23,42,0.18)] ring-1 ring-slate-900/[0.04] backdrop-blur-md sm:p-6"
+          >
+            <div className="absolute -left-20 bottom-0 h-40 w-40 rounded-full bg-primary/5 blur-3xl" aria-hidden />
+            <div className="relative flex items-start gap-4">
+              <motion.div
+                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100 ring-2 ring-white shadow-lg"
+                whileHover={{ scale: 1.05 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              >
                 <Image src={store.logo} alt={store.name} fill className="object-cover" />
-              </div>
+              </motion.div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-semibold text-slate-900">{store.name}</h2>
+                  <h2 className="text-lg font-bold tracking-tight text-slate-900">{store.name}</h2>
                   {store.isVerified && <ShieldCheck className="h-4 w-4 text-primary" />}
                 </div>
                 <p className="mt-1 text-sm text-slate-500">{store.location}</p>
@@ -550,49 +680,53 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Store rating</p>
+            <div className="relative mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/90 p-4 shadow-sm transition hover:border-primary/20 hover:shadow-md">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Store rating</p>
                 <p className="mt-2 text-lg font-semibold text-slate-900">{store.rating.toFixed(1)} / 5</p>
               </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Reviews</p>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/90 p-4 shadow-sm transition hover:border-primary/20 hover:shadow-md">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Reviews</p>
                 <p className="mt-2 text-lg font-semibold text-slate-900">{store.totalReviews}+ buyers</p>
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Link
-                href={`/store/${store.username}`}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-              >
-                Visit store
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
-              {sellerPhone && (
-                <a
-                  href={`${whatsappLink}?text=Hi%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(15,118,110,0.25)]"
+            <div className="relative mt-4 flex flex-wrap gap-3">
+              <motion.div className="flex min-w-[10rem] flex-1" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Link
+                  href={`/store/${store.username}`}
+                  className="inline-flex w-full flex-1 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:border-slate-300 hover:shadow-md"
                 >
-                  <MessageCircle className="h-4 w-4" />
-                  Chat with seller
-                </a>
+                  Visit store
+                  <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              </motion.div>
+              {sellerPhone && (
+                <motion.div className="flex min-w-[10rem] flex-1" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <a
+                    href={`${whatsappLink}?text=Hi%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full flex-1 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-teal-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_-12px_rgba(13,148,136,0.55)] transition hover:brightness-110"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Chat with seller
+                  </a>
+                </motion.div>
               )}
             </div>
-          </section>
+          </motion.section>
         )}
 
         {relatedProducts.length > 0 && (
-          <section className="rounded-[32px] bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <motion.section variants={revealItem} className="rounded-[2rem] border border-white/70 bg-white/95 p-5 shadow-[0_28px_80px_-32px_rgba(15,23,42,0.15)] ring-1 ring-slate-900/[0.04] backdrop-blur-md sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">More from this category</p>
-                <h2 className="mt-1 text-lg font-semibold text-slate-900">Related products</h2>
+                <p className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">More from this category</p>
+                <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900">Related products</h2>
               </div>
               {store && (
-                <Link href={`/store/${store.username}`} className="text-sm font-semibold text-primary">
+                <Link href={`/store/${store.username}`} className="text-sm font-semibold text-primary transition hover:underline">
                   Explore store
                 </Link>
               )}
@@ -600,17 +734,20 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               {relatedProducts.map((item) => (
-                <Link key={item.id} href={`/product/${item.id}`} className="rounded-[24px] border border-slate-200 p-3 transition hover:shadow-md">
-                  <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
-                    <Image src={item.image} alt={item.name} fill className="object-cover" />
-                  </div>
-                  <p className="mt-3 line-clamp-2 text-sm font-semibold text-slate-900">{item.name}</p>
-                  <p className="mt-1 text-sm text-slate-500">₹{item.price.toFixed(0)}</p>
-                </Link>
+                <motion.div key={item.id} whileHover={{ y: -3 }} transition={{ type: 'spring', stiffness: 400, damping: 22 }}>
+                  <Link href={`/product/${item.id}`} className="block rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm transition hover:border-primary/25 hover:shadow-lg">
+                    <div className="relative aspect-square overflow-hidden rounded-xl bg-slate-100">
+                      <Image src={item.image} alt={item.name} fill className="object-cover transition duration-500 hover:scale-105" />
+                    </div>
+                    <p className="mt-3 line-clamp-2 text-sm font-semibold text-slate-900">{item.name}</p>
+                    <p className="mt-1 text-sm text-slate-500">₹{item.price.toFixed(0)}</p>
+                  </Link>
+                </motion.div>
               ))}
             </div>
-          </section>
+          </motion.section>
         )}
+        </motion.div>
       </div>
 
       {/* Reviews Section */}
@@ -800,5 +937,6 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
         </div>
       </div>
     </div>
+    </PublicStorefrontAccessGate>
   );
 }

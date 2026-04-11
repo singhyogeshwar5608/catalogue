@@ -5,8 +5,10 @@ import { notFound } from 'next/navigation';
 import { getStoreBySlug, getProductsByStore, getStoreReviews } from '@/src/lib/api';
 import { getCategoryById } from '@/data/categories';
 import StoreView from '@/components/store/StoreView';
+import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
 import type { Store, Product, Review } from '@/types';
 import { formatStoreName } from '@/src/lib/format';
+import { useAuth } from '@/src/context/AuthContext';
 
 type ParamsPromise = Promise<{ username: string }>;
 
@@ -38,6 +40,7 @@ const getCategoryAssets = (categoryId?: string) => {
 };
 
 export default function AutoCatalogPage({ params }: { params: ParamsPromise }) {
+  const { user } = useAuth();
   const [storeData, setStoreData] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -157,7 +160,9 @@ export default function AutoCatalogPage({ params }: { params: ParamsPromise }) {
 
   return (
     <div className="pb-12">
-      <StoreView store={storeData} products={productsToDisplay} services={[]} reviews={reviewsToDisplay} />
+      <PublicStorefrontAccessGate store={storeData} user={user ?? null}>
+        <StoreView store={storeData} products={productsToDisplay} services={[]} reviews={reviewsToDisplay} />
+      </PublicStorefrontAccessGate>
     </div>
   );
 }

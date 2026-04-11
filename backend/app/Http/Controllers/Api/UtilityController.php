@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PlatformSetting;
 use Illuminate\Support\Facades\Http;
 
 class UtilityController extends Controller
@@ -26,5 +27,13 @@ class UtilityController extends Controller
                 'reason' => $e->getMessage(),
             ]);
         }
+    }
+
+    /** Public: global free-trial length (days) from `platform_settings`. */
+    public function freeTrialDays()
+    {
+        return $this->successResponse('Free trial days.', [
+            'free_trial_days' => PlatformSetting::freeTrialDays(),
+        ]);
     }
 }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Package,
@@ -15,13 +15,16 @@ import {
   Briefcase,
   LogOut,
   Home,
+  Plug2,
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { getStoreBySlug } from '@/src/lib/api';
+import { getStoreBySlugFromApi } from '@/src/lib/api';
+import { STORE_PROFILE_REFRESH_EVENT, storeHasSubscriptionAddonAccess } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
 
 export default function Sidebar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [myStore, setMyStore] = useState<Store | null>(null);
@@ -32,7 +35,7 @@ export default function Sidebar() {
       return;
     }
     try {
-      const store = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlugFromApi(user.storeSlug);
       setMyStore(store);
     } catch (error) {
       console.error('Failed to load store:', error);
@@ -42,9 +45,18 @@ export default function Sidebar() {
 
   useEffect(() => {
     loadStore();
+  }, [loadStore, pathname]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void loadStore();
+    };
+    window.addEventListener(STORE_PROFILE_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(STORE_PROFILE_REFRESH_EVENT, onRefresh);
   }, [loadStore]);
 
   const businessType = myStore?.businessType || 'product';
+  const showPaymentsHub = storeHasSubscriptionAddonAccess(myStore);
 
   const menuItems = [
     { href: '/', icon: Home, label: 'Home Page' },
@@ -57,6 +69,9 @@ export default function Sidebar() {
       : []),
     // { href: '/dashboard/boost', icon: Zap, label: 'Boost Store' },
     { href: '/dashboard/subscription', icon: CreditCard, label: 'Subscription' },
+    ...(showPaymentsHub
+      ? [{ href: '/dashboard/payment-integration', icon: Plug2, label: 'Payment settings' } as const]
+      : []),
     { href: '/dashboard/referral', icon: Users, label: 'Referrals' },
   ];
 

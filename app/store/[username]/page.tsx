@@ -3,8 +3,10 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import StoreView from '@/components/store/StoreView';
+import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
 import type { Store, Product, Review, Service, RatingSummary, ReviewPagination } from '@/types';
 import { getProductsByStore, getServicesByStore, getStoreBySlug, getStoreReviews, submitStoreReview, isApiError } from '@/src/lib/api';
+import { useAuth } from '@/src/context/AuthContext';
 
 interface StorePageProps {
   params: Promise<{ username: string }>;
@@ -13,6 +15,7 @@ interface StorePageProps {
 export default function StorePage({ params }: StorePageProps) {
   const { username } = use(params);
   const router = useRouter();
+  const { user } = useAuth();
   const [store, setStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -170,17 +173,19 @@ export default function StorePage({ params }: StorePageProps) {
   }
 
   return (
-    <StoreView
-      store={store}
-      products={products}
-      services={services}
-      reviews={reviews}
-      reviewSummary={reviewSummary ?? undefined}
-      reviewPagination={reviewPagination ?? undefined}
-      reviewsLoading={reviewsLoading}
-      reviewsError={reviewsError}
-      onLoadMoreReviews={handleLoadMoreReviews}
-      onSubmitStoreReview={handleSubmitStoreReview}
-    />
+    <PublicStorefrontAccessGate store={store} user={user}>
+      <StoreView
+        store={store}
+        products={products}
+        services={services}
+        reviews={reviews}
+        reviewSummary={reviewSummary ?? undefined}
+        reviewPagination={reviewPagination ?? undefined}
+        reviewsLoading={reviewsLoading}
+        reviewsError={reviewsError}
+        onLoadMoreReviews={handleLoadMoreReviews}
+        onSubmitStoreReview={handleSubmitStoreReview}
+      />
+    </PublicStorefrontAccessGate>
   );
 }

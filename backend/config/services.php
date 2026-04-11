@@ -45,4 +45,12 @@ return [
         'url' => env('IPAPI_URL', 'https://ipapi.co/json/'),
     ],
 
+    /*
+    | Optional: after mutations that affect cached Next.js catalog data, Laravel POSTs here so Redis keys
+    | are cleared (`stores:*`, `products:*`, `users:*` — see App\Support\NextCatalogCacheInvalidate).
+    | Match Next's CACHE_INVALIDATE_SECRET.
+    */
+    'next_cache_invalidate_url' => env('NEXT_CACHE_INVALIDATE_URL'),
+    'next_cache_invalidate_secret' => env('NEXT_CACHE_INVALIDATE_SECRET', env('CACHE_INVALIDATE_SECRET')),
+
 ];

@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Store;
+use App\Support\NextCatalogCacheInvalidate;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class ProductController extends Controller
@@ -46,6 +48,8 @@ class ProductController extends Controller
         }
 
         $product = $store->products()->create($validator->validated());
+
+        NextCatalogCacheInvalidate::products();
 
         return $this->successResponse('Product created successfully.', $product->fresh());
     }
@@ -90,6 +94,8 @@ class ProductController extends Controller
 
         $product->update($validator->validated());
 
+        NextCatalogCacheInvalidate::products();
+
         return $this->successResponse('Product updated successfully.', $product->fresh());
     }
 
@@ -106,6 +112,8 @@ class ProductController extends Controller
         }
 
         $product->delete();
+
+        NextCatalogCacheInvalidate::products();
 
         return $this->successResponse('Product deleted successfully.');
     }
@@ -125,7 +133,12 @@ class ProductController extends Controller
 
     public function getProductById(int $id)
     {
-        $product = Product::with('store')->find($id);
+        $storeWith = ['store.category'];
+        if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+            $storeWith[] = 'store.activeSubscription.plan';
+        }
+
+        $product = Product::with($storeWith)->find($id);
 
         if (! $product) {
             return $this->errorResponse('Product not found.', 404);

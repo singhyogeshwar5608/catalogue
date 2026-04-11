@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true}); console.log('Removed .next')\"",
-    "dev": "next dev",
-    "dev:clean": "npm run clean && next dev",
+    "dev": "next dev -p 3000",
+    "dev:clean": "npm run clean && next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@upstash/redis": "^1.37.0",
     "framer-motion": "^12.34.3",
     "lucide-react": "^0.462.0",
     "next": "^15.1.0",

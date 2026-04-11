@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { Edit, Plus, Trash2, Loader2, Check, X } from 'lucide-react';
-import { getAllSubscriptionPlans, createSubscriptionPlan, updateSubscriptionPlan, deleteSubscriptionPlan } from '@/src/lib/api';
+import {
+  getAllSubscriptionPlans,
+  createSubscriptionPlan,
+  updateSubscriptionPlan,
+  deleteSubscriptionPlan,
+  getAdminFreeTrialDays,
+  updateAdminFreeTrialDays,
+  getAdminSubscriptionAddonCharges,
+  updateAdminSubscriptionAddonCharges,
+  isApiError,
+  parseApiValidationErrors,
+} from '@/src/lib/api';
 import type { SubscriptionPlan } from '@/types';
 
 export default function AdminPlansPage() {
@@ -12,6 +23,19 @@ export default function AdminPlansPage() {
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
+  const [freeTrialDays, setFreeTrialDays] = useState<number | null>(null);
+  const [trialInput, setTrialInput] = useState<string>('');
+  const [trialLoading, setTrialLoading] = useState(true);
+  const [trialSaving, setTrialSaving] = useState(false);
+  const [trialMessage, setTrialMessage] = useState<string | null>(null);
+  const [trialError, setTrialError] = useState<string | null>(null);
+  const [addonPg, setAddonPg] = useState<string>('');
+  const [addonQr, setAddonQr] = useState<string>('');
+  const [addonHelp, setAddonHelp] = useState<string>('');
+  const [addonLoading, setAddonLoading] = useState(true);
+  const [addonSaving, setAddonSaving] = useState(false);
+  const [addonMessage, setAddonMessage] = useState<string | null>(null);
+  const [addonError, setAddonError] = useState<string | null>(null);
 
   const fetchPlans = async () => {
     try {
@@ -30,13 +54,132 @@ export default function AdminPlansPage() {
     fetchPlans();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setTrialLoading(true);
+        setTrialError(null);
+        const days = await getAdminFreeTrialDays();
+        if (!cancelled) {
+          setFreeTrialDays(days);
+          setTrialInput(String(days));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setTrialError(e instanceof Error ? e.message : 'Could not load free trial settings');
+        }
+      } finally {
+        if (!cancelled) setTrialLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setAddonLoading(true);
+        setAddonError(null);
+        const c = await getAdminSubscriptionAddonCharges();
+        if (!cancelled) {
+          setAddonPg(String(c.payment_gateway_integration_inr));
+          setAddonQr(String(c.qr_code_inr));
+          setAddonHelp(String(c.payment_gateway_help_inr));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setAddonError(e instanceof Error ? e.message : 'Could not load add-on charges');
+        }
+      } finally {
+        if (!cancelled) setAddonLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const parseNonNegativeInt = (s: string): number | null => {
+    const t = s.trim();
+    if (t === '') return null;
+    const n = parseInt(t, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 99_999_999) return null;
+    return n;
+  };
+
+  const handleSaveAddons = async () => {
+    const pg = parseNonNegativeInt(addonPg);
+    const qr = parseNonNegativeInt(addonQr);
+    const help = parseNonNegativeInt(addonHelp);
+    if (pg === null || qr === null || help === null) {
+      setAddonMessage(null);
+      setAddonError('Enter whole rupee amounts from 0 to 99,999,999 for each field.');
+      return;
+    }
+    try {
+      setAddonSaving(true);
+      setAddonError(null);
+      setAddonMessage(null);
+      const saved = await updateAdminSubscriptionAddonCharges({
+        payment_gateway_integration_inr: pg,
+        qr_code_inr: qr,
+        payment_gateway_help_inr: help,
+      });
+      setAddonPg(String(saved.payment_gateway_integration_inr));
+      setAddonQr(String(saved.qr_code_inr));
+      setAddonHelp(String(saved.payment_gateway_help_inr));
+      setAddonMessage('Saved. These amounts apply when merchants enable the matching options at checkout.');
+    } catch (e) {
+      setAddonError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setAddonSaving(false);
+    }
+  };
+
+  const handleSaveFreeTrial = async () => {
+    const parsed = parseInt(trialInput, 10);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 365) {
+      setTrialMessage(null);
+      setTrialError('Enter a whole number between 1 and 365.');
+      return;
+    }
+    try {
+      setTrialSaving(true);
+      setTrialError(null);
+      setTrialMessage(null);
+      const saved = await updateAdminFreeTrialDays(parsed);
+      setFreeTrialDays(saved);
+      setTrialInput(String(saved));
+      setTrialMessage('Saved. New stores will use this trial length.');
+    } catch (e) {
+      setTrialError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setTrialSaving(false);
+    }
+  };
+
+  const formatPlanSaveError = (err: unknown, fallback: string) => {
+    if (isApiError(err) && err.payload) {
+      const ve = parseApiValidationErrors(err.payload);
+      if (ve) {
+        const lines = Object.entries(ve).flatMap(([k, msgs]) => msgs.map((m) => `${k}: ${m}`));
+        if (lines.length) return `${fallback}\n\n${lines.join('\n')}`;
+      }
+    }
+    return err instanceof Error ? err.message : fallback;
+  };
+
   const handleCreatePlan = async (formData: any) => {
     try {
       await createSubscriptionPlan(formData);
       await fetchPlans();
       setShowCreateModal(false);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create plan');
+      alert(formatPlanSaveError(err, 'Failed to create plan'));
     }
   };
 
@@ -46,7 +189,7 @@ export default function AdminPlansPage() {
       await fetchPlans();
       setEditingPlan(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update plan');
+      alert(formatPlanSaveError(err, 'Failed to update plan'));
     }
   };
 
@@ -92,6 +235,151 @@ export default function AdminPlansPage() {
           {error}
         </div>
       )}
+
+      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <h2 className="text-lg font-semibold text-gray-900">Free trial (all new stores)</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          How many days each merchant gets before they must subscribe. Saved in the database; applies to stores created
+          after you save (existing stores keep their current trial end date).
+        </p>
+        {trialLoading ? (
+          <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading setting…
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="flex-1 max-w-xs">
+              <label htmlFor="free-trial-days" className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Trial length (days)
+              </label>
+              <input
+                id="free-trial-days"
+                type="number"
+                min={1}
+                max={365}
+                value={trialInput}
+                onChange={(e) => setTrialInput(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Current saved value: {freeTrialDays != null ? `${freeTrialDays} days` : '—'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveFreeTrial}
+              disabled={trialSaving}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {trialSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Save trial length
+            </button>
+          </div>
+        )}
+        {trialError && (
+          <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+            {trialError}
+          </p>
+        )}
+        {trialMessage && (
+          <p className="mt-3 text-sm font-medium text-emerald-700" role="status">
+            {trialMessage}
+          </p>
+        )}
+      </section>
+
+      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <h2 className="text-lg font-semibold text-gray-900">Subscription add-ons (global charges, ₹)</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Set how much extra to charge when a merchant opts for payment gateway integration, a QR code setup, or
+          company-assisted payment gateway integration. Values are stored in the database and can be used at checkout
+          when those options are toggled on.
+        </p>
+        {addonLoading ? (
+          <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading charges…
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div>
+              <label htmlFor="addon-pg" className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Payment gateway integration
+              </label>
+              <div className="mt-1.5 flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <span className="text-sm text-gray-500">₹</span>
+                <input
+                  id="addon-pg"
+                  type="number"
+                  min={0}
+                  max={99_999_999}
+                  value={addonPg}
+                  onChange={(e) => setAddonPg(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-gray-900 outline-none focus:ring-0"
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="addon-qr" className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                QR code
+              </label>
+              <div className="mt-1.5 flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <span className="text-sm text-gray-500">₹</span>
+                <input
+                  id="addon-qr"
+                  type="number"
+                  min={0}
+                  max={99_999_999}
+                  value={addonQr}
+                  onChange={(e) => setAddonQr(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-gray-900 outline-none focus:ring-0"
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="addon-help" className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Payment gateway help (by company)
+              </label>
+              <div className="mt-1.5 flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <span className="text-sm text-gray-500">₹</span>
+                <input
+                  id="addon-help"
+                  type="number"
+                  min={0}
+                  max={99_999_999}
+                  value={addonHelp}
+                  onChange={(e) => setAddonHelp(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-gray-900 outline-none focus:ring-0"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+        {!addonLoading && (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={handleSaveAddons}
+              disabled={addonSaving}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {addonSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Save add-on charges
+            </button>
+          </div>
+        )}
+        {addonError && (
+          <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+            {addonError}
+          </p>
+        )}
+        {addonMessage && (
+          <p className="mt-3 text-sm font-medium text-emerald-700" role="status">
+            {addonMessage}
+          </p>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {plans.map((plan) => (
@@ -187,7 +475,8 @@ export default function AdminPlansPage() {
 function PlanModal({ plan, onClose, onSave }: { plan: SubscriptionPlan | null; onClose: () => void; onSave: (data: any) => void }) {
   const [formData, setFormData] = useState({
     name: plan?.name || '',
-    price: plan?.price || 0,
+    price: plan != null ? String(plan.price) : '',
+    billing_cycle: plan?.billingCycle === 'yearly' ? 'yearly' : 'monthly',
     duration_days: plan?.durationDays || 30,
     max_products: plan?.maxProducts || 10,
     is_popular: plan?.isPopular || false,
@@ -199,11 +488,17 @@ function PlanModal({ plan, onClose, onSave }: { plan: SubscriptionPlan | null; o
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const priceParsed = parseInt(String(formData.price).trim(), 10);
+    if (!Number.isFinite(priceParsed) || priceParsed < 0) {
+      alert('Please enter a valid price in ₹ (0 or more).');
+      return;
+    }
     setSaving(true);
     try {
       await onSave({
         ...formData,
-        features: formData.features.split('\n').filter(f => f.trim()),
+        price: priceParsed,
+        features: formData.features.split('\n').filter((f) => f.trim()),
       });
     } finally {
       setSaving(false);
@@ -239,15 +534,30 @@ function PlanModal({ plan, onClose, onSave }: { plan: SubscriptionPlan | null; o
               <input
                 type="number"
                 value={formData.price}
-                onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 required
                 min="0"
+                placeholder="Enter amount"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Billing cycle</label>
+              <select
+                value={formData.billing_cycle}
+                onChange={(e) =>
+                  setFormData({ ...formData, billing_cycle: e.target.value as 'monthly' | 'yearly' })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
+              >
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">How this plan is billed (monthly vs yearly).</p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Duration (Days)</label>
               <input
@@ -261,17 +571,18 @@ function PlanModal({ plan, onClose, onSave }: { plan: SubscriptionPlan | null; o
                 placeholder="e.g., 7 for trial, 30 for monthly"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Max Products</label>
-              <input
-                type="number"
-                value={formData.max_products}
-                onChange={(e) => setFormData({ ...formData, max_products: Number(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                required
-                min="1"
-              />
-            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Max Products</label>
+            <input
+              type="number"
+              value={formData.max_products}
+              onChange={(e) => setFormData({ ...formData, max_products: Number(e.target.value) })}
+              className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              required
+              min="1"
+            />
           </div>
 
           <div>

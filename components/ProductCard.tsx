@@ -2,9 +2,13 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
-import { Star, ShoppingCart } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Minus, Plus, ShoppingCart, Star } from 'lucide-react';
 import { Product } from '@/types';
+
+const CARD_BG = '#0B111B';
+const ACCENT = '#FF9F29';
+const MUTED = '#8E94A0';
 
 interface ProductCardProps {
   product: Product;
@@ -12,48 +16,150 @@ interface ProductCardProps {
   openInModal?: boolean;
 }
 
+function buildGallery(product: Product): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const add = (u: string | undefined | null) => {
+    if (!u || seen.has(u)) return;
+    seen.add(u);
+    urls.push(u);
+  };
+  add(product.image);
+  (product.images ?? []).forEach(add);
+  return urls;
+}
+
 export default function ProductCard({ product, href, openInModal = true }: ProductCardProps) {
   const [showModal, setShowModal] = useState(false);
+  const [qty, setQty] = useState(1);
+  const gallery = useMemo(() => buildGallery(product), [product]);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const heroSrc = gallery[activeIndex] ?? product.image;
   const discount = product.originalPrice
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
   const displayPrice = product.price > 0 ? `₹${product.price}` : 'On request';
 
+  const maxThumbs = 3;
+  const visibleThumbs = gallery.slice(0, maxThumbs);
+  const moreCount = Math.max(0, gallery.length - maxThumbs);
+  const categoryLabel = (product.category || 'Product').toUpperCase();
+
+  const stop = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
   const cardContent = (
-    <div className="flex h-full flex-col rounded-[28px] border border-slate-200 bg-white p-3 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)]">
-      <div className="relative overflow-hidden rounded-[20px] bg-gray-100">
-        <div className="relative aspect-square">
-          <Image src={product.image} alt={product.name} fill className="object-cover transition duration-500 group-hover:scale-105" />
+    <div
+      className="flex h-full min-w-0 flex-col rounded-[16px] p-2 font-sans shadow-none sm:rounded-[20px] sm:p-3.5 md:p-4"
+      style={{ backgroundColor: CARD_BG }}
+    >
+      {/* Image area — white panel (wider aspect = shorter image vs card width) */}
+      <div className="relative overflow-hidden rounded-[12px] bg-white sm:rounded-[15px]">
+        <div className="relative aspect-[16/9] sm:aspect-[16/9] md:aspect-[2/1]">
+          <Image
+            src={heroSrc}
+            alt={product.name}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 320px"
+            className="object-contain p-1.5 transition duration-300 group-hover:scale-[1.02] sm:p-2"
+          />
         </div>
         {discount > 0 && (
-          <div className="absolute right-3 top-3 rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+          <div
+            className="absolute left-1.5 top-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white sm:left-2 sm:top-2 sm:px-2.5 sm:py-1 sm:text-[11px]"
+            style={{
+              backgroundColor: ACCENT,
+              borderRadius: '10px 4px 10px 4px',
+            }}
+          >
             {discount}% off
           </div>
         )}
         {!product.inStock && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/55">
             <span className="font-semibold text-white">Out of stock</span>
           </div>
         )}
       </div>
 
-      <div className="flex flex-1 flex-col pt-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0" />
-          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-            <span>{product.rating > 0 ? product.rating.toFixed(1) : '0.0'}</span>
+      {/* Color / image variants */}
+      {gallery.length > 1 ? (
+        <div className="mt-2 flex items-center gap-1.5 sm:mt-3 sm:gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-1.5">
+            {visibleThumbs.map((src, i) => {
+              const globalIdx = i;
+              const selected = activeIndex === globalIdx;
+              return (
+                <button
+                  key={`${src}-${i}`}
+                  type="button"
+                  onClick={(e) => {
+                    stop(e);
+                    setActiveIndex(globalIdx);
+                  }}
+                  className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md bg-white transition sm:h-9 sm:w-9"
+                  style={{
+                    boxShadow: selected ? `inset 0 0 0 2px ${ACCENT}` : 'inset 0 0 0 1px rgba(255,255,255,0.12)',
+                  }}
+                  aria-label={`Show image ${i + 1}`}
+                >
+                  <Image src={src} alt="" fill className="object-cover" sizes="(max-width: 640px) 28px, 36px" />
+                </button>
+              );
+            })}
           </div>
-        </div>
-
-        <h3 className="mt-2 line-clamp-1 text-base font-semibold text-slate-950">{product.name}</h3>
-
-        <div className="mt-2 flex flex-wrap items-end gap-x-2 gap-y-1">
-          <p className="text-[1.15rem] font-bold leading-none text-slate-950">{displayPrice}</p>
-          {product.originalPrice ? (
-            <p className="text-xs font-medium text-slate-300 line-through">₹{product.originalPrice}</p>
+          {moreCount > 0 ? (
+            <span className="shrink-0 text-xs font-semibold tabular-nums sm:text-sm" style={{ color: ACCENT }}>
+              + {moreCount}
+            </span>
           ) : null}
         </div>
+      ) : (
+        <div className="mt-2 h-1 shrink-0 sm:mt-3" aria-hidden />
+      )}
+
+      <div className="mt-1.5 flex min-h-0 flex-1 flex-col sm:mt-2">
+        <p className="text-[10px] font-medium uppercase tracking-wider sm:text-[11px]" style={{ color: MUTED }}>
+          {categoryLabel}
+        </p>
+        <h3 className="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-white sm:mt-1 sm:text-[15px]">
+          {product.name}
+        </h3>
+        <p className="mt-1 text-base font-bold tabular-nums text-white sm:mt-2 sm:text-lg">{displayPrice}</p>
+        {product.originalPrice ? (
+          <p className="text-xs font-medium tabular-nums line-through opacity-50" style={{ color: MUTED }}>
+            ₹{product.originalPrice}
+          </p>
+        ) : null}
+      </div>
+
+      {/* Quantity */}
+      <div className="mt-2 flex items-center justify-start gap-1.5 sm:mt-3 sm:gap-2 md:mt-4">
+        <button
+          type="button"
+          aria-label="Decrease quantity"
+          onClick={(e) => {
+            stop(e);
+            setQty((q) => Math.max(1, q - 1));
+          }}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white transition hover:bg-white/90 sm:h-9 sm:w-9"
+        >
+          <Minus className="h-3.5 w-3.5 text-slate-600 sm:h-4 sm:w-4" strokeWidth={2.5} />
+        </button>
+        <span className="min-w-[1.25rem] text-center text-xs font-semibold tabular-nums text-white sm:text-sm">{qty}</span>
+        <button
+          type="button"
+          aria-label="Increase quantity"
+          onClick={(e) => {
+            stop(e);
+            setQty((q) => Math.min(99, q + 1));
+          }}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white transition hover:bg-white/90 sm:h-9 sm:w-9"
+        >
+          <Plus className="h-3.5 w-3.5 text-slate-600 sm:h-4 sm:w-4" strokeWidth={2.5} />
+        </button>
       </div>
     </div>
   );
@@ -61,12 +167,15 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
   return (
     <>
       {href && !openInModal ? (
-        <Link href={href} className="group block overflow-hidden rounded-[28px] bg-transparent transition hover:shadow-xl">
+        <Link
+          href={href}
+          className="group block h-full min-w-0 w-full overflow-hidden rounded-[16px] transition hover:opacity-[0.98] sm:rounded-[20px]"
+        >
           {cardContent}
         </Link>
       ) : (
         <div
-          className="group flex cursor-pointer flex-col overflow-hidden rounded-[28px] bg-transparent transition hover:shadow-xl"
+          className="group flex h-full min-w-0 w-full cursor-pointer flex-col overflow-hidden rounded-[16px] transition hover:opacity-[0.98] sm:rounded-[20px]"
           onClick={() => setShowModal(true)}
         >
           {cardContent}
@@ -86,7 +195,7 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
               <div className="relative h-72 md:h-full">
                 <Image src={product.image} alt={product.name} fill className="object-cover" />
                 {discount > 0 && (
-                  <div className="absolute top-4 right-4 rounded-full bg-white px-3 py-1 text-xs font-semibold text-red-600">
+                  <div className="absolute right-4 top-4 rounded-full bg-white px-3 py-1 text-xs font-semibold text-red-600">
                     {discount}% off
                   </div>
                 )}

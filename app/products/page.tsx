@@ -69,14 +69,16 @@ export default function ProductsPage() {
   );
 
   return (
-    <main className="min-h-screen bg-white px-4 pt-8 pb-8 sm:px-6 sm:pt-12 sm:pb-12 lg:px-8 lg:pt-20">
+    <main className="min-h-screen bg-white px-4 pt-3 pb-8 sm:px-6 sm:pt-10 sm:pb-12 lg:px-8 lg:pt-14 lg:pb-20">
+      {/* Only when mobile quick-search panel is open — avoids permanent empty gap */}
       <div
         className="sm:hidden"
-        style={{ height: 'calc(2rem + var(--mobile-quick-search-height, 0px))' }}
+        style={{ height: 'var(--mobile-quick-search-height, 0px)' }}
         aria-hidden="true"
       />
       <div className="mx-auto max-w-7xl">
         <SectionHeader
+          compactOnMobile
           title="All Products"
           subtitle="Products and services from all stores"
           action={
@@ -94,7 +96,7 @@ export default function ProductsPage() {
             Loading products...
           </div>
         ) : items.length ? (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 min-w-0 sm:gap-3 md:grid-cols-3 md:gap-5 [&>*]:min-w-0">
             {items.map((item) => (
               <ProductCard
                 key={item.id}

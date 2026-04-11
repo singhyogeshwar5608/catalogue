@@ -4,7 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { getGoogleOAuthApiBaseUrl } from '@/src/lib/api';
+import {
+  formatValidationErrorsForDisplay,
+  getGoogleOAuthApiBaseUrl,
+  isApiError,
+  parseApiValidationErrors,
+} from '@/src/lib/api';
 import { resolvePostAuthRedirect } from '@/src/lib/auth-redirect';
 import { GoogleAuthButton } from '@/components/GoogleAuthButton';
 
@@ -123,7 +128,14 @@ export default function AuthPage() {
       await login({ email, password });
       setShouldRedirect(true);
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : 'Unable to login');
+      if (isApiError(error)) {
+        const parsed = parseApiValidationErrors(error.payload);
+        setLoginError(
+          parsed ? formatValidationErrorsForDisplay(parsed, 'auth') : error.message || 'Unable to login',
+        );
+      } else {
+        setLoginError(error instanceof Error ? error.message : 'Unable to login');
+      }
     }
   };
 
@@ -135,7 +147,16 @@ export default function AuthPage() {
       setLoginError(null);
       setShouldRedirect(true);
     } catch (error) {
-      setSignupError(error instanceof Error ? error.message : 'Unable to create account');
+      if (isApiError(error)) {
+        const parsed = parseApiValidationErrors(error.payload);
+        setSignupError(
+          parsed
+            ? formatValidationErrorsForDisplay(parsed, 'auth')
+            : error.message || 'Unable to create account',
+        );
+      } else {
+        setSignupError(error instanceof Error ? error.message : 'Unable to create account');
+      }
     }
   };
 
@@ -230,7 +251,9 @@ export default function AuthPage() {
             >
               {loading ? 'Signing in...' : 'Login'}
             </button>
-            {loginError && <p className="text-center text-[11px] text-red-500 md:text-xs">{loginError}</p>}
+            {loginError && (
+              <p className="whitespace-pre-line text-center text-[11px] text-red-500 md:text-xs">{loginError}</p>
+            )}
           </form>
         ) : (
           <form onSubmit={handleSignup} className="space-y-3.5 md:space-y-4">
@@ -304,7 +327,9 @@ export default function AuthPage() {
             >
               {loading ? 'Creating account...' : 'Create store'}
             </button>
-            {signupError && <p className="text-center text-[11px] text-red-500 md:text-xs">{signupError}</p>}
+            {signupError && (
+              <p className="whitespace-pre-line text-center text-[11px] text-red-500 md:text-xs">{signupError}</p>
+            )}
           </form>
         )}
 

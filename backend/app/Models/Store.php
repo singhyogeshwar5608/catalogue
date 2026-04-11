@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +11,27 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Store extends Model
 {
+    /**
+     * @param  mixed  $value
+     * @param  string|null  $field
+     */
+    public function resolveRouteBinding($value, $field = null)
+    {
+        if ($field !== null) {
+            return parent::resolveRouteBinding($value, $field);
+        }
+
+        if (is_numeric($value)) {
+            return parent::resolveRouteBinding($value, $field);
+        }
+
+        return static::query()
+            ->where(function ($q) use ($value) {
+                $q->where('username', $value)->orWhere('slug', $value);
+            })
+            ->firstOrFail();
+    }
+
     protected $fillable = [
         'user_id',
         'category_id',
@@ -39,6 +62,17 @@ class Store extends Model
         'is_boosted',
         'boost_expiry_date',
         'is_active',
+        'trial_ends_at',
+        'subscription_addons',
+        'payment_qr_path',
+        'razorpay_key_id',
+        'razorpay_key_secret',
+    ];
+
+    protected $hidden = [
+        'razorpay_key_secret',
+        'razorpay_key_id',
+        'payment_qr_path',
     ];
 
     protected $casts = [
@@ -51,7 +85,27 @@ class Store extends Model
         'boost_expiry_date' => 'date',
         'latitude' => 'decimal:7',
         'longitude' => 'decimal:7',
+        'subscription_addons' => 'array',
+        'razorpay_key_secret' => 'encrypted',
     ];
+
+    /**
+     * Trial end is always `created_at` plus the *current* platform `free_trial_days` setting.
+     * The `trial_ends_at` column may hold an older snapshot (e.g. 5 days at signup); reads ignore it
+     * so shortening the global trial (1 day) applies to every store and expired trials stay expired.
+     */
+    protected function trialEndsAt(): Attribute
+    {
+        return Attribute::make(
+            get: function (?string $_unused): ?CarbonInterface {
+                if (! $this->exists || $this->created_at === null) {
+                    return null;
+                }
+
+                return $this->created_at->copy()->addDays(PlatformSetting::freeTrialDays());
+            }
+        );
+    }
 
     public function user(): BelongsTo
     {
@@ -101,6 +155,7 @@ class Store extends Model
         // Temporarily disable latestOfMany to avoid SQLite issues
         return $this->hasOne(StoreSubscription::class)
             ->where('status', 'active')
+            ->where('ends_at', '>', now())
             ->orderBy('ends_at', 'desc');
     }
 }

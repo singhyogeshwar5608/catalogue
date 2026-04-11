@@ -4,13 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Models\PlatformSetting;
+use App\Actions\ProvisionDefaultFreeStoreSubscription;
 use App\Models\Store;
+use App\Support\NextCatalogCacheInvalidate;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -71,7 +77,7 @@ class StoreController extends Controller
 
         if ($request->filled('location') && $hasCol('location')) {
             $locationFilter = $request->string('location');
-            $query->where('location', 'like', '%' . $locationFilter . '%');
+            $query->where('location', 'like', '%'.$locationFilter.'%');
         }
 
         $hasCoordinatesFilter = $request->filled(['lat', 'lng']) && $hasCol('latitude') && $hasCol('longitude');
@@ -83,7 +89,7 @@ class StoreController extends Controller
 
             // Check if we're using SQLite (which doesn't support acos)
             $isSQLite = config('database.default') === 'sqlite';
-            
+
             if ($isSQLite) {
                 // For SQLite, skip distance calculation and just get active stores with coordinates
                 // The frontend will handle distance filtering
@@ -98,16 +104,19 @@ class StoreController extends Controller
                 }
                 $query->orderBy('created_at', 'desc');
             } else {
-                // For MySQL/PostgreSQL, use proper Haversine formula
-                $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
+                // For MySQL/PostgreSQL, use proper Haversine formula.
+                // Must keep `{$storeTable}.*` — selectRaw alone replaces the entire SELECT list and breaks hydration / JSON (500).
+                $haversine = '(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))';
                 $query->whereNotNull('latitude')
                     ->whereNotNull('longitude')
-                    ->selectRaw("{$haversine} as distance_km", [$latitude, $longitude, $latitude])
+                    ->select("{$storeTable}.*")
+                    ->selectRaw("({$haversine}) as distance_km", [$latitude, $longitude, $latitude])
                     ->having('distance_km', '<=', $radius);
             }
         } else {
-            // Do not SELECT huge LONGTEXT columns for listing — avoids OOM before trimHeavy runs.
-            $omitHeavy = array_values(array_filter(['logo', 'banner', 'description'], $hasCol));
+            // Omit huge LONGTEXT columns for listing (banner/description). Keep `logo` — it should be a short URL
+            // after {@see normalizeStoreLogoForPersistence}; listing cards need it for avatars.
+            $omitHeavy = array_values(array_filter(['banner', 'description'], $hasCol));
             $allCols = array_keys($storeCols);
             $slim = array_values(array_diff($allCols, $omitHeavy));
             if (count($slim) >= 3 && in_array('id', $slim, true)) {
@@ -130,19 +139,19 @@ class StoreController extends Controller
         $user = $request->user();
         $isAdmin = $user?->role === 'super_admin';
         $includeInactive = $request->boolean('include_inactive', false);
-        
+
         \Log::info('getAllStores called', [
             'user_id' => $user?->id,
             'user_role' => $user?->role,
             'is_admin' => $isAdmin,
             'include_inactive' => $includeInactive,
-            'limit' => $request->input('limit', 50)
+            'limit' => $request->input('limit', 50),
         ]);
-        
+
         // For admin panel, show all stores (active + banned)
         // For public API, show only active stores
         // Also include inactive stores if explicitly requested
-        if (!$isAdmin && !$includeInactive && $hasCol('is_active')) {
+        if (! $isAdmin && ! $includeInactive && $hasCol('is_active')) {
             $query->where('is_active', true);
             \Log::info('Filtering active stores only (non-admin user)');
         } else {
@@ -246,7 +255,7 @@ class StoreController extends Controller
             $storeTable = (new Store)->getTable();
             $activeCol = Schema::hasColumn($storeTable, 'is_active');
             $listed = Schema::getColumnListing($storeTable);
-            $slimCols = array_values(array_diff($listed, array_intersect(['logo', 'banner', 'description'], $listed)));
+            $slimCols = array_values(array_diff($listed, array_intersect(['banner', 'description'], $listed)));
 
             $stores = Store::query()
                 ->when($activeCol, fn ($q) => $q->where('is_active', true))
@@ -269,7 +278,7 @@ class StoreController extends Controller
     {
         $user = $request->user();
         \Log::info('myStores called', ['user_id' => $user->id, 'user_email' => $user->email, 'role' => $user->role]);
-        
+
         // For super admin, show all stores
         // For regular users, show only their stores
         if ($user->role === 'super_admin') {
@@ -285,9 +294,9 @@ class StoreController extends Controller
                 $adminEager[] = 'activeSubscription.plan';
             }
             $stores = \App\Models\Store::with($adminEager)
-            ->withCount(['products', 'services'])
-            ->orderByDesc('created_at')
-            ->get();
+                ->withCount(['products', 'services'])
+                ->orderByDesc('created_at')
+                ->get();
         } else {
             \Log::info('Executing user branch - showing only user stores');
             $userEager = [
@@ -308,12 +317,13 @@ class StoreController extends Controller
         }
 
         \Log::info('Stores query executed', ['count' => $stores->count()]);
-        
+
         \Log::info('Before applyCategoryBannerData', ['stores' => $stores->pluck('id')->toArray()]);
         $stores = $this->applyCategoryBannerData($stores);
         \Log::info('After applyCategoryBannerData', ['count' => $stores->count(), 'stores' => $stores->pluck('id')->toArray()]);
 
         \Log::info('Returning user stores', ['count' => $stores->count()]);
+
         return $this->successResponse('User stores retrieved successfully.', $stores);
     }
 
@@ -346,12 +356,16 @@ class StoreController extends Controller
 
         if ($validator->fails()) {
             \Log::error('Store validation failed', ['errors' => $validator->errors()->toArray()]);
+
             return $this->errorResponse('Validation failed.', 422, $validator->errors());
         }
 
         $data = $validator->validated();
+        if (array_key_exists('logo', $data)) {
+            $data['logo'] = $this->normalizeStoreLogoForPersistence($data['logo'] ?? null);
+        }
         $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? Str::slug($data['name']));
-        $data['username'] = Str::slug($data['name']) . '-' . $user->id;
+        $data['username'] = Str::slug($data['name']).'-'.$user->id;
         $data['user_id'] = $user->id;
 
         if ((! isset($data['latitude']) || $data['latitude'] === null) && (! isset($data['longitude']) || $data['longitude'] === null)) {
@@ -361,23 +375,36 @@ class StoreController extends Controller
             }
         }
 
-        $store = Store::create($data);
-        
-        // Load only basic relationships to avoid SQLite issues
-        $store->load(['category']);
-        
-        // Skip category banner data for now to avoid SQLite issues
-        // $store = $this->applyCategoryBannerData($store);
+        $trialDays = PlatformSetting::freeTrialDays();
 
-        $category = $store->category;
-        $businessType = $category?->business_type ?? 'product';
-        $store->update([
-            'theme' => match ($businessType) {
-                'service' => 'service-default',
-                'hybrid' => 'hybrid-default',
-                default => 'product-default',
-            },
-        ]);
+        $store = DB::transaction(function () use ($data, $user, $trialDays) {
+            $store = Store::create($data);
+            $store->refresh();
+
+            $store->forceFill([
+                'trial_ends_at' => $store->created_at->copy()->addDays($trialDays),
+            ])->save();
+
+            ProvisionDefaultFreeStoreSubscription::run($store, (int) $user->id);
+
+            $store->load(['category']);
+
+            $category = $store->category;
+            $businessType = $category?->business_type ?? 'product';
+            $store->update([
+                'theme' => match ($businessType) {
+                    'service' => 'service-default',
+                    'hybrid' => 'hybrid-default',
+                    default => 'product-default',
+                },
+            ]);
+
+            return $store->fresh(['category', 'activeSubscription.plan']);
+        });
+
+        $businessType = $store->category?->business_type ?? 'product';
+
+        NextCatalogCacheInvalidate::storesAndProducts();
 
         return $this->successResponse('Store created successfully.', [
             'store' => $store,
@@ -400,7 +427,7 @@ class StoreController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
-            'slug' => 'sometimes|nullable|string|max:255|unique:stores,slug,' . $store->id,
+            'slug' => 'sometimes|nullable|string|max:255|unique:stores,slug,'.$store->id,
             'category_id' => 'sometimes|required|exists:categories,id',
             'logo' => 'nullable|string|max:4000000',
             'phone' => 'nullable|string|max:50',
@@ -427,6 +454,10 @@ class StoreController extends Controller
             $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? Str::slug($data['name'] ?? $store->name), $store->id);
         }
 
+        if (array_key_exists('logo', $data)) {
+            $data['logo'] = $this->normalizeStoreLogoForPersistence($data['logo'] ?? null);
+        }
+
         $hasLocationChange = array_key_exists('location', $data) || array_key_exists('address', $data);
         $coordinatesProvided = array_key_exists('latitude', $data) && array_key_exists('longitude', $data);
 
@@ -438,9 +469,9 @@ class StoreController extends Controller
         }
 
         \Log::info('Updating store', ['store_id' => $store->id, 'data' => $data]);
-        
+
         $store->update($data);
-        
+
         \Log::info('Store updated, refreshing data', ['store_id' => $store->id]);
         $store->refresh();
         \Log::info('Store refreshed', ['is_active' => $store->is_active]);
@@ -450,6 +481,8 @@ class StoreController extends Controller
             'user',
         ]);
         $store = $this->applyCategoryBannerData($store);
+
+        NextCatalogCacheInvalidate::storesAndProducts();
 
         return $this->successResponse('Store updated successfully.', [
             'store' => $store,
@@ -461,11 +494,16 @@ class StoreController extends Controller
     {
         try {
             \Log::info('getStoreBySlug called', ['slug' => $slug]);
-            
-            $store = Store::where('slug', $slug)->first();
-            
+
+            $store = Store::query()
+                ->where(function ($q) use ($slug) {
+                    $q->where('slug', $slug)->orWhere('username', $slug);
+                })
+                ->first();
+
             if (! $store) {
                 \Log::warning('Store not found', ['slug' => $slug]);
+
                 return $this->errorResponse('Store not found.', 404);
             }
 
@@ -487,25 +525,26 @@ class StoreController extends Controller
                 $store->load($toLoad);
                 \Log::info('Relationships loaded successfully');
             } catch (\Exception $e) {
-                \Log::error('Failed to load relationships: ' . $e->getMessage());
+                \Log::error('Failed to load relationships: '.$e->getMessage());
             }
 
             try {
                 $store = $this->applyCategoryBannerData($store);
                 \Log::info('Category banner data applied');
             } catch (\Exception $e) {
-                \Log::error('Failed to apply category banner data: ' . $e->getMessage());
+                \Log::error('Failed to apply category banner data: '.$e->getMessage());
                 // Continue without banner data
             }
-            
+
             \Log::info('Returning store response');
+
             return $this->successResponse('Store retrieved successfully.', $store);
         } catch (\Exception $e) {
-            \Log::error('getStoreBySlug error: ' . $e->getMessage(), [
+            \Log::error('getStoreBySlug error: '.$e->getMessage(), [
                 'slug' => $slug,
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             return $this->errorResponse('Server error while retrieving store.', 500);
         }
     }
@@ -525,6 +564,8 @@ class StoreController extends Controller
 
         $store->delete();
 
+        NextCatalogCacheInvalidate::storesAndProducts();
+
         return $this->successResponse('Store deleted successfully.');
     }
 
@@ -537,7 +578,7 @@ class StoreController extends Controller
         while (Store::where('slug', $slug)
             ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
             ->exists()) {
-            $slug = $original . '-' . $counter++;
+            $slug = $original.'-'.$counter++;
         }
 
         return $slug;
@@ -617,6 +658,55 @@ class StoreController extends Controller
         }
     }
 
+    /**
+     * Save data-URL logos under storage/app/public/store-logos and return a short /storage/... URL.
+     * Passes through http(s) URLs and existing /storage paths unchanged.
+     */
+    private function normalizeStoreLogoForPersistence(?string $logo): ?string
+    {
+        if ($logo === null) {
+            return null;
+        }
+        $logo = trim($logo);
+        if ($logo === '') {
+            return null;
+        }
+        if (str_starts_with($logo, 'http://') || str_starts_with($logo, 'https://')) {
+            return $logo;
+        }
+        if (str_starts_with($logo, '/storage/')) {
+            return $logo;
+        }
+        if (! str_starts_with($logo, 'data:image')) {
+            return $logo;
+        }
+        if (! preg_match('#^data:image/(png|jpeg|jpg|webp);base64,#i', $logo)) {
+            return null;
+        }
+        $comma = strpos($logo, ',');
+        if ($comma === false) {
+            return null;
+        }
+        $raw = base64_decode(substr($logo, $comma + 1), true);
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+        if (strlen($raw) > 1_200_000) {
+            return null;
+        }
+        $head = strtolower(substr($logo, 0, 48));
+        $ext = 'jpg';
+        if (str_contains($head, 'image/png')) {
+            $ext = 'png';
+        } elseif (str_contains($head, 'image/webp')) {
+            $ext = 'webp';
+        }
+        $relative = 'store-logos/'.Str::uuid().'.'.$ext;
+        Storage::disk('public')->put($relative, $raw);
+
+        return Storage::disk('public')->url($relative);
+    }
+
     private function categoryRelationWithBanners(): Closure
     {
         return function ($query) {
@@ -678,7 +768,7 @@ class StoreController extends Controller
         try {
             $response = Http::timeout(10)
                 ->withHeaders([
-                    'User-Agent' => 'CatelogApp/1.0 (contact: support@catelog.local)'
+                    'User-Agent' => 'CatelogApp/1.0 (contact: support@catelog.local)',
                 ])
                 ->get('https://nominatim.openstreetmap.org/search', [
                     'format' => 'json',
@@ -688,6 +778,7 @@ class StoreController extends Controller
 
             if (! $response->successful()) {
                 Log::warning('Geocoding failed', ['query' => $query, 'status' => $response->status()]);
+
                 return null;
             }
 
@@ -702,6 +793,7 @@ class StoreController extends Controller
             ];
         } catch (\Throwable $exception) {
             Log::warning('Geocoding exception', ['query' => $query, 'message' => $exception->getMessage()]);
+
             return null;
         }
     }

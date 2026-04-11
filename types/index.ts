@@ -1,3 +1,20 @@
+/** Add-ons chosen at subscription checkout (persisted on the store). */
+export interface StoreSubscriptionAddons {
+  paymentGateway: boolean;
+  qrCode: boolean;
+  paymentGatewayHelp: boolean;
+}
+
+/** Owner-only payment hub payload from `GET/POST …/payment-integration`. */
+export interface StorePaymentIntegrationSettings {
+  subscriptionAddons: StoreSubscriptionAddons;
+  razorpayKeyId: string | null;
+  hasRazorpaySecret: boolean;
+  paymentQrUrl: string | null;
+  helpWhatsappE164: string;
+  helpWhatsappUrl: string;
+}
+
 export type BoostStatus = 'active' | 'expired' | 'cancelled';
 
 export interface BoostPlan {
@@ -67,8 +84,12 @@ export interface Store {
   categoryId?: string;
   themeId?: string;
   createdAt: string;
+  /** ISO datetime when the free store trial ends (from Laravel `trial_ends_at` or derived from `createdAt` + platform `free_trial_days`). */
+  trialEndsAt?: string | null;
   activeBoost?: StoreBoost | null;
   activeSubscription?: StoreSubscription | null;
+  /** Enabled subscription add-ons (payment hub, QR, company gateway help). */
+  subscriptionAddons?: StoreSubscriptionAddons;
   productsCount?: number;
   servicesCount?: number;
   user?: {
@@ -238,6 +259,13 @@ export interface SubscriptionPlan {
   isPopular?: boolean;
   isActive?: boolean;
   description?: string;
+}
+
+/** Global add-on amounts (₹) charged when a merchant opts for gateway setup, QR, or assisted integration. */
+export interface SubscriptionAddonCharges {
+  payment_gateway_integration_inr: number;
+  qr_code_inr: number;
+  payment_gateway_help_inr: number;
 }
 
 export interface StoreSubscription {

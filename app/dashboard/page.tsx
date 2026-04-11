@@ -26,12 +26,20 @@ import {
   Youtube,
   Zap,
 } from 'lucide-react';
-import { getProductsByStore, getStoreBySlug, getStoreSubscription, isApiError, updateStore } from '@/src/lib/api';
+import {
+  getApiRequestBaseUrl,
+  getProductsByStore,
+  getStoreBySlug,
+  getStoreSubscription,
+  isApiError,
+  updateStore,
+} from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 import type { Product, Store, StoreSubscription } from '@/types';
 import SubscriptionExpiryPopup from '@/components/SubscriptionExpiryPopup';
 import ProductLimitPopup from '@/components/ProductLimitPopup';
 import BoostExpiryPopup from '@/components/BoostExpiryPopup';
+import TrialCountdownBanner from '@/components/TrialCountdownBanner';
 
 function formatDate(value?: string | null) {
   if (!value) return 'Not available';
@@ -45,6 +53,12 @@ function daysUntil(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return Math.ceil((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function isPaidSubscriptionActive(sub: StoreSubscription | null) {
+  if (!sub || sub.status !== 'active') return false;
+  const end = new Date(sub.endsAt).getTime();
+  return !Number.isNaN(end) && end > Date.now();
 }
 
 export default function DashboardPage() {
@@ -199,8 +213,32 @@ export default function DashboardPage() {
     newWindow.print();
   };
 
+  const hasActivePaidSubscription = useMemo(() => isPaidSubscriptionActive(subscription), [subscription]);
+
+  const trialStillActive = useMemo(() => {
+    if (!myStore?.trialEndsAt) return false;
+    const end = new Date(myStore.trialEndsAt).getTime();
+    return !Number.isNaN(end) && end > Date.now();
+  }, [myStore?.trialEndsAt]);
+
+  const trialDurationDaysLabel = useMemo(() => {
+    if (!myStore?.trialEndsAt || !myStore?.createdAt) return null;
+    const ms = new Date(myStore.trialEndsAt).getTime() - new Date(myStore.createdAt).getTime();
+    if (!Number.isFinite(ms) || ms <= 0) return null;
+    const days = Math.max(1, Math.round(ms / (24 * 60 * 60 * 1000)));
+    return `${days} day${days === 1 ? '' : 's'}`;
+  }, [myStore?.trialEndsAt, myStore?.createdAt]);
+
   const stats = useMemo(() => {
     if (!myStore) return [];
+
+    const planLabel = hasActivePaidSubscription
+      ? (subscription?.plan.name ?? 'Subscribed')
+      : trialStillActive
+        ? trialDurationDaysLabel
+          ? `Free trial (${trialDurationDaysLabel})`
+          : 'Free trial'
+        : 'Free';
 
     return [
       {
@@ -220,11 +258,18 @@ export default function DashboardPage() {
       },
       {
         label: 'Plan',
-        value: subscription ? subscription.plan.name : 'Free',
+        value: planLabel,
         icon: CreditCard,
       },
     ];
-  }, [myProducts.length, myStore, subscription]);
+  }, [
+    hasActivePaidSubscription,
+    myProducts.length,
+    myStore,
+    subscription,
+    trialDurationDaysLabel,
+    trialStillActive,
+  ]);
 
   const socialPlatforms = [
     { key: 'facebook', label: 'Facebook', placeholder: 'https://facebook.com/yourstore', icon: Facebook },
@@ -301,7 +346,14 @@ export default function DashboardPage() {
   const boostDaysRemaining = daysUntil(myStore?.activeBoost?.endsAt);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 sm:space-y-6">
+    <div className="mx-auto min-w-0 max-w-6xl space-y-4 sm:space-y-6">
+      <TrialCountdownBanner
+        trialEndsAt={myStore.trialEndsAt}
+        createdAt={myStore.createdAt}
+        apiBaseUrl={getApiRequestBaseUrl()}
+        hasActiveSubscription={hasActivePaidSubscription}
+      />
+
       <section className="relative overflow-hidden rounded-[22px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-50 p-4 shadow-sm sm:rounded-[28px] sm:p-6">
         <div className="flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">

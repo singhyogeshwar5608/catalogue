@@ -34,6 +34,8 @@ import {
   Briefcase,
   Layers,
   Youtube,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import type {
   Store,
@@ -591,17 +593,214 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
   );
 };
 
-const renderRatingStars = (rating: number) => {
-  const fullStars = Math.round(rating);
-  return Array.from({ length: 5 }).map((_, index) => (
-    <Star key={index} className={`h-3 w-3 ${index < fullStars ? 'text-amber-400 fill-current' : 'text-slate-300'}`} />
-  ));
-};
-
 const getDiscountPercent = (price?: number, original?: number) => {
   if (!price || !original || original <= price) return null;
   return Math.round(((original - price) / original) * 100);
 };
+
+const CATALOG_CARD_BG = '#0B111B';
+const CATALOG_ACCENT = '#FF9F29';
+const CATALOG_MUTED = '#8E94A0';
+
+function buildProductGallery(product: Product): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const add = (u: string | undefined | null) => {
+    if (!u || seen.has(u)) return;
+    seen.add(u);
+    urls.push(u);
+  };
+  add(product.image);
+  (product.images ?? []).forEach(add);
+  return urls;
+}
+
+type StoreCatalogProductCardProps = {
+  product: Product;
+  whatsappLink: string;
+  storeName: string;
+  cartQty: number;
+  quantity: number;
+  maxPerItem: number;
+  onQuantityChange: (next: number) => void;
+  onAddToCart: () => void;
+};
+
+function StoreCatalogProductCard({
+  product,
+  whatsappLink,
+  storeName,
+  cartQty,
+  quantity,
+  maxPerItem,
+  onQuantityChange,
+  onAddToCart,
+}: StoreCatalogProductCardProps) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const gallery = useMemo(() => buildProductGallery(product), [product]);
+  const heroSrc = gallery[activeIndex] ?? product.image;
+  const discount = getDiscountPercent(product.price, product.originalPrice);
+  const categoryLabel = (product.category || 'General').toUpperCase();
+  const maxThumbs = 3;
+  const visibleThumbs = gallery.slice(0, maxThumbs);
+  const moreCount = Math.max(0, gallery.length - maxThumbs);
+  const unitLabel = formatPriceUnitLabel(product);
+
+  return (
+    <article
+      className="group flex h-full min-w-0 w-full flex-col overflow-hidden rounded-2xl p-3 font-sans transition hover:opacity-[0.98] sm:rounded-[20px] sm:p-4"
+      style={{ backgroundColor: CATALOG_CARD_BG }}
+    >
+      <div className="relative overflow-hidden rounded-xl bg-white sm:rounded-[15px]">
+        <Link
+          href={`/product/${product.id}`}
+          className="relative block aspect-square w-full sm:aspect-[5/4] md:aspect-[4/3] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F29]/60"
+        >
+          <Image
+            src={heroSrc}
+            alt={product.name}
+            fill
+            className="object-contain p-1 transition duration-300 group-hover:scale-[1.02] sm:p-1.5 md:p-2"
+            sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
+          />
+          {discount ? (
+            <div
+              className="absolute left-1.5 top-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white sm:left-2 sm:top-2 sm:px-2.5 sm:py-1 sm:text-[11px]"
+              style={{
+                backgroundColor: CATALOG_ACCENT,
+                borderRadius: '10px 4px 10px 4px',
+              }}
+            >
+              {discount}% off
+            </div>
+          ) : null}
+          {!product.inStock ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/55">
+              <span className="font-semibold text-white">Out of stock</span>
+            </div>
+          ) : null}
+        </Link>
+      </div>
+
+      {gallery.length > 1 ? (
+        <div className="mt-2 flex items-center gap-1.5 sm:mt-3 sm:gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-1.5">
+            {visibleThumbs.map((src, i) => {
+              const selected = activeIndex === i;
+              return (
+                <button
+                  key={`${src}-${i}`}
+                  type="button"
+                  onClick={() => setActiveIndex(i)}
+                  className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md bg-white transition sm:h-9 sm:w-9"
+                  style={{
+                    boxShadow: selected
+                      ? `inset 0 0 0 2px ${CATALOG_ACCENT}`
+                      : 'inset 0 0 0 1px rgba(0,0,0,0.08)',
+                  }}
+                  aria-label={`Show product image ${i + 1}`}
+                >
+                  <Image src={src} alt="" fill className="object-cover" sizes="32px" />
+                </button>
+              );
+            })}
+          </div>
+          {moreCount > 0 ? (
+            <span className="shrink-0 text-xs font-semibold tabular-nums sm:text-sm" style={{ color: CATALOG_ACCENT }}>
+              + {moreCount}
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-2 h-0 shrink-0 sm:mt-3" aria-hidden />
+      )}
+
+      <div className="mt-1.5 flex min-h-0 flex-1 flex-col sm:mt-2">
+        <p className="text-[10px] font-medium uppercase tracking-wider sm:text-[11px]" style={{ color: CATALOG_MUTED }}>
+          {categoryLabel}
+        </p>
+        <Link href={`/product/${product.id}`} className="mt-0.5 block min-w-0 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F29]/50 sm:mt-1">
+          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-white sm:text-[15px]">{product.name}</h3>
+        </Link>
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 sm:mt-2 sm:gap-x-2">
+          <span className="text-base font-bold tabular-nums text-white sm:text-lg">{formatCurrencyDisplay(product.price)}</span>
+          {unitLabel ? (
+            <span className="text-[11px] font-semibold" style={{ color: CATALOG_MUTED }}>
+              /{unitLabel}
+            </span>
+          ) : null}
+          {product.originalPrice ? (
+            <span className="text-xs font-medium tabular-nums line-through opacity-60" style={{ color: CATALOG_MUTED }}>
+              {formatCurrencyDisplay(product.originalPrice)}
+            </span>
+          ) : null}
+        </div>
+        {product.wholesaleEnabled && product.wholesalePrice != null ? (
+          <p className="mt-1.5 text-[10px] font-semibold sm:mt-2 sm:text-[11px]" style={{ color: CATALOG_MUTED }}>
+            <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-emerald-300 sm:px-2 sm:py-1">
+              Wholesale {formatCurrencyDisplay(product.wholesalePrice)}
+              {product.wholesaleMinQty ? ` · Min ${product.wholesaleMinQty}` : ''}
+            </span>
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mt-2.5 flex items-center justify-start gap-2 sm:mt-4 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            aria-label="Decrease quantity"
+            onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white transition hover:bg-white/90 sm:h-9 sm:w-9 sm:rounded-lg"
+          >
+            <Minus className="h-3.5 w-3.5 text-slate-600 sm:h-4 sm:w-4" strokeWidth={2.5} />
+          </button>
+          <span className="min-w-[1.25rem] text-center text-xs font-semibold tabular-nums text-white sm:text-sm">{quantity}</span>
+          <button
+            type="button"
+            aria-label="Increase quantity"
+            onClick={() => onQuantityChange(Math.min(maxPerItem, quantity + 1))}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white transition hover:bg-white/90 sm:h-9 sm:w-9 sm:rounded-lg"
+          >
+            <Plus className="h-3.5 w-3.5 text-slate-600 sm:h-4 sm:w-4" strokeWidth={2.5} />
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2 grid min-w-0 grid-cols-2 gap-1 sm:mt-3 sm:gap-2">
+        <a
+          href={`${whatsappLink}?text=Hi%20${encodeURIComponent(storeName)}%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="WhatsApp"
+          className="flex min-w-0 touch-manipulation flex-row items-center justify-center gap-0.5 rounded-md bg-gradient-to-r from-emerald-500 to-green-500 px-1 py-[calc(0.25rem+1.5px)] text-[9px] font-semibold leading-none text-white shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition hover:opacity-95 active:opacity-90 sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-[calc(0.375rem+1.5px)] sm:text-[11px]"
+        >
+          <MessageCircle className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
+          <span className="min-w-0 max-sm:truncate">WhatsApp</span>
+        </a>
+        <button
+          type="button"
+          onClick={onAddToCart}
+          disabled={cartQty >= maxPerItem}
+          title={cartQty ? `Added to cart (${cartQty})` : 'Add to cart'}
+          className={`flex min-w-0 touch-manipulation flex-row items-center justify-center gap-0.5 rounded-md border px-1 py-[calc(0.25rem+1.5px)] text-[9px] font-semibold leading-none transition active:opacity-90 sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-[calc(0.375rem+1.5px)] sm:text-[11px] ${
+            cartQty >= maxPerItem
+              ? 'border-white/20 text-white/40'
+              : 'border-[#FF9F29] bg-[#FF9F29]/10 text-[#FF9F29] hover:bg-[#FF9F29]/20'
+          }`}
+        >
+          <ShoppingCart className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
+          <span className="min-w-0 flex-1 text-center max-sm:truncate sm:flex-none">
+            <span className="sm:hidden">
+              {cartQty >= maxPerItem ? 'Limit' : cartQty > 0 ? `(${cartQty})` : 'Add'}
+            </span>
+            <span className="hidden sm:inline">{cartQty ? `Added (${cartQty})` : 'Add to cart'}</span>
+          </span>
+        </button>
+      </div>
+    </article>
+  );
+}
 
 type ProductGridProps = {
   products: Product[];
@@ -636,7 +835,7 @@ const ServiceCard = ({
   const packagePrice = service.packagePrice != null ? service.packagePrice : null;
 
   return (
-    <article className="group rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.08)] ring-1 ring-white/40 backdrop-blur transition hover:-translate-y-2 hover:shadow-[0_30px_70px_rgba(15,23,42,0.12)]">
+    <article className="group min-w-0 w-full rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.08)] ring-1 ring-white/40 backdrop-blur transition hover:-translate-y-2 hover:shadow-[0_30px_70px_rgba(15,23,42,0.12)]">
       <Link href={`/service/${service.id}`} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/40 rounded-2xl">
         <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-white/40 bg-slate-50">
           {service.image ? (
@@ -962,7 +1161,7 @@ const ProductGrid = ({
             ) : (
               <motion.div
                 key={filterType + searchQuery}
-                className="mt-6 grid grid-cols-1 gap-4 sm:mt-10 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4"
+                className="mt-6 grid grid-cols-2 gap-2 min-w-0 sm:mt-10 sm:gap-3 md:gap-4 lg:grid-cols-3 xl:grid-cols-4"
                 variants={staggerContainer}
                 initial="hidden"
                 whileInView="visible"
@@ -975,6 +1174,7 @@ const ProductGrid = ({
                     return (
                       <motion.div
                         key={`service-${service.id}`}
+                        className="min-w-0"
                         variants={fadeInVariants}
                         transition={{ delay: index * 0.02 }}
                         id={index === firstServiceIndex ? 'services' : undefined}
@@ -990,106 +1190,25 @@ const ProductGrid = ({
                   const product = entry.product;
                   if (!product) return null;
                   return (
-                    <motion.article
+                    <motion.div
                       key={product.id}
+                      className="min-w-0"
                       variants={fadeInVariants}
                       transition={{ delay: index * 0.02 }}
-                      className="group rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.08)] ring-1 ring-white/40 backdrop-blur transition hover:-translate-y-2 hover:shadow-[0_30px_70px_rgba(15,23,42,0.12)] cursor-pointer"
                     >
-                      <Link
-                        href={`/product/${product.id}`}
-                        className="relative block aspect-square overflow-hidden rounded-xl border border-white/40"
-                      >
-                        <Image
-                          src={product.image}
-                          alt={product.name}
-                          fill
-                          className="object-cover transition duration-700 group-hover:scale-105"
-                          sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 90vw"
-                        />
-                        {(() => {
-                          const discount = getDiscountPercent(product.price, product.originalPrice);
-                          if (!discount) return null;
-                          return (
-                            <div className="absolute right-3 top-3 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-900 shadow-lg">
-                              {discount}% OFF
-                            </div>
-                          );
-                        })()}
-                      </Link>
-                      <div className="mt-4 flex h-full flex-col space-y-3">
-                        <div className="flex items-start gap-3">
-                          <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400 sm:text-xs">
-                            {product.category || 'General'}
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-3">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="text-base font-semibold text-slate-900 line-clamp-1 sm:text-lg">{product.name}</h3>
-                              <div className="mt-2 flex items-baseline gap-1 sm:gap-1.5">
-                                <span className="text-lg font-semibold text-slate-900 sm:text-xl">
-                                  {formatCurrencyDisplay(product.price)}
-                                </span>
-                                {(() => {
-                                  const unitLabel = formatPriceUnitLabel(product);
-                                  if (!unitLabel) return null;
-                                  return (
-                                    <span className="text-[11px] font-semibold text-slate-500 sm:text-xs">/{unitLabel}</span>
-                                  );
-                                })()}
-                                {product.originalPrice && (
-                                  <span className="text-[11px] font-normal text-slate-400 line-through sm:text-xs">
-                                    {formatCurrencyDisplay(product.originalPrice)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex w-full flex-col items-end gap-2 md:w-auto">
-                              <div className="flex items-center gap-1 text-amber-400">
-                                {renderRatingStars(product.rating ?? 4.5)}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-auto space-y-3">
-                          {product.wholesaleEnabled && product.wholesalePrice != null ? (
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-emerald-600">
-                                Wholesale {formatCurrencyDisplay(product.wholesalePrice)}
-                                {product.wholesaleMinQty ? ` · Min ${product.wholesaleMinQty}` : ''}
-                              </span>
-                            </div>
-                          ) : null}
-                          <div className="grid grid-cols-2 gap-2">
-                            <a
-                              href={`${whatsappLink}?text=Hi%20${encodeURIComponent(storeName)}%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex w-full items-center justify-center gap-1 rounded-full bg-gradient-to-r from-emerald-500 to-green-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_6px_14px_rgba(16,185,129,0.35)] transition hover:-translate-y-0.5 hover:opacity-95"
-                            >
-                              <MessageCircle className="h-3 w-3" />
-                              WhatsApp
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => onAddToCart(product, quantities[product.id] ?? 1)}
-                              disabled={(cartQuantities[product.id] ?? 0) >= MAX_PER_ITEM}
-                              className={`inline-flex w-full items-center justify-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition hover:-translate-y-0.5 ${
-                                (cartQuantities[product.id] ?? 0) >= MAX_PER_ITEM
-                                  ? 'border-slate-200 text-slate-400'
-                                  : 'border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white'
-                              }`}
-                            >
-                              <ShoppingCart className="h-3 w-3" />
-                              {cartQuantities[product.id]
-                                ? `Added (${cartQuantities[product.id]})`
-                                : 'Add to cart'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.article>
+                      <StoreCatalogProductCard
+                        product={product}
+                        whatsappLink={whatsappLink}
+                        storeName={storeName}
+                        cartQty={cartQuantities[product.id] ?? 0}
+                        quantity={quantities[product.id] ?? 1}
+                        maxPerItem={MAX_PER_ITEM}
+                        onQuantityChange={(next) =>
+                          setQuantities((prev) => ({ ...prev, [product.id]: next }))
+                        }
+                        onAddToCart={() => onAddToCart(product, quantities[product.id] ?? 1)}
+                      />
+                    </motion.div>
                   );
                 })}
               </motion.div>

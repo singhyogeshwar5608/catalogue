@@ -43,8 +43,8 @@ const nextConfig: NextConfig = {
     tsconfigPath: './tsconfig.json',
   },
   /**
-   * Optional: only when `NEXT_PUBLIC_USE_API_PROXY=1` in dev — see `getApiRequestBaseUrl` in api.ts.
-   * Default app calls the API URL directly (live server).
+   * Proxies `/api/laravel/*` → live Laravel `/api/v1/v1/*`. Used in local dev by default so login
+   * and other API calls stay same-origin (no browser CORS). Set `NEXT_PUBLIC_USE_API_PROXY=0` to disable.
    */
   async rewrites() {
     const origin = laravelProxyOrigin();

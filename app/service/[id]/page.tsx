@@ -16,8 +16,10 @@ import {
 } from "lucide-react";
 import type { RatingSummary, Review, ReviewPagination, Service, Store } from "@/types";
 import { getServiceById, getStoreReviews, isApiError } from "@/src/lib/api";
+import PublicStorefrontAccessGate from "@/components/PublicStorefrontAccessGate";
 import RatingStars from "@/components/RatingStars";
 import ReviewCard from "@/components/ReviewCard";
+import { useAuth } from "@/src/context/AuthContext";
 import { buildReviewColors, getThemeForCategory } from "@/src/lib/reviewTheme";
 
 interface ServicePageProps {
@@ -26,6 +28,7 @@ interface ServicePageProps {
 
 export default function ServiceDetailPage({ params }: ServicePageProps) {
   const { id } = use(params);
+  const { user } = useAuth();
   const [service, setService] = useState<Service | null>(null);
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,6 +187,7 @@ export default function ServiceDetailPage({ params }: ServicePageProps) {
   }
 
   return (
+    <PublicStorefrontAccessGate store={store} user={user}>
     <div className="bg-gradient-to-b from-white via-slate-50 to-white">
       <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid gap-10 lg:grid-cols-2">
@@ -436,5 +440,6 @@ export default function ServiceDetailPage({ params }: ServicePageProps) {
         )}
       </div>
     </div>
+    </PublicStorefrontAccessGate>
   );
 }
