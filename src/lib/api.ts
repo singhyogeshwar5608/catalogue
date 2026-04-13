@@ -5,6 +5,7 @@ import type {
   Product,
   ProductUnitType,
   Review,
+  RatingSummary,
   ReviewListResponse,
   Service,
   ServiceBillingUnit,
@@ -53,6 +54,7 @@ type BackendReviewListResponse = {
   summary: {
     rating?: number;
     total_reviews?: number;
+    rating_distribution?: Record<string, number> | Record<number, number>;
   };
   pagination: {
     current_page?: number;
@@ -923,10 +925,27 @@ const normalizeReview = (review: BackendReview): Review => {
   };
 };
 
+const parseRatingDistribution = (
+  raw: BackendReviewListResponse['summary']['rating_distribution'] | undefined
+): RatingSummary['distribution'] | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: NonNullable<RatingSummary['distribution']> = {};
+  for (let s = 1; s <= 5; s++) {
+    const v = (raw as Record<string, unknown>)[String(s)];
+    if (v == null) continue;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) {
+      out[s as 1 | 2 | 3 | 4 | 5] = Math.trunc(n);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+};
+
 const normalizeReviewListResponse = (payload: BackendReviewListResponse): ReviewListResponse => ({
   summary: {
     rating: Number(payload.summary?.rating ?? 0),
     totalReviews: Number(payload.summary?.total_reviews ?? 0),
+    distribution: parseRatingDistribution(payload.summary?.rating_distribution),
   },
   pagination: {
     currentPage: payload.pagination?.current_page ?? 1,
@@ -1195,19 +1214,21 @@ export const searchAll = async (params: SearchAllParams) => {
 };
 
 export const updateStore = async (payload: UpdateStorePayload) => {
-  console.log('Updating store with payload:', payload);
-  
-  const response = await apiRequest<BackendStore>(`/store/${payload.id}`, {
+  const response = await apiRequest<{ store: BackendStore; business_type?: string }>(`/store/${payload.id}`, {
     method: 'PUT',
     body: payload,
     requiresAuth: true,
   });
 
-  console.log('Update store API response:', response.data);
-  const normalizedStore = normalizeStore(response.data);
-  console.log('Normalized store:', normalizedStore);
+  const inner = response.data?.store;
+  if (!inner || typeof inner !== 'object') {
+    throw new ApiError('Invalid store update response', 502);
+  }
+
+  const normalizedStore = normalizeStore(inner as BackendStore);
 
   await purgeStoresCatalogCacheClient();
+  dispatchStoreProfileRefresh();
 
   return { store: normalizedStore };
 };
@@ -1866,6 +1887,89 @@ export const saveStoreSubscriptionAddons = async (
     paymentGateway: Boolean(raw.payment_gateway),
     qrCode: Boolean(raw.qr_code),
     paymentGatewayHelp: Boolean(raw.payment_gateway_help),
+  };
+};
+
+export type SubscriptionRazorpayOrder = {
+  keyId: string;
+  orderId: string;
+  amount: number;
+  currency: string;
+  planName: string;
+};
+
+/** Creates a Razorpay order for paid plan + selected add-ons (Laravel uses server-side keys). */
+export const createStoreSubscriptionRazorpayOrder = async (
+  storeId: number | string,
+  payload: { planId: number | string; addons: StoreSubscriptionAddons }
+): Promise<SubscriptionRazorpayOrder> => {
+  const response = await apiRequest<{
+    key_id: string;
+    order_id: string;
+    amount: number;
+    currency: string;
+    plan_name: string;
+  }>(`/stores/${storeId}/subscription/razorpay-order`, {
+    method: 'POST',
+    body: {
+      plan_id: payload.planId,
+      addon_payment_gateway: Boolean(payload.addons.paymentGateway),
+      addon_qr_code: Boolean(payload.addons.qrCode),
+      addon_payment_gateway_help: Boolean(payload.addons.paymentGatewayHelp),
+    },
+    requiresAuth: true,
+  });
+
+  const d = response.data;
+  return {
+    keyId: String(d.key_id),
+    orderId: String(d.order_id),
+    amount: Number(d.amount),
+    currency: String(d.currency ?? 'INR'),
+    planName: String(d.plan_name ?? ''),
+  };
+};
+
+/** After Razorpay Checkout succeeds, verifies signature + payment and activates the subscription. */
+export const verifyStoreSubscriptionRazorpayPayment = async (
+  storeId: number | string,
+  payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }
+): Promise<StoreSubscription> => {
+  const response = await apiRequest<any>(`/stores/${storeId}/subscription/razorpay-verify`, {
+    method: 'POST',
+    body: payload,
+    requiresAuth: true,
+  });
+
+  const sub = response.data as Record<string, any>;
+  const plan = sub.plan;
+  return {
+    id: String(sub.id),
+    storeId: String(sub.store_id),
+    subscriptionPlanId: String(sub.subscription_plan_id),
+    price: Number(sub.price),
+    status: sub.status,
+    startsAt: sub.starts_at,
+    endsAt: sub.ends_at,
+    autoRenew: Boolean(sub.auto_renew),
+    activatedBy: sub.activated_by ? String(sub.activated_by) : undefined,
+    plan: {
+      id: String(plan.id),
+      name: plan.name,
+      slug: plan.slug,
+      price: Number(plan.price),
+      billingCycle: plan.billing_cycle,
+      durationDays: plan.duration_days ? Number(plan.duration_days) : undefined,
+      maxProducts: Number(plan.max_products),
+      isPopular: Boolean(plan.is_popular),
+      isActive: Boolean(plan.is_active),
+      features: Array.isArray(plan.features) ? plan.features : [],
+      description: plan.description || '',
+    },
   };
 };
 

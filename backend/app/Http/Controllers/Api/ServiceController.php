@@ -38,6 +38,13 @@ class ServiceController extends Controller
             return $this->errorResponse('You are not authorized to add services to this store.', 403);
         }
 
+        if ($store->isPublicCatalogLocked()) {
+            return $this->errorResponse(
+                'Your store catalog is paused until you renew your plan. You can still use the dashboard, but new services cannot be added yet.',
+                403
+            );
+        }
+
         $service = $store->services()->create([
             'title' => $data['title'],
             'price' => $data['price'] ?? null,

@@ -29,7 +29,7 @@ import {
 import {
   getApiRequestBaseUrl,
   getProductsByStore,
-  getStoreBySlug,
+  getStoreBySlugFromApi,
   getStoreSubscription,
   isApiError,
   updateStore,
@@ -95,7 +95,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const store = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlugFromApi(user.storeSlug);
       const products = await getProductsByStore(store.id);
       if (!store) {
         setError('Store not found');

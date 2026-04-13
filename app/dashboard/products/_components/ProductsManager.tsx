@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X, Search } from 'lucide-react';
-import type { Product, Service } from '@/types';
+import type { Product, Service, Store } from '@/types';
 import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlug, isApiError, updateProduct } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 import { useSearch } from '@/src/context/SearchContext';
+import { isStoreTrialExpiredWithoutPaidPlan } from '@/src/lib/storeAccess';
 
 const PRODUCT_UNIT_OPTIONS = [
   { value: 'piece', label: 'Pieces (pcs)' },
@@ -179,6 +181,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
   const [serviceImageError, setServiceImageError] = useState<string | null>(null);
   const serviceImageInputRef = useRef<HTMLInputElement | null>(null);
   const [storeId, setStoreId] = useState<string | null>(null);
+  const [ownerStore, setOwnerStore] = useState<Store | null>(null);
   const [listFilter, setListFilter] = useState<'products' | 'services'>('products');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
@@ -190,6 +193,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
   }, [defaultShowForm]);
 
   const hasStore = Boolean(user?.storeSlug);
+  const newCatalogLocked = useMemo(() => isStoreTrialExpiredWithoutPaidPlan(ownerStore), [ownerStore]);
 
   const loadProducts = useCallback(async () => {
     if (!user?.storeSlug) {
@@ -204,6 +208,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     setError(null);
     try {
       const store = await getStoreBySlug(user.storeSlug);
+      setOwnerStore(store ?? null);
       setStoreId(store?.id ?? null);
 
       // Load products directly using getProductsByStore
@@ -216,6 +221,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       } else {
         setProducts([]);
         setServices([]);
+        setOwnerStore(null);
       }
     } catch (err) {
       if (isApiError(err)) {
@@ -280,6 +286,10 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
   };
 
   const handleEditClick = (product: Product) => {
+    if (newCatalogLocked) {
+      setError('Renew your plan to edit products.');
+      return;
+    }
     setShowAddForm(true);
     setShowAddServiceForm(false);
     setEditingProduct(product);
@@ -342,6 +352,13 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     event.preventDefault();
     if (!user?.storeSlug) {
       setFormError('Create a store before adding products.');
+      return;
+    }
+
+    if (newCatalogLocked) {
+      setFormError(
+        editingProduct ? 'Renew your plan to save product changes.' : 'Renew your plan to add new products.',
+      );
       return;
     }
 
@@ -452,6 +469,11 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     event.preventDefault();
     if (!user?.storeSlug || !storeId) {
       setServiceFormError('Create a store before adding services.');
+      return;
+    }
+
+    if (newCatalogLocked) {
+      setServiceFormError('Renew your plan to add new services.');
       return;
     }
 
@@ -566,7 +588,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               setShowAddServiceForm(false);
               setShowAddForm((prev) => !prev);
             }}
-            disabled={!hasStore}
+            disabled={!hasStore || (newCatalogLocked && !editingProduct)}
             className={`flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-semibold rounded-xl text-white shadow-sm transition sm:w-auto sm:px-4 md:px-6 md:py-3 md:text-base ${
               isEditingProduct
                 ? 'bg-amber-500 hover:bg-amber-600'
@@ -586,7 +608,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               setShowAddForm(false);
               setShowAddServiceForm((prev) => !prev);
             }}
-            disabled={!hasStore}
+            disabled={!hasStore || newCatalogLocked}
             className="flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-semibold rounded-xl border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 sm:w-auto sm:px-4 md:px-6 md:py-3 md:text-base"
           >
             <Briefcase className="w-4 h-4 md:w-5 md:h-5" />
@@ -607,6 +629,22 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {newCatalogLocked && hasStore && !loading && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Your public store link is paused</p>
+          <p className="mt-1 text-amber-900/90">
+            Visitors won&apos;t see your catalog until you renew. You can still open this dashboard to review your
+            store, but adding or editing products and services is blocked until you subscribe again.
+          </p>
+          <Link
+            href="/dashboard/subscription"
+            className="mt-3 inline-flex text-sm font-semibold text-amber-950 underline decoration-amber-800/50 underline-offset-2 hover:decoration-amber-950"
+          >
+            Go to Subscription
+          </Link>
         </div>
       )}
 
@@ -877,7 +915,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                 </button>
                 <button
                   type="submit"
-                  disabled={formSubmitting}
+                  disabled={formSubmitting || newCatalogLocked}
                   className="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:opacity-50"
                 >
                   {formSubmitting ? (isEditingProduct ? 'Updating…' : 'Saving...') : isEditingProduct ? 'Update Product' : 'Save Product'}
@@ -1079,7 +1117,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                 </button>
                 <button
                   type="submit"
-                  disabled={serviceFormSubmitting}
+                  disabled={serviceFormSubmitting || newCatalogLocked}
                   className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:opacity-50"
                 >
                   {serviceFormSubmitting ? 'Adding...' : 'Add Service'}
@@ -1174,7 +1212,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                           <div className="flex items-center gap-0.5">
                             <button
                               onClick={() => handleEditClick(product)}
-                              className="rounded-full border border-gray-200 p-0.5 text-gray-600 hover:bg-gray-50"
+                              disabled={newCatalogLocked}
+                              className="rounded-full border border-gray-200 p-0.5 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                               aria-label="Edit product"
                             >
                               <Edit className="w-2 h-2" />
@@ -1295,7 +1334,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               <div className="flex items-center justify-end gap-2">
                 <button
                   onClick={() => handleEditClick(product)}
-                  className="rounded-full border border-gray-200 p-2 text-gray-600 hover:bg-gray-50"
+                  disabled={newCatalogLocked}
+                  className="rounded-full border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Edit product"
                 >
                   <Edit className="w-4 h-4" />
@@ -1324,7 +1364,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                 setShowAddServiceForm(false);
                 setShowAddForm(true);
               }}
-              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-primary-700"
+              disabled={newCatalogLocked}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="w-4 h-4" />
               Add Product
@@ -1358,7 +1399,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                 setShowAddForm(false);
                 setShowAddServiceForm(true);
               }}
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              disabled={newCatalogLocked}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Briefcase className="h-4 w-4" />
               Add Service

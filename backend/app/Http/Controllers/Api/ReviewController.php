@@ -32,7 +32,8 @@ class ReviewController extends Controller
         return $this->successResponse('Product reviews retrieved successfully.', $this->buildReviewPayload(
             $reviews,
             (float) $product->rating,
-            (int) $product->total_reviews
+            (int) $product->total_reviews,
+            $this->approvedRatingStarCounts('product_id', (int) $product->id)
         ));
     }
 
@@ -56,7 +57,8 @@ class ReviewController extends Controller
         return $this->successResponse('Store reviews retrieved successfully.', $this->buildReviewPayload(
             $reviews,
             (float) $store->rating,
-            (int) $store->total_reviews
+            (int) $store->total_reviews,
+            $this->approvedRatingStarCounts('store_id', (int) $store->id)
         ));
     }
 
@@ -161,13 +163,21 @@ class ReviewController extends Controller
         ]);
     }
 
-    private function buildReviewPayload(LengthAwarePaginator $reviews, float $average, int $count): array
+    /**
+     * @param  array<int|string, int>|null  $ratingDistribution  Keys 1–5 => count of approved reviews with that rating.
+     */
+    private function buildReviewPayload(LengthAwarePaginator $reviews , float $average, int $count, ?array $ratingDistribution = null): array
     {
+        $summary = [
+            'rating' => round($average, 1),
+            'total_reviews' => $count,
+        ];
+        if ($ratingDistribution !== null) {
+            $summary['rating_distribution'] = $ratingDistribution;
+        }
+
         return [
-            'summary' => [
-                'rating' => round($average, 1),
-                'total_reviews' => $count,
-            ],
+            'summary' => $summary,
             'pagination' => [
                 'current_page' => $reviews->currentPage(),
                 'last_page' => $reviews->lastPage(),
@@ -176,6 +186,35 @@ class ReviewController extends Controller
                 'has_more' => $reviews->hasMorePages(),
             ],
             'reviews' => array_map(fn ($review) => $this->formatReview($review), $reviews->items()),
+        ];
+    }
+
+    /**
+     * @return array<string, int> JSON keys "1".."5" for predictable client parsing.
+     */
+    private function approvedRatingStarCounts(string $scopeColumn, int $scopeId): array
+    {
+        $raw = Review::query()
+            ->where($scopeColumn, $scopeId)
+            ->where('is_approved', true)
+            ->selectRaw('rating, COUNT(*) as aggregate')
+            ->groupBy('rating')
+            ->pluck('aggregate', 'rating');
+
+        $out = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0];
+        foreach ($raw as $rating => $count) {
+            $r = (int) $rating;
+            if ($r >= 1 && $r <= 5) {
+                $out[$r] = (int) $count;
+            }
+        }
+
+        return [
+            '1' => $out[1],
+            '2' => $out[2],
+            '3' => $out[3],
+            '4' => $out[4],
+            '5' => $out[5],
         ];
     }
 

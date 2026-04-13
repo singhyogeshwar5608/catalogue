@@ -29,7 +29,8 @@ function effectiveTrialEndMs(store: Store): number | null {
 
 /**
  * True when the store's trial has ended and there is no currently active paid subscription.
- * Used to lock public storefront / product / service pages (including when the owner is logged in).
+ * Used to lock the public storefront for visitors; the logged-in owner bypasses the overlay in
+ * `PublicStorefrontAccessGate` and can use the dashboard (new catalog uploads blocked in UI + API).
  */
 export function isStoreTrialExpiredWithoutPaidPlan(store: Store | null | undefined): boolean {
   if (!store) return false;

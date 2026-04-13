@@ -53,4 +53,13 @@ return [
     'next_cache_invalidate_url' => env('NEXT_CACHE_INVALIDATE_URL'),
     'next_cache_invalidate_secret' => env('NEXT_CACHE_INVALIDATE_SECRET', env('CACHE_INVALIDATE_SECRET')),
 
+    /*
+    | Platform subscription checkout (merchant pays Catelog). Keys must live in Laravel `backend/.env`
+    | only — never expose the secret to the Next.js browser bundle.
+    */
+    'razorpay' => [
+        'key_id' => env('RAZORPAY_KEY_ID', env('RZP_LIVE_KEY_ID')),
+        'key_secret' => env('RAZORPAY_KEY_SECRET', env('RZP_LIVE_KEY_SECRET')),
+    ],
+
 ];

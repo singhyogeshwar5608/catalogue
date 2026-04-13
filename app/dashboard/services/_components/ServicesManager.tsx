@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Briefcase, Edit, Image as ImageIcon, Plus, Trash2 } from 'lucide-react';
-import type { Service } from '@/types';
+import type { Service, Store } from '@/types';
 import { addService, getServicesByStore, getStoreBySlug, isApiError } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
+import { isStoreTrialExpiredWithoutPaidPlan } from '@/src/lib/storeAccess';
 
 type ServiceFormState = {
   title: string;
@@ -90,6 +92,7 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [storeId, setStoreId] = useState<string | null>(null);
+  const [ownerStore, setOwnerStore] = useState<Store | null>(null);
 
   useEffect(() => {
     setShowAddForm(defaultShowForm);
@@ -112,10 +115,12 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
       if (!store) {
         setServices([]);
         setStoreId(null);
+        setOwnerStore(null);
         setError('Store not found. Please create your store first.');
         return;
       }
 
+      setOwnerStore(store);
       setStoreId(store.id);
       const storeServices = await getServicesByStore(store.id);
       setServices(storeServices ?? []);
@@ -169,6 +174,11 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
       return;
     }
 
+    if (newCatalogLocked) {
+      setFormError('Renew your plan to add new services.');
+      return;
+    }
+
     if (!formState.title.trim()) {
       setFormError('Service title is required.');
       return;
@@ -208,6 +218,7 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
   };
 
   const liveCount = useMemo(() => services.filter((service) => service.isActive).length, [services]);
+  const newCatalogLocked = useMemo(() => isStoreTrialExpiredWithoutPaidPlan(ownerStore), [ownerStore]);
 
   return (
     <div className="space-y-6 md:space-y-8 pb-24">
@@ -218,7 +229,7 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
         </div>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          disabled={!hasStore}
+          disabled={!hasStore || newCatalogLocked}
           className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 md:px-6 py-2 md:py-3 bg-primary text-white rounded-xl hover:bg-primary-700 transition font-semibold text-sm md:text-base shadow-sm disabled:opacity-60"
         >
           <Plus className="w-4 h-4 md:w-5 md:h-5" />
@@ -255,6 +266,22 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {newCatalogLocked && hasStore && !loading && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Your public store link is paused</p>
+          <p className="mt-1 text-amber-900/90">
+            Renew your plan to let visitors see your catalog again. You can still review this page; adding new services
+            is blocked until you subscribe.
+          </p>
+          <Link
+            href="/dashboard/subscription"
+            className="mt-3 inline-flex text-sm font-semibold text-amber-950 underline decoration-amber-800/50 underline-offset-2 hover:decoration-amber-950"
+          >
+            Go to Subscription
+          </Link>
         </div>
       )}
 

@@ -21,6 +21,13 @@ class ProductController extends Controller
             return $this->errorResponse('You must create a store before adding products.', 409);
         }
 
+        if ($store->isPublicCatalogLocked()) {
+            return $this->errorResponse(
+                'Your store catalog is paused until you renew your plan. You can still use the dashboard, but new products cannot be added yet.',
+                403
+            );
+        }
+
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'price' => 'required|numeric|min:0',
@@ -64,6 +71,14 @@ class ProductController extends Controller
 
         if ($request->user()->id !== $product->store->user_id) {
             return $this->errorResponse('You are not authorized to update this product.', 403);
+        }
+
+        $product->loadMissing('store');
+        if ($product->store->isPublicCatalogLocked()) {
+            return $this->errorResponse(
+                'Your store catalog is paused until you renew your plan. Product updates are not available yet.',
+                403
+            );
         }
 
         $validator = Validator::make($request->all(), [

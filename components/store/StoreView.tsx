@@ -51,6 +51,7 @@ import RatingStars from '@/components/RatingStars';
 import ReviewCard from '@/components/ReviewCard';
 import { useAuth } from '@/src/context/AuthContext';
 import { buildReviewColors, getThemeForCategory, type ReviewTheme } from '@/src/lib/reviewTheme';
+import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
 
 type StoreViewProps = {
   store: Store;
@@ -1370,15 +1371,14 @@ export default function StoreView({
     store.whatsapp || 'N/A'
   } · Signature picks in ${marqueeCategory}`;
   const approvedReviews = useMemo(() => reviews.filter((review) => review.isApproved !== false), [reviews]);
-  const ratingBreakdown = useMemo(() => {
-    const counts: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    approvedReviews.forEach((review) => {
-      const star = Math.min(5, Math.max(1, Math.round(review.rating || 0))) as 1 | 2 | 3 | 4 | 5;
-      counts[star] += 1;
-    });
-    return counts;
-  }, [approvedReviews]);
-  const totalRecordedReviews = Object.values(ratingBreakdown).reduce((sum, count) => sum + count, 0);
+  const ratingBreakdown = useMemo(
+    () => ratingBreakdownFromSummaryOrReviews(reviewSummary, approvedReviews),
+    [reviewSummary, approvedReviews]
+  );
+  const totalRecordedReviews = useMemo(
+    () => Object.values(ratingBreakdown).reduce((sum, count) => sum + count, 0),
+    [ratingBreakdown]
+  );
   const aggregateRating = reviewSummary?.rating ?? store.rating;
   const highlights = useMemo(() => {
     const clampScore = (value: number) => Math.min(5, Math.max(1, Number(value.toFixed(1))));

@@ -158,4 +158,41 @@ class Store extends Model
             ->where('ends_at', '>', now())
             ->orderBy('ends_at', 'desc');
     }
+
+    /**
+     * Active subscription on a paid (non-`free` slug) plan — same idea as `isPaidSubscriptionActive` on the Next app.
+     */
+    public function hasActivePaidPlan(): bool
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('store_subscriptions')
+            || ! \Illuminate\Support\Facades\Schema::hasTable('subscription_plans')) {
+            return false;
+        }
+
+        $sub = $this->activeSubscription()->with('plan')->first();
+        if (! $sub || ! $sub->plan) {
+            return false;
+        }
+
+        $slug = strtolower((string) ($sub->plan->slug ?? ''));
+
+        return $slug !== 'free';
+    }
+
+    /**
+     * Public catalog should be hidden for visitors when trial ended and there is no paid plan.
+     */
+    public function isPublicCatalogLocked(): bool
+    {
+        if ($this->hasActivePaidPlan()) {
+            return false;
+        }
+
+        $trialEnd = $this->trial_ends_at;
+        if ($trialEnd === null) {
+            return false;
+        }
+
+        return $trialEnd->lte(now());
+    }
 }

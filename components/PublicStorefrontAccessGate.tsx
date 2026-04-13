@@ -33,7 +33,8 @@ export default function PublicStorefrontAccessGate({ store, user, children }: Pu
   const isOwner = Boolean(store && viewerOwnsStore(store, user ?? null));
   const locked = Boolean(store && isStoreTrialExpiredWithoutPaidPlan(store));
 
-  if (!locked) {
+  /** Logged-in owner can preview the live storefront; shared links for visitors stay locked. */
+  if (!locked || isOwner) {
     return <>{children}</>;
   }
 

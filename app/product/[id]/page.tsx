@@ -27,6 +27,7 @@ import ReviewCard from '@/components/ReviewCard';
 import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
 import { useAuth } from '@/src/context/AuthContext';
 import { buildReviewColors, getThemeForCategory } from '@/src/lib/reviewTheme';
+import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
 
 type ProductDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -52,14 +53,10 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
   const theme = useMemo(() => getThemeForCategory(themeKey), [themeKey]);
   const reviewColors = useMemo(() => buildReviewColors(theme), [theme]);
   const approvedReviews = useMemo(() => reviews.filter((review) => review.isApproved !== false), [reviews]);
-  const ratingBreakdown = useMemo(() => {
-    const counts: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    approvedReviews.forEach((review) => {
-      const star = Math.min(5, Math.max(1, Math.round(review.rating || 0))) as 1 | 2 | 3 | 4 | 5;
-      counts[star] += 1;
-    });
-    return counts;
-  }, [approvedReviews]);
+  const ratingBreakdown = useMemo(
+    () => ratingBreakdownFromSummaryOrReviews(reviewSummary, approvedReviews),
+    [reviewSummary, approvedReviews]
+  );
   const totalRecordedReviews = useMemo(
     () => Object.values(ratingBreakdown).reduce((sum, count) => sum + count, 0),
     [ratingBreakdown]

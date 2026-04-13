@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\StoreBoostController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StorePaymentIntegrationController;
 use App\Http\Controllers\Api\StoreSubscriptionController;
+use App\Http\Controllers\Api\StoreSubscriptionRazorpayController;
 use App\Http\Controllers\Api\SubscriptionPlanController;
 use App\Http\Controllers\Api\UtilityController;
 use Illuminate\Support\Facades\Route;
@@ -79,6 +80,8 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [StoreSubscriptionController::class, 'show']);
         Route::post('/', [StoreSubscriptionController::class, 'activate']);
         Route::post('addons', [StoreSubscriptionController::class, 'saveAddonSelection']);
+        Route::post('razorpay-order', [StoreSubscriptionRazorpayController::class, 'createOrder']);
+        Route::post('razorpay-verify', [StoreSubscriptionRazorpayController::class, 'verifyPayment']);
     });
 
     Route::get('stores/{store}/payment-integration', [StorePaymentIntegrationController::class, 'show']);

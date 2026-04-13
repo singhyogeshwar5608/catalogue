@@ -213,6 +213,8 @@ export interface Review {
 export type RatingSummary = {
   rating: number;
   totalReviews: number;
+  /** Approved review counts per star (1–5); full store/product totals from API, not current page only. */
+  distribution?: Partial<Record<1 | 2 | 3 | 4 | 5, number>>;
 };
 
 export type ReviewPagination = {
