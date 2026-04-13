@@ -31,10 +31,7 @@ import type {
   SubscriptionAddonCharges,
   StoreSubscriptionAddons,
 } from '@/types';
-import {
-  dispatchStoreProfileRefresh,
-  STORE_PROFILE_REFRESH_EVENT,
-} from '@/src/lib/storeSubscriptionAddons';
+import { dispatchStoreProfileRefresh } from '@/src/lib/storeSubscriptionAddons';
 
 const formatPlanDuration = (durationDays?: number, billingCycle?: string) => {
   if (!durationDays || durationDays <= 0) {
@@ -160,7 +157,6 @@ export default function SubscriptionPage() {
   const [checkoutOpenSeq, setCheckoutOpenSeq] = useState(0);
   const [mounted, setMounted] = useState(false);
   const closeModalButtonRef = useRef<HTMLButtonElement>(null);
-  const choosePlanCloseRef = useRef<HTMLButtonElement>(null);
 
   const openPlanModal = (plan: SubscriptionPlan) => {
     setSelectedPlan(plan);
@@ -183,10 +179,10 @@ export default function SubscriptionPage() {
     setCheckoutPlan(plan);
   };
 
-  const closeChoosePlanModal = () => {
+  const closeChoosePlanModal = useCallback(() => {
     setCheckoutPlan(null);
     setAddonHydrated(false);
-  };
+  }, []);
 
   const handlePlanCardKeyDown = (e: KeyboardEvent, plan: SubscriptionPlan) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -200,26 +196,31 @@ export default function SubscriptionPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedPlan && !checkoutPlan) return;
+    if (!selectedPlan) return;
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (checkoutPlan) closeChoosePlanModal();
-        else closePlanModal();
-      }
+      if (e.key === 'Escape') closePlanModal();
     };
     document.addEventListener('keydown', onKeyDown);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const t = window.setTimeout(() => {
-      if (checkoutPlan) choosePlanCloseRef.current?.focus();
-      else closeModalButtonRef.current?.focus();
+      closeModalButtonRef.current?.focus();
     }, 0);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = prevOverflow;
       window.clearTimeout(t);
     };
-  }, [selectedPlan, checkoutPlan]);
+  }, [selectedPlan]);
+
+  useEffect(() => {
+    if (!checkoutPlan) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') closeChoosePlanModal();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [checkoutPlan, closeChoosePlanModal]);
 
   useEffect(() => {
     if (!checkoutPlan) return;
@@ -279,8 +280,9 @@ export default function SubscriptionPage() {
   }, [checkoutPlan, checkoutOpenSeq]);
 
   /** Save add-ons as soon as toggles change (after hydrate) so Payment settings appears in the sidebar without pressing Continue. */
+  const checkoutPlanId = checkoutPlan?.id;
   useEffect(() => {
-    if (!checkoutPlan || !storeId || !addonHydrated) return undefined;
+    if (!checkoutPlanId || !storeId || !addonHydrated) return undefined;
     const t = window.setTimeout(() => {
       void (async () => {
         try {
@@ -298,7 +300,7 @@ export default function SubscriptionPage() {
       })();
     }, 420);
     return () => window.clearTimeout(t);
-  }, [addonPayGateway, addonQr, addonPgHelp, addonHydrated, checkoutPlan, storeId]);
+  }, [addonPayGateway, addonQr, addonPgHelp, addonHydrated, checkoutPlanId, storeId]);
 
   const loadSubscriptionPageData = useCallback(async () => {
     try {
@@ -332,14 +334,6 @@ export default function SubscriptionPage() {
 
   useEffect(() => {
     void loadSubscriptionPageData();
-  }, [loadSubscriptionPageData]);
-
-  useEffect(() => {
-    const onProfileRefresh = () => {
-      void loadSubscriptionPageData();
-    };
-    window.addEventListener(STORE_PROFILE_REFRESH_EVENT, onProfileRefresh);
-    return () => window.removeEventListener(STORE_PROFILE_REFRESH_EVENT, onProfileRefresh);
   }, [loadSubscriptionPageData]);
 
   const checkoutAddonPayload = (): StoreSubscriptionAddons => ({
@@ -607,8 +601,8 @@ export default function SubscriptionPage() {
         {planChangeLockedByPaidPeriod
           ? 'Your paid subscription is fixed until the end date above. You can still open other plans to compare (preview only).'
           : activeSubscription
-            ? 'Your active plan is summarized above. Click another plan card for a preview, or use Choose Plan to review add-ons and totals before confirming.'
-            : 'Click a plan card for a quick preview, or use Choose Plan to open checkout with optional add-ons.'}
+            ? 'Your active plan is summarized above. Click another plan card for a preview, or use Choose Plan on a plan to expand add-ons and totals in that card.'
+            : 'Click a plan card for a quick preview, or use Choose Plan to expand checkout options inside that plan card.'}
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
@@ -617,6 +611,7 @@ export default function SubscriptionPage() {
           const isActivating = activatingPlanId === plan.id;
           const isModalPlan = selectedPlan?.id === plan.id;
           const canOpenDetailsModal = !isCurrentPlan;
+          const checkoutOpenHere = checkoutPlan?.id === plan.id;
 
           return (
             <div
@@ -631,9 +626,11 @@ export default function SubscriptionPage() {
                   : `${plan.name} — your current plan (details above)`
               }
               onClick={() => {
+                if (checkoutOpenHere) return;
                 if (canOpenDetailsModal) openPlanModal(plan);
               }}
               onKeyDown={(e) => {
+                if (checkoutOpenHere) return;
                 if (canOpenDetailsModal) handlePlanCardKeyDown(e, plan);
               }}
               className={`bg-white rounded-xl shadow-md transition overflow-hidden text-left ${
@@ -642,7 +639,7 @@ export default function SubscriptionPage() {
                   : 'cursor-default ring-2 ring-purple-200/80'
               } ${plan.isPopular && !isCurrentPlan ? 'ring-2 ring-primary' : ''} ${
                 isModalPlan ? 'ring-2 ring-primary ring-offset-2' : ''
-              }`}
+              } ${checkoutOpenHere ? 'ring-2 ring-indigo-400 ring-offset-2 shadow-lg' : ''}`}
             >
               {plan.isPopular && (
                 <div className="bg-primary text-white text-center py-2 text-xs md:text-sm font-semibold">
@@ -670,6 +667,10 @@ export default function SubscriptionPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (planChangeLockedByPaidPeriod && !isCurrentPlan) return;
+                    if (checkoutOpenHere) {
+                      closeChoosePlanModal();
+                      return;
+                    }
                     openChoosePlanModal(plan);
                   }}
                   disabled={isCurrentPlan || isActivating || !plan.isActive || (planChangeLockedByPaidPeriod && !isCurrentPlan)}
@@ -677,10 +678,12 @@ export default function SubscriptionPage() {
                     isCurrentPlan
                       ? 'bg-gray-200 text-gray-700 cursor-not-allowed'
                       : !plan.isActive
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : planChangeLockedByPaidPeriod && !isCurrentPlan
-                        ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                      : 'bg-primary text-white hover:bg-primary-700'
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : planChangeLockedByPaidPeriod && !isCurrentPlan
+                          ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                          : checkoutOpenHere
+                            ? 'border-2 border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                            : 'bg-primary text-white hover:bg-primary-700'
                   }`}
                 >
                   {isActivating ? (
@@ -694,10 +697,167 @@ export default function SubscriptionPage() {
                     'Unavailable'
                   ) : planChangeLockedByPaidPeriod ? (
                     'Locked until renewal'
+                  ) : checkoutOpenHere ? (
+                    'Hide checkout'
                   ) : (
                     'Choose Plan'
                   )}
                 </button>
+
+                {checkoutOpenHere && checkoutPlan && (
+                  <div
+                    role="region"
+                    aria-label={`Checkout for ${checkoutPlan.name}`}
+                    className="mt-4 cursor-default rounded-xl border border-slate-200 bg-slate-50/80 text-left shadow-inner"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-primary px-4 pb-6 pt-4 text-white">
+                      <div className="pointer-events-none absolute -right-8 top-0 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+                      <div className="relative flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">Checkout</p>
+                          <h2 className="mt-0.5 text-xl font-bold capitalize tracking-tight">{checkoutPlan.name}</h2>
+                          <p className="mt-1 text-xs leading-snug text-white/85">
+                            Review your plan, optional add-ons from admin pricing, and total before confirming.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={closeChoosePlanModal}
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white ring-1 ring-white/25 transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                          aria-label="Close checkout"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="relative mt-3 flex flex-wrap items-end gap-2">
+                        <span className="text-3xl font-bold tracking-tight">₹{formatInr(Number(checkoutPlan.price))}</span>
+                        <span className="pb-0.5 text-xs text-white/85">
+                          base / {formatPlanDuration(checkoutPlan.durationDays, checkoutPlan.billingCycle)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 bg-white px-3 py-3 sm:px-4">
+                      {checkoutPlan.description ? (
+                        <p className="text-xs leading-relaxed text-slate-600">{checkoutPlan.description}</p>
+                      ) : null}
+
+                      <div className="mt-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Plan features</p>
+                        <ul className="mt-1.5 grid max-h-36 grid-cols-1 gap-1.5 overflow-y-auto sm:max-h-40">
+                          {checkoutPlan.features.map((feature, index) => (
+                            <li
+                              key={index}
+                              className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-700"
+                            >
+                              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                              <span>{feature}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Optional add-ons</p>
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                            {addonPricesLoading && (
+                              <span className="inline-flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Loading prices…
+                              </span>
+                            )}
+                            {!addonHydrated && !addonPricesLoading && (
+                              <span className="inline-flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Syncing…
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <AddonToggleRow
+                            icon={CreditCard}
+                            title="Payment gateway integration"
+                            hint="We help connect a payment gateway to your store."
+                            priceInr={addonPrices?.payment_gateway_integration_inr ?? 0}
+                            checked={addonPayGateway}
+                            onToggle={() => setAddonPayGateway((v) => !v)}
+                            disabled={addonPricesLoading || !addonHydrated}
+                          />
+                          <AddonToggleRow
+                            icon={QrCode}
+                            title="QR code"
+                            hint="QR-based payment display for your storefront."
+                            priceInr={addonPrices?.qr_code_inr ?? 0}
+                            checked={addonQr}
+                            onToggle={() => setAddonQr((v) => !v)}
+                            disabled={addonPricesLoading || !addonHydrated}
+                          />
+                          <AddonToggleRow
+                            icon={Building2}
+                            title="Payment gateway — company help"
+                            hint="Our team handles gateway setup on your behalf."
+                            priceInr={addonPrices?.payment_gateway_help_inr ?? 0}
+                            checked={addonPgHelp}
+                            onToggle={() => setAddonPgHelp((v) => !v)}
+                            disabled={addonPricesLoading || !addonHydrated}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
+                      <div className="space-y-1.5 text-xs sm:text-sm">
+                        <div className="flex justify-between text-slate-600">
+                          <span>Plan</span>
+                          <span className="font-medium text-slate-900">₹{formatInr(checkoutBase)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>Add-ons (selected)</span>
+                          <span className="font-medium text-slate-900">₹{formatInr(addonSum)}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-slate-200/80 pt-1.5 text-sm font-bold text-slate-900 sm:text-base">
+                          <span>Estimated total</span>
+                          <span>₹{formatInr(checkoutTotal)}</span>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-[10px] leading-snug text-slate-500">
+                        {Number(checkoutPlan.price) > 0
+                          ? 'Final amount will be confirmed at payment. Your subscription does not change until checkout succeeds.'
+                          : 'Free plan: add-ons are shown for future billing; only the plan is activated today.'}
+                      </p>
+                      <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-2">
+                        <button
+                          type="button"
+                          onClick={closeChoosePlanModal}
+                          className="w-full rounded-lg border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto sm:px-4 sm:text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleConfirmCheckout()}
+                          disabled={activatingPlanId === checkoutPlan.id || !storeId}
+                          className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-primary py-2.5 text-xs font-semibold text-white shadow-md transition hover:opacity-95 disabled:opacity-60 sm:w-auto sm:px-5 sm:text-sm"
+                        >
+                          {activatingPlanId === checkoutPlan.id ? (
+                            <span className="inline-flex items-center justify-center gap-2">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Working…
+                            </span>
+                          ) : Number(checkoutPlan.price) > 0 ? (
+                            'Continue to payment'
+                          ) : (
+                            'Confirm & activate'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -837,179 +997,6 @@ export default function SubscriptionPage() {
           document.body
         )}
 
-      {mounted &&
-        checkoutPlan &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[101] flex items-end justify-center sm:items-center sm:p-4"
-            role="presentation"
-          >
-            <button
-              type="button"
-              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
-              aria-label="Close dialog"
-              onClick={closeChoosePlanModal}
-            />
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="checkout-plan-title"
-              className="relative z-10 flex max-h-[min(92vh,880px)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-900/20 sm:rounded-3xl"
-            >
-              <div className="relative shrink-0 overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-primary px-5 pb-8 pt-6 text-white sm:px-6 sm:pt-7">
-                <div className="pointer-events-none absolute -right-10 top-0 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-                <div className="pointer-events-none absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl" />
-                <div className="relative flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">Checkout</p>
-                    <h2 id="checkout-plan-title" className="mt-1 text-2xl font-bold capitalize tracking-tight">
-                      {checkoutPlan.name}
-                    </h2>
-                    <p className="mt-1 text-sm text-white/80">
-                      Review your plan, optional add-ons from admin pricing, and total before confirming.
-                    </p>
-                  </div>
-                  <button
-                    ref={choosePlanCloseRef}
-                    type="button"
-                    onClick={closeChoosePlanModal}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white ring-1 ring-white/25 transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                    aria-label="Close"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-                <div className="relative mt-5 flex flex-wrap items-end gap-2">
-                  <span className="text-4xl font-bold tracking-tight">₹{formatInr(Number(checkoutPlan.price))}</span>
-                  <span className="pb-1.5 text-sm text-white/85">
-                    base / {formatPlanDuration(checkoutPlan.durationDays, checkoutPlan.billingCycle)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6">
-                  {checkoutPlan.description ? (
-                    <p className="text-sm leading-relaxed text-slate-600">{checkoutPlan.description}</p>
-                  ) : null}
-
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Plan features</p>
-                    <ul className="mt-2 grid max-h-40 grid-cols-1 gap-2 overflow-y-auto sm:max-h-48">
-                      {checkoutPlan.features.map((feature, index) => (
-                        <li
-                          key={index}
-                          className="flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2 text-sm text-slate-700"
-                        >
-                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="mt-6">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Optional add-ons</p>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        {addonPricesLoading && (
-                          <span className="inline-flex items-center gap-1.5">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Loading prices…
-                          </span>
-                        )}
-                        {!addonHydrated && !addonPricesLoading && (
-                          <span className="inline-flex items-center gap-1.5">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Syncing saved selections…
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-2.5">
-                      <AddonToggleRow
-                        icon={CreditCard}
-                        title="Payment gateway integration"
-                        hint="We help connect a payment gateway to your store."
-                        priceInr={addonPrices?.payment_gateway_integration_inr ?? 0}
-                        checked={addonPayGateway}
-                        onToggle={() => setAddonPayGateway((v) => !v)}
-                        disabled={addonPricesLoading || !addonHydrated}
-                      />
-                      <AddonToggleRow
-                        icon={QrCode}
-                        title="QR code"
-                        hint="QR-based payment display for your storefront."
-                        priceInr={addonPrices?.qr_code_inr ?? 0}
-                        checked={addonQr}
-                        onToggle={() => setAddonQr((v) => !v)}
-                        disabled={addonPricesLoading || !addonHydrated}
-                      />
-                      <AddonToggleRow
-                        icon={Building2}
-                        title="Payment gateway — company help"
-                        hint="Our team handles gateway setup on your behalf."
-                        priceInr={addonPrices?.payment_gateway_help_inr ?? 0}
-                        checked={addonPgHelp}
-                        onToggle={() => setAddonPgHelp((v) => !v)}
-                        disabled={addonPricesLoading || !addonHydrated}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="shrink-0 border-t border-slate-200 bg-slate-50/90 px-5 py-4 sm:px-6">
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between text-slate-600">
-                      <span>Plan</span>
-                      <span className="font-medium text-slate-900">₹{formatInr(checkoutBase)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>Add-ons (selected)</span>
-                      <span className="font-medium text-slate-900">₹{formatInr(addonSum)}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-slate-200/80 pt-2 text-base font-bold text-slate-900">
-                      <span>Estimated total</span>
-                      <span>₹{formatInr(checkoutTotal)}</span>
-                    </div>
-                  </div>
-                  <p className="mt-2 text-[11px] leading-snug text-slate-500">
-                    {Number(checkoutPlan.price) > 0
-                      ? 'Final amount will be confirmed at payment. Your subscription does not change until checkout succeeds.'
-                      : 'Free plan: add-ons are shown for future billing; only the plan is activated today.'}
-                  </p>
-                  <div className="mt-4 flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={closeChoosePlanModal}
-                      className="w-full rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto sm:px-5"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleConfirmCheckout()}
-                      disabled={activatingPlanId === checkoutPlan.id || !storeId}
-                      className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-primary py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-900/20 transition hover:opacity-95 disabled:opacity-60 sm:w-auto sm:px-6"
-                    >
-                      {activatingPlanId === checkoutPlan.id ? (
-                        <span className="inline-flex items-center justify-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Working…
-                        </span>
-                      ) : Number(checkoutPlan.price) > 0 ? (
-                        'Continue to payment'
-                      ) : (
-                        'Confirm & activate'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
     </div>
   );
 }

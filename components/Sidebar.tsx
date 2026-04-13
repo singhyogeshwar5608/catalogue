@@ -84,7 +84,10 @@ export default function Sidebar() {
   return (
     <>
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+      <header
+        className="md:hidden fixed top-0 left-0 right-0 z-50 flex min-h-[3.75rem] items-center justify-between border-b border-gray-200 bg-white px-4 pb-3"
+        style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
+      >
         <Link href="/" className="flex items-center gap-2">
           <ShoppingBag className="w-6 h-6 text-primary" />
           <span className="text-lg font-bold text-gray-900">Cateloge</span>
@@ -99,7 +102,7 @@ export default function Sidebar() {
             <Menu className="w-6 h-6 text-gray-700" />
           )}
         </button>
-      </div>
+      </header>
 
       {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
@@ -114,7 +117,7 @@ export default function Sidebar() {
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex flex-col h-full">
-          <div className="flex-1 overflow-y-auto pt-20 px-4">
+          <div className="flex-1 overflow-y-auto px-4 pt-[max(5.25rem,env(safe-area-inset-top,0px)+4.25rem)]">
             <nav className="flex-1 p-4">
               <ul className="space-y-2">
                 {menuItems.map((item) => {

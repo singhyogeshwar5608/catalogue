@@ -35,6 +35,7 @@ import {
   updateStore,
 } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
+import { isPaidSubscriptionActive } from '@/src/lib/storeAccess';
 import type { Product, Store, StoreSubscription } from '@/types';
 import SubscriptionExpiryPopup from '@/components/SubscriptionExpiryPopup';
 import ProductLimitPopup from '@/components/ProductLimitPopup';
@@ -55,12 +56,7 @@ function daysUntil(value?: string | null) {
   return Math.ceil((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-function isPaidSubscriptionActive(sub: StoreSubscription | null) {
-  if (!sub || sub.status !== 'active') return false;
-  const end = new Date(sub.endsAt).getTime();
-  return !Number.isNaN(end) && end > Date.now();
-}
-
+/** True only for a paid plan period — not the platform default `free` slug row from signup. */
 export default function DashboardPage() {
   const router = useRouter();
   const { isLoggedIn, user } = useAuth();

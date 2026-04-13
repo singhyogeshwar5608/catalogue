@@ -1,10 +1,14 @@
 import type { Store, StoreSubscription } from '@/types';
 import { trialEndsAtFallbackFromCreated } from '@/src/lib/freeTrialDays';
 
+/** Paid plan only — not the signup `free` slug row from `ProvisionDefaultFreeStoreSubscription`. */
 export function isPaidSubscriptionActive(sub: StoreSubscription | null | undefined): boolean {
   if (!sub || sub.status !== 'active') return false;
   const end = new Date(sub.endsAt).getTime();
-  return !Number.isNaN(end) && end > Date.now();
+  if (Number.isNaN(end) || end <= Date.now()) return false;
+  const slug = (sub.plan?.slug ?? '').toLowerCase().trim();
+  if (slug === 'free') return false;
+  return true;
 }
 
 function effectiveTrialEndMs(store: Store): number | null {
