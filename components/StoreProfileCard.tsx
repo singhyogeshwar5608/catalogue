@@ -92,12 +92,15 @@ export default function StoreProfileCard({ store, categoryBannerIndex }: StorePr
           <div className="absolute left-1/2 -top-12 -translate-x-1/2">
             <div className="relative inline-flex items-center justify-center">
               <div className="h-24 w-24 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-xl">
-                <Image 
-                  src={store.logo} 
-                  alt={store.name} 
-                  width={96} 
-                  height={96} 
-                  className="h-full w-full object-cover" 
+                <img
+                  src={store.logo}
+                  alt={store.name}
+                  width={96}
+                  height={96}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
                 />
               </div>
             </div>

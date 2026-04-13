@@ -8,7 +8,7 @@ import {
   activateStoreBoost,
   cancelBoost,
   getStoredUser,
-  getStoreBySlug,
+  getStoreBySlugFromApi,
 } from '@/src/lib/api';
 import type { BoostPlan, StoreBoost } from '@/types';
 
@@ -33,7 +33,7 @@ export default function BoostPage() {
           return;
         }
 
-        const store = await getStoreBySlug(user.storeSlug);
+        const store = await getStoreBySlugFromApi(user.storeSlug);
         if (!store) {
   return;
         }

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
 import { getStoreBySlugFromApi } from '@/src/lib/api';
-import { STORE_PROFILE_REFRESH_EVENT, storeHasSubscriptionAddonAccess } from '@/src/lib/storeSubscriptionAddons';
+import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
 
 export default function Sidebar() {
@@ -56,7 +56,7 @@ export default function Sidebar() {
   }, [loadStore]);
 
   const businessType = myStore?.businessType || 'product';
-  const showPaymentsHub = storeHasSubscriptionAddonAccess(myStore);
+  const showPaymentsHub = storeCanAccessPaymentIntegrationHub(myStore);
 
   const menuItems = [
     { href: '/', icon: Home, label: 'Home Page' },

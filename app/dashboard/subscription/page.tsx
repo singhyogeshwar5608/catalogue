@@ -16,7 +16,7 @@ import {
   Building2,
 } from 'lucide-react';
 import {
-  getSubscriptionPlans,
+  getSubscriptionPlanCatalog,
   getStoreSubscription,
   activateStoreSubscription,
   getStoredUser,
@@ -26,6 +26,7 @@ import {
   saveStoreSubscriptionAddons,
   createStoreSubscriptionRazorpayOrder,
   verifyStoreSubscriptionRazorpayPayment,
+  completeStoreSubscriptionMockPayment,
 } from '@/src/lib/api';
 import type {
   SubscriptionPlan,
@@ -34,32 +35,15 @@ import type {
   StoreSubscriptionAddons,
 } from '@/types';
 import { dispatchStoreProfileRefresh } from '@/src/lib/storeSubscriptionAddons';
+import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
 
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => {
-      open: () => void;
-      on: (event: string, handler: (response: { error?: { description?: string } }) => void) => void;
-    };
-  }
-}
-
-function loadRazorpayCheckoutScript(): Promise<void> {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('Razorpay checkout requires a browser.'));
-  }
-  if (window.Razorpay) {
-    return Promise.resolve();
-  }
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Could not load Razorpay checkout.'));
-    document.body.appendChild(script);
-  });
-}
+/**
+ * Mock checkout button is shown in all environments unless explicitly hidden.
+ * Hide everywhere: `NEXT_PUBLIC_SUBSCRIPTION_MOCK_PAYMENT=false` at build time.
+ * Lock API to real payments only: `SUBSCRIPTION_MOCK_PAYMENT=false` in Laravel `backend/.env`.
+ */
+const SUBSCRIPTION_MOCK_PAYMENT_UI =
+  typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SUBSCRIPTION_MOCK_PAYMENT !== 'false';
 
 const formatPlanDuration = (durationDays?: number, billingCycle?: string) => {
   if (!durationDays || durationDays <= 0) {
@@ -194,6 +178,8 @@ export default function SubscriptionPage() {
   const [mounted, setMounted] = useState(false);
   const closeModalButtonRef = useRef<HTMLButtonElement>(null);
   const paymentGatewayPromptCloseRef = useRef<HTMLButtonElement>(null);
+  /** Prevents Mock + Razorpay flows from running together if clicks fire close together. */
+  const subscriptionCheckoutLockRef = useRef(false);
 
   const openPlanModal = (plan: SubscriptionPlan) => {
     setSelectedPlan(plan);
@@ -327,7 +313,7 @@ export default function SubscriptionPage() {
     };
   }, [checkoutPlan, checkoutOpenSeq]);
 
-  /** Save add-ons as soon as toggles change (after hydrate) so Payment settings appears in the sidebar without pressing Continue. */
+  /** Save add-ons as soon as toggles change (after hydrate); Payment settings nav still requires an active paid period. */
   const checkoutPlanId = checkoutPlan?.id;
   useEffect(() => {
     if (!checkoutPlanId || !storeId || !addonHydrated) return undefined;
@@ -354,7 +340,7 @@ export default function SubscriptionPage() {
     try {
       setLoading(true);
       const user = getStoredUser();
-      const fetchedPlans = await getSubscriptionPlans();
+      const fetchedPlans = await getSubscriptionPlanCatalog();
       setPlans(fetchedPlans);
 
       if (!user?.storeSlug) {
@@ -441,6 +427,8 @@ export default function SubscriptionPage() {
 
   const proceedPaidPlanCheckout = async () => {
     if (!checkoutPlan || !storeId) return;
+    if (subscriptionCheckoutLockRef.current) return;
+    subscriptionCheckoutLockRef.current = true;
     const plan = checkoutPlan;
     const addons = checkoutAddonPayload();
     setActivatingPlanId(plan.id);
@@ -533,6 +521,43 @@ export default function SubscriptionPage() {
           : 'Could not start checkout. If Razorpay keys are missing, add them to the Laravel backend `.env` file.'
       );
       setActivatingPlanId(null);
+    } finally {
+      subscriptionCheckoutLockRef.current = false;
+    }
+  };
+
+  /** Same end state as successful Razorpay verify; for local/testing when mock is enabled on the API. */
+  const proceedMockPaidPlanCheckout = async () => {
+    if (!checkoutPlan || !storeId) return;
+    if (subscriptionCheckoutLockRef.current) return;
+    subscriptionCheckoutLockRef.current = true;
+    const plan = checkoutPlan;
+    const addons = checkoutAddonPayload();
+    setActivatingPlanId(plan.id);
+    setActivationError(null);
+    setSuccessMessage(null);
+    try {
+      await saveStoreSubscriptionAddons(storeId, addons);
+      const subscription = await completeStoreSubscriptionMockPayment(storeId, {
+        planId: plan.id,
+        addons,
+      });
+      setActiveSubscription(subscription);
+      setSubscriptionNotice(null);
+      setPaymentGatewaySuggestOpen(false);
+      setCheckoutPlan(null);
+      setSuccessMessage(`✅ Mock payment successful! You are now on the ${subscription.plan.name} plan.`);
+    } catch (err) {
+      setActivationError(
+        isApiError(err)
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Mock activation failed. On the API: ensure mock is allowed (default on; set SUBSCRIPTION_MOCK_PAYMENT=false only to disable), then `php artisan config:clear` if needed.',
+      );
+    } finally {
+      setActivatingPlanId(null);
+      subscriptionCheckoutLockRef.current = false;
     }
   };
 
@@ -737,23 +762,38 @@ export default function SubscriptionPage() {
         </div>
       )}
 
-      {planChangeLockedByPaidPeriod && (
-        <p className="text-sm text-gray-600 mb-4">
-          Your paid plan and billing period are shown above. Other catalog plans are hidden until this period ends.
-        </p>
-      )}
+      {plans.length > 0 && (
+        <section
+          className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:p-6"
+          aria-labelledby="subscription-plan-catalog-heading"
+        >
+          <div className="mb-5 min-w-0 border-b border-gray-100 pb-4">
+            <h2
+              id="subscription-plan-catalog-heading"
+              className="text-lg font-semibold text-gray-900 md:text-xl"
+            >
+              All subscription plans
+            </h2>
+            <p className="mt-1 text-sm leading-relaxed text-gray-600">
+              Full catalog from your administrator (including inactive plans for reference). Checkout is only offered
+              on plans marked available.
+            </p>
+            {planChangeLockedByPaidPeriod ? (
+              <p className="mt-3 text-sm font-medium leading-snug text-indigo-950">
+                You have an active paid subscription — you can compare plans below, but you cannot switch or start
+                another plan until the current period ends.
+              </p>
+            ) : (
+              <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-gray-600">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+                {activeSubscription
+                  ? 'Your active plan is summarized above. Open a card for details, or use Choose plan on an available plan to review add-ons and checkout.'
+                  : 'Open a card for details, or use Choose plan to expand checkout options on that plan.'}
+              </p>
+            )}
+          </div>
 
-      {!planChangeLockedByPaidPeriod && (
-      <p className="text-sm text-gray-600 mb-4 flex items-center gap-2">
-        <Info className="w-4 h-4 text-primary flex-shrink-0" />
-        {activeSubscription
-          ? 'Your active plan is summarized above. Click another plan card for a preview, or use Choose Plan on a plan to expand add-ons and totals in that card.'
-          : 'Click a plan card for a quick preview, or use Choose Plan to expand checkout options inside that plan card.'}
-      </p>
-      )}
-
-      {!planChangeLockedByPaidPeriod && (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
         {plans.map((plan) => {
           const isCurrentPlan = activeSubscription?.plan.id === plan.id;
           const isActivating = activatingPlanId === plan.id;
@@ -795,6 +835,18 @@ export default function SubscriptionPage() {
                 </div>
               )}
               <div className="p-4 md:p-6">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  {!plan.isActive ? (
+                    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 ring-1 ring-gray-200/80">
+                      Inactive
+                    </span>
+                  ) : null}
+                  {isCurrentPlan ? (
+                    <span className="inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800 ring-1 ring-violet-200/80">
+                      Your plan
+                    </span>
+                  ) : null}
+                </div>
                 <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2 capitalize">{plan.name}</h3>
                 <div className="flex items-baseline gap-2 mb-4">
                   <span className="text-3xl md:text-4xl font-bold text-gray-900">₹{plan.price}</span>
@@ -872,7 +924,11 @@ export default function SubscriptionPage() {
                         </div>
                         <button
                           type="button"
-                          onClick={closeChoosePlanModal}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            closeChoosePlanModal();
+                          }}
                           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white ring-1 ring-white/25 transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
                           aria-label="Close checkout"
                         >
@@ -977,19 +1033,49 @@ export default function SubscriptionPage() {
                           ? 'Final amount will be confirmed at payment. Your subscription does not change until checkout succeeds.'
                           : 'Free plan: add-ons are shown for future billing; only the plan is activated today.'}
                       </p>
-                      <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-2">
+                      <div className="relative z-10 mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-2">
                         <button
                           type="button"
-                          onClick={closeChoosePlanModal}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            closeChoosePlanModal();
+                          }}
                           className="w-full rounded-lg border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto sm:px-4 sm:text-sm"
                         >
                           Cancel
                         </button>
+                        {SUBSCRIPTION_MOCK_PAYMENT_UI && Number(checkoutPlan.price) > 0 ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void proceedMockPaidPlanCheckout();
+                            }}
+                            disabled={activatingPlanId === checkoutPlan.id || !storeId}
+                            className="relative z-[1] w-full rounded-lg border border-amber-300 bg-amber-50 py-2.5 text-xs font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:opacity-60 sm:w-auto sm:px-4 sm:text-sm"
+                            title="Skips Razorpay; same DB activation when the API allows mock (local Laravel or SUBSCRIPTION_MOCK_PAYMENT)."
+                          >
+                            {activatingPlanId === checkoutPlan.id ? (
+                              <span className="inline-flex items-center justify-center gap-2">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Working…
+                              </span>
+                            ) : (
+                              'Mock payment (test)'
+                            )}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          onClick={() => void handleConfirmCheckout()}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleConfirmCheckout();
+                          }}
                           disabled={activatingPlanId === checkoutPlan.id || !storeId}
-                          className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-primary py-2.5 text-xs font-semibold text-white shadow-md transition hover:opacity-95 disabled:opacity-60 sm:w-auto sm:px-5 sm:text-sm"
+                          className="relative z-[1] w-full rounded-lg bg-gradient-to-r from-indigo-600 to-primary py-2.5 text-xs font-semibold text-white shadow-md transition hover:opacity-95 disabled:opacity-60 sm:w-auto sm:px-5 sm:text-sm"
                         >
                           {activatingPlanId === checkoutPlan.id ? (
                             <span className="inline-flex items-center justify-center gap-2">
@@ -1010,7 +1096,8 @@ export default function SubscriptionPage() {
             </div>
           );
         })}
-      </div>
+          </div>
+        </section>
       )}
 
       {mounted &&
@@ -1223,19 +1310,51 @@ export default function SubscriptionPage() {
                   <p className="mt-2 text-xs text-slate-500">Loading your saved selections…</p>
                 )}
               </div>
-              <div className="flex flex-col-reverse gap-2 border-t border-amber-100 bg-amber-50/40 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <div className="relative z-10 flex flex-col gap-2 border-t border-amber-100 bg-amber-50/40 px-5 py-4 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6">
                 <button
                   type="button"
-                  onClick={() => setPaymentGatewaySuggestOpen(false)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setPaymentGatewaySuggestOpen(false);
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto sm:px-5"
                 >
                   Go back
                 </button>
+                {SUBSCRIPTION_MOCK_PAYMENT_UI ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void proceedMockPaidPlanCheckout();
+                    }}
+                    disabled={
+                      activatingPlanId === checkoutPlan.id || !storeId || addonPricesLoading || !addonHydrated
+                    }
+                    className="relative z-[1] w-full rounded-xl border border-amber-400 bg-amber-100/80 py-2.5 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-5"
+                    title="Skips Razorpay; same subscription activation when the API allows mock checkout."
+                  >
+                    {activatingPlanId === checkoutPlan.id ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Working…
+                      </span>
+                    ) : (
+                      'Mock payment (test)'
+                    )}
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  onClick={() => void proceedPaidPlanCheckout()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void proceedPaidPlanCheckout();
+                  }}
                   disabled={activatingPlanId === checkoutPlan.id || !storeId || addonPricesLoading || !addonHydrated}
-                  className="w-full rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 py-2.5 text-sm font-semibold text-white shadow-md transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6"
+                  className="relative z-[1] w-full rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 py-2.5 text-sm font-semibold text-white shadow-md transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6"
                 >
                   {activatingPlanId === checkoutPlan.id ? (
                     <span className="inline-flex items-center justify-center gap-2">

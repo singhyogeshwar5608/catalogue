@@ -54,12 +54,21 @@ return [
     'next_cache_invalidate_secret' => env('NEXT_CACHE_INVALIDATE_SECRET', env('CACHE_INVALIDATE_SECRET')),
 
     /*
-    | Platform subscription checkout (merchant pays Catelog). Keys must live in Laravel `backend/.env`
-    | only — never expose the secret to the Next.js browser bundle.
+    | Platform Razorpay (ONE pair in `backend/.env`): merchants paying Catelog for their subscription.
+    | Customer → merchant product checkout uses only `stores.razorpay_key_id` / `stores.razorpay_key_secret`
+    | (StorePaymentIntegrationController) — not these env vars.
     */
     'razorpay' => [
         'key_id' => env('RAZORPAY_KEY_ID', env('RZP_LIVE_KEY_ID')),
         'key_secret' => env('RAZORPAY_KEY_SECRET', env('RZP_LIVE_KEY_SECRET')),
+        /**
+         * When true, `POST …/subscription/mock-complete` is allowed (also allowed when `APP_ENV=local` even if false here).
+         * Default true for now; set `SUBSCRIPTION_MOCK_PAYMENT=false` in `backend/.env` before locking production to real payments only.
+         */
+        'subscription_mock_payment' => filter_var(
+            env('SUBSCRIPTION_MOCK_PAYMENT', 'true'),
+            FILTER_VALIDATE_BOOLEAN
+        ),
     ],
 
 ];

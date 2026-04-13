@@ -1,13 +1,19 @@
 import type { Store, StoreSubscription } from '@/types';
 import { trialEndsAtFallbackFromCreated } from '@/src/lib/freeTrialDays';
 
-/** Paid plan only — not the signup `free` slug row from `ProvisionDefaultFreeStoreSubscription`. */
+/**
+ * Paid plan period (unlocks storefront for visitors, catalog limits, no trial lock).
+ * Uses plan/subscription price when present so paid tiers still count if slug is missing or wrong.
+ */
 export function isPaidSubscriptionActive(sub: StoreSubscription | null | undefined): boolean {
   if (!sub || sub.status !== 'active') return false;
   const end = new Date(sub.endsAt).getTime();
   if (Number.isNaN(end) || end <= Date.now()) return false;
+  const planPrice = Number(sub.plan?.price ?? 0);
+  const subPrice = Number(sub.price ?? 0);
+  if (planPrice > 0 || subPrice > 0) return true;
   const slug = (sub.plan?.slug ?? '').toLowerCase().trim();
-  if (slug === 'free') return false;
+  if (slug === 'free' || slug === '') return false;
   return true;
 }
 
@@ -23,6 +29,41 @@ function effectiveTrialEndMs(store: Store): number | null {
       const t = new Date(fb).getTime();
       if (!Number.isNaN(t)) return t;
     }
+  }
+  return null;
+}
+
+function ceilWholeDaysUntil(iso: string): number | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.ceil((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+/** Whole days left, floor — matches `TrialCountdownBanner` day tiles (not calendar ceil). */
+function floorWholeDaysUntilMs(endMs: number, now = Date.now()): number {
+  const diff = Math.max(0, endMs - now);
+  const sec = Math.floor(diff / 1000);
+  return Math.floor(sec / 86400);
+}
+
+/**
+ * Days remaining for the owner-dashboard “subscription expiring” warning.
+ * Uses paid period end when a paid plan is active; otherwise active trial end (same source as
+ * `TrialCountdownBanner`); otherwise the subscription row `endsAt` (e.g. free plan period).
+ */
+export function getDashboardExpiryWarningDaysRemaining(
+  store: Store,
+  subscription: StoreSubscription | null | undefined,
+): number | null {
+  if (isPaidSubscriptionActive(subscription) && subscription?.endsAt) {
+    return ceilWholeDaysUntil(subscription.endsAt);
+  }
+  const trialEndMs = effectiveTrialEndMs(store);
+  if (trialEndMs !== null && trialEndMs > Date.now()) {
+    return floorWholeDaysUntilMs(trialEndMs);
+  }
+  if (subscription?.endsAt) {
+    return ceilWholeDaysUntil(subscription.endsAt);
   }
   return null;
 }

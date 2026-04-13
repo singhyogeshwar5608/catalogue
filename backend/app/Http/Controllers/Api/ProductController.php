@@ -146,7 +146,7 @@ class ProductController extends Controller
         return $this->successResponse('Products retrieved successfully.', $products);
     }
 
-    public function getProductById(int $id)
+    public function getProductById(Request $request, int $id)
     {
         $storeWith = ['store.category'];
         if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
@@ -159,6 +159,9 @@ class ProductController extends Controller
             return $this->errorResponse('Product not found.', 404);
         }
 
-        return $this->successResponse('Product retrieved successfully.', $product);
+        $payload = $product->toArray();
+        $payload['checkout'] = ProductCheckoutController::buildPublicCheckoutPayload($product, $request);
+
+        return $this->successResponse('Product retrieved successfully.', $payload);
     }
 }

@@ -40,19 +40,27 @@ const toNumber = (value?: string | number | null) => {
 };
 
 /**
- * When Laravel returns a relative `/storage/...` path, prefix the API origin so `<Image src>` works from the Next app.
+ * Turn storage paths into absolute URLs on the Laravel public host so the browser loads files
+ * directly from CDN (`NEXT_PUBLIC_API_BASE_URL` origin). Same-origin `/storage` proxies were
+ * returning 422 for some setups; direct https + `referrerPolicy="no-referrer"` on `<img>` is reliable.
  */
 export function absolutizeStorageUrl(url: string): string {
   const t = url.trim();
-  if (!t || t.startsWith('http://') || t.startsWith('https://') || t.startsWith('data:')) return t;
-  if (!t.startsWith('/storage/')) return t;
-  const base = API_BASE_URL.replace(/\/+$/, '');
-  try {
-    const origin = new URL(base.includes('://') ? base : `https://${base}`).origin;
-    return `${origin}${t}`;
-  } catch {
-    return t;
+  if (!t) return t;
+  if (t.startsWith('data:')) return t;
+  if (t.startsWith('http://') || t.startsWith('https://')) return t;
+
+  if (t.startsWith('/storage/')) {
+    const base = API_BASE_URL.replace(/\/+$/, '');
+    try {
+      const origin = new URL(base.includes('://') ? base : `https://${base}`).origin;
+      return `${origin}${t}`;
+    } catch {
+      return t;
+    }
   }
+
+  return t;
 }
 
 /** Matches Laravel: explicit `trial_ends_at`, else `created_at` + platform `free_trial_days` (see `trialEndsAtFallbackFromCreated`). */
@@ -125,6 +133,23 @@ function storeCategoryLabel(store: BackendStore): string {
   return 'General';
 }
 
+function backendStoreSocialLinks(store: BackendStore): NonNullable<Store['socialLinks']> {
+  const r = store as BackendStore & Record<string, unknown>;
+  const pick = (snake: keyof BackendStore, camel: string): string | null => {
+    const a = r[snake as string];
+    if (typeof a === 'string' && a.trim() !== '') return a.trim();
+    const b = r[camel];
+    if (typeof b === 'string' && b.trim() !== '') return b.trim();
+    return null;
+  };
+  return {
+    facebook: pick('facebook_url', 'facebookUrl'),
+    instagram: pick('instagram_url', 'instagramUrl'),
+    youtube: pick('youtube_url', 'youtubeUrl'),
+    linkedin: pick('linkedin_url', 'linkedinUrl'),
+  };
+}
+
 function normalizeServiceRow(service: BackendService, store: BackendStore): Service {
   const raw = service.billing_unit;
   const billingUnit =
@@ -186,7 +211,11 @@ export const normalizeStore = (store: BackendStore): Store => {
   const totalReviews = toNumber(store.total_reviews);
   const location = store.location ?? store.address ?? 'Pan India';
   const whatsapp = (store.whatsapp ?? store.phone ?? '').trim() || '+91 90000 00000';
-  const banner = store.banner ?? categoryObj?.banner_image ?? fallbackBanner;
+  const bannerRaw = store.banner ?? categoryObj?.banner_image ?? fallbackBanner;
+  const banner =
+    typeof bannerRaw === 'string' && bannerRaw.trim()
+      ? absolutizeStorageUrl(bannerRaw.trim())
+      : absolutizeStorageUrl(String(fallbackBanner));
   const layoutType = store.layout_type === 'layout2' ? 'layout2' : 'layout1';
   const username = String(store.slug ?? (store as { username?: string }).username ?? '').trim();
 
@@ -211,9 +240,14 @@ export const normalizeStore = (store: BackendStore): Store => {
         name: categoryObj.name,
         slug: categoryObj.slug,
         business_type: categoryObj.business_type,
-        banner_image: categoryObj.banner_image ?? null,
+        banner_image:
+          typeof categoryObj.banner_image === 'string' && categoryObj.banner_image.trim()
+            ? absolutizeStorageUrl(categoryObj.banner_image.trim())
+            : null,
         banner_images: Array.isArray(categoryObj.banner_images)
-          ? categoryObj.banner_images.filter((url): url is string => Boolean(url))
+          ? categoryObj.banner_images
+              .filter((url): url is string => Boolean(url && typeof url === 'string'))
+              .map((url) => absolutizeStorageUrl(url.trim()))
           : categoryObj.banner_images ?? null,
         banner_title: categoryObj.banner_title ?? null,
         banner_subtitle: categoryObj.banner_subtitle ?? null,
@@ -225,6 +259,7 @@ export const normalizeStore = (store: BackendStore): Store => {
 
   return {
     id: String(store.id),
+    userId: store.user_id != null ? String(store.user_id) : undefined,
     username,
     name: formatStoreName(store.name),
     logo: resolvedLogo || fallbackLogo,
@@ -263,12 +298,7 @@ export const normalizeStore = (store: BackendStore): Store => {
     email: store.email?.trim() ? store.email.trim() : undefined,
     showPhone: store.show_phone !== false,
     whatsapp,
-    socialLinks: {
-      facebook: store.facebook_url ?? null,
-      instagram: store.instagram_url ?? null,
-      youtube: store.youtube_url ?? null,
-      linkedin: store.linkedin_url ?? null,
-    },
+    socialLinks: backendStoreSocialLinks(store),
     layoutType,
     themeId: store.theme ?? undefined,
     createdAt: store.created_at ?? new Date().toISOString(),
@@ -286,6 +316,9 @@ export const normalizeStore = (store: BackendStore): Store => {
           email: store.user.email ?? '',
         }
       : undefined,
+    followersCount: Math.max(0, Math.trunc(toNumber(store.followers_count))),
+    likesCount: Math.max(0, Math.trunc(toNumber(store.likes_count))),
+    seenCount: Math.max(0, Math.trunc(toNumber(store.seen_count))),
   };
 };
 

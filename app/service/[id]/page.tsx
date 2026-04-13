@@ -308,7 +308,14 @@ export default function ServiceDetailPage({ params }: ServicePageProps) {
               </div>
               <div className="flex items-center gap-3">
                 <div className="relative h-14 w-14 overflow-hidden rounded-2xl border border-slate-100">
-                  <Image src={store.logo} alt={store.name} fill className="object-cover" />
+                  <img
+                    src={store.logo}
+                    alt={store.name}
+                    width={56}
+                    height={56}
+                    className="h-full w-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
                 <div className="text-sm text-slate-600">
                   <p>{store.location}</p>

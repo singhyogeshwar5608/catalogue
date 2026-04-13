@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
 import { getStoreBySlugFromApi } from '@/src/lib/api';
-import { STORE_PROFILE_REFRESH_EVENT, storeHasSubscriptionAddonAccess } from '@/src/lib/storeSubscriptionAddons';
+import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 
 type NavItem = {
   key: string;
@@ -384,7 +384,7 @@ export default function MobileBottomNav() {
         } else {
           setStoreBusinessType(null);
         }
-        setPaymentsHubEligible(storeHasSubscriptionAddonAccess(store));
+        setPaymentsHubEligible(storeCanAccessPaymentIntegrationHub(store));
       } catch (error) {
         if (!isMounted) return;
         setStoreBusinessType(null);
@@ -411,7 +411,7 @@ export default function MobileBottomNav() {
           } else {
             setStoreBusinessType(null);
           }
-          setPaymentsHubEligible(storeHasSubscriptionAddonAccess(store));
+          setPaymentsHubEligible(storeCanAccessPaymentIntegrationHub(store));
         } catch {
           if (!isMounted) return;
           setStoreBusinessType(null);

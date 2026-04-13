@@ -12,15 +12,18 @@ import type {
   Store,
   StoreSubscriptionAddons,
   StorePaymentIntegrationSettings,
+  StorePaymentIntegrationUpdateJson,
   StoreBoost,
   AdminDashboardStats,
   SubscriptionPlan,
   SubscriptionAddonCharges,
   StoreSubscription,
+  ProductCheckoutPublic,
 } from '@/types';
 import type {
   BackendBoostPlan,
   BackendProduct,
+  BackendProductCheckoutPayload,
   BackendService,
   BackendStore,
   BackendStoreBoost,
@@ -44,6 +47,7 @@ import {
   trialEndsAtFallbackFromCreated,
 } from '@/src/lib/freeTrialDays';
 import { dispatchStoreProfileRefresh } from '@/src/lib/storeSubscriptionAddons';
+import { getOrCreateStoreEngagementGuestToken } from '@/src/lib/storeEngagementGuest';
 
 type ReviewListParams = {
   page?: number;
@@ -465,9 +469,11 @@ export const apiRequest = async <T>(
     method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
     body?: Record<string, unknown> | FormData | undefined;
     requiresAuth?: boolean;
+    /** When true, sends Bearer token if present (does not throw if missing). */
+    sendAuthIfAvailable?: boolean;
   } = {}
 ): Promise<ApiEnvelope<T>> => {
-  const { method = 'GET', body, requiresAuth = false } = options;
+  const { method = 'GET', body, requiresAuth = false, sendAuthIfAvailable = false } = options;
   const url = `${getApiRequestBaseUrl()}${path}`;
 
   ensureAuthToken();
@@ -490,6 +496,11 @@ export const apiRequest = async <T>(
       throw new ApiError('Unauthorized', 401);
     }
     headers[AUTH_TOKEN_HEADER] = `Bearer ${authToken}`;
+  } else if (sendAuthIfAvailable) {
+    ensureAuthToken();
+    if (authToken) {
+      headers[AUTH_TOKEN_HEADER] = `Bearer ${authToken}`;
+    }
   }
 
   const response = await fetch(url, {
@@ -644,6 +655,55 @@ function resolveTrialEndsAt(store: BackendStore): string | null {
   return trialEndsAtFallbackFromCreated(String(createdRaw));
 }
 
+/** Read social URLs from snake_case, camelCase, or trimmed empty strings (Laravel / proxies vary). */
+function backendStoreSocialLinks(store: BackendStore): NonNullable<Store['socialLinks']> {
+  const r = store as BackendStore & Record<string, unknown>;
+  const pick = (snake: keyof BackendStore, camel: string): string | null => {
+    const a = r[snake as string];
+    if (typeof a === 'string' && a.trim() !== '') return a.trim();
+    const b = r[camel];
+    if (typeof b === 'string' && b.trim() !== '') return b.trim();
+    return null;
+  };
+  return {
+    facebook: pick('facebook_url', 'facebookUrl'),
+    instagram: pick('instagram_url', 'instagramUrl'),
+    youtube: pick('youtube_url', 'youtubeUrl'),
+    linkedin: pick('linkedin_url', 'linkedinUrl'),
+  };
+}
+
+/** If PUT echoed a row without social columns, keep what we just sent (only for keys present on `payload`). */
+function mergeUpdateStoreSocialFromPayload(store: Store, payload: UpdateStorePayload): Store {
+  if (
+    !('facebook_url' in payload) &&
+    !('instagram_url' in payload) &&
+    !('youtube_url' in payload) &&
+    !('linkedin_url' in payload)
+  ) {
+    return store;
+  }
+  const cur = store.socialLinks ?? {};
+  const pick = (key: keyof NonNullable<Store['socialLinks']>, field: keyof UpdateStorePayload) => {
+    if (!(field in payload)) return cur[key] ?? null;
+    const sent = payload[field];
+    if (sent === null) return null;
+    if (typeof sent === 'string' && sent.trim() !== '') return sent.trim();
+    const fromApi = cur[key];
+    if (typeof fromApi === 'string' && fromApi.trim() !== '') return fromApi.trim();
+    return null;
+  };
+  return {
+    ...store,
+    socialLinks: {
+      facebook: pick('facebook', 'facebook_url'),
+      instagram: pick('instagram', 'instagram_url'),
+      youtube: pick('youtube', 'youtube_url'),
+      linkedin: pick('linkedin', 'linkedin_url'),
+    },
+  };
+}
+
 const normalizeStore = (
   store: BackendStore,
   options: { includeActiveBoost?: boolean } = {}
@@ -657,10 +717,14 @@ const normalizeStore = (
   const rating = ratingRaw > 0 ? Number(ratingRaw.toFixed(1)) : 0;
   const totalReviews = Math.max(0, Math.trunc(toNumber(store.total_reviews)));
   const layout = store.layout_type === 'layout2' ? 'layout2' : 'layout1';
-  const storeBannerImage = store.banner ?? null;
+  const storeBannerImageRaw = typeof store.banner === 'string' && store.banner.trim() ? store.banner.trim() : null;
   const categoryBannerImage = store.category?.banner_image ?? null;
   const categoryBannerColor = store.category?.banner_color ?? null;
-  const resolvedBanner = storeBannerImage ?? categoryBannerImage ?? fallbackBanner;
+  const resolvedBanner = storeBannerImageRaw ?? categoryBannerImage ?? fallbackBanner;
+  const storeBannerImage = storeBannerImageRaw ? absolutizeStorageUrl(storeBannerImageRaw) : null;
+  const banner = absolutizeStorageUrl(
+    typeof resolvedBanner === 'string' && resolvedBanner.trim() ? resolvedBanner.trim() : String(fallbackBanner),
+  );
   const activeBoost = includeActiveBoost && store.active_boost
     ? normalizeStoreBoost(store.active_boost, { includeStore: false })
     : null;
@@ -709,9 +773,14 @@ const normalizeStore = (
         name: store.category.name,
         slug: store.category.slug,
         business_type: store.category.business_type,
-        banner_image: store.category.banner_image ?? null,
+        banner_image:
+          typeof store.category.banner_image === 'string' && store.category.banner_image.trim()
+            ? absolutizeStorageUrl(store.category.banner_image.trim())
+            : null,
         banner_images: Array.isArray(store.category.banner_images)
-          ? store.category.banner_images.filter((url): url is string => Boolean(url))
+          ? store.category.banner_images
+              .filter((url): url is string => Boolean(url && typeof url === 'string'))
+              .map((url) => absolutizeStorageUrl(url.trim()))
           : store.category.banner_images ?? null,
         banner_title: store.category.banner_title ?? null,
         banner_subtitle: store.category.banner_subtitle ?? null,
@@ -730,14 +799,20 @@ const normalizeStore = (
     typeof logoRaw === 'string' && logoRaw.trim() !== '' ? logoRaw.trim() : null;
   const resolvedLogo = logoTrimmed ? absolutizeStorageUrl(logoTrimmed) : null;
 
+  const categoryBannerImageResolved =
+    typeof categoryBannerImage === 'string' && categoryBannerImage.trim()
+      ? absolutizeStorageUrl(categoryBannerImage.trim())
+      : null;
+
   return {
     id: String(store.id),
+    userId: store.user_id != null ? String(store.user_id) : undefined,
     username: publicStorePath,
     name: formatStoreName(store.name),
     logo: resolvedLogo ?? fallbackLogo,
-    banner: resolvedBanner,
+    banner,
     storeBannerImage,
-    categoryBannerImage,
+    categoryBannerImage: categoryBannerImageResolved,
     categoryBannerColor,
     description,
     shortDescription,
@@ -759,12 +834,7 @@ const normalizeStore = (
     email: store.email?.trim() ? store.email.trim() : undefined,
     showPhone: store.show_phone !== false,
     whatsapp: (store.whatsapp ?? store.phone ?? '').trim() || '',
-    socialLinks: {
-      facebook: store.facebook_url ?? null,
-      instagram: store.instagram_url ?? null,
-      youtube: store.youtube_url ?? null,
-      linkedin: store.linkedin_url ?? null,
-    },
+    socialLinks: backendStoreSocialLinks(store),
     layoutType: layout,
     createdAt:
       store.created_at ??
@@ -790,6 +860,11 @@ const normalizeStore = (
     services: store.services
       ? store.services.map((service) => normalizeService(service, store))
       : undefined,
+    followersCount: Math.max(0, Math.trunc(toNumber((store as BackendStore).followers_count))),
+    likesCount: Math.max(0, Math.trunc(toNumber((store as BackendStore).likes_count))),
+    viewerFollowing: Boolean((store as BackendStore).viewer_following),
+    viewerLiked: Boolean((store as BackendStore).viewer_liked),
+    seenCount: Math.max(0, Math.trunc(toNumber((store as BackendStore).seen_count))),
   };
 };
 
@@ -1116,8 +1191,34 @@ function isNextCachedStorePayload(value: unknown): value is Store {
   return typeof o.id === 'string' && typeof o.username === 'string' && typeof o.layoutType === 'string';
 }
 
+/** Redis-cached rows skip normalizeStore; still rewrite storage URLs so /storage hits Next rewrites. */
+function rewriteStoreMediaPaths(store: Store): Store {
+  const nextCategory = store.category
+    ? {
+        ...store.category,
+        banner_image: store.category.banner_image
+          ? absolutizeStorageUrl(store.category.banner_image)
+          : null,
+        banner_images: Array.isArray(store.category.banner_images)
+          ? store.category.banner_images.map((u) => absolutizeStorageUrl(typeof u === 'string' ? u : String(u)))
+          : store.category.banner_images,
+      }
+    : store.category;
+
+  return {
+    ...store,
+    logo: absolutizeStorageUrl(store.logo),
+    banner: absolutizeStorageUrl(store.banner),
+    storeBannerImage: store.storeBannerImage ? absolutizeStorageUrl(store.storeBannerImage) : null,
+    categoryBannerImage: store.categoryBannerImage
+      ? absolutizeStorageUrl(store.categoryBannerImage)
+      : null,
+    category: nextCategory,
+  };
+}
+
 function adaptStoreListEntry(row: unknown): Store {
-  if (isNextCachedStorePayload(row)) return row;
+  if (isNextCachedStorePayload(row)) return rewriteStoreMediaPaths(row);
   return normalizeStore(row as BackendStore);
 }
 
@@ -1129,7 +1230,7 @@ export const getStoreBySlug = async (slug: string): Promise<Store> => {
   const response = await fetchFromNextCache<Store | BackendStore>(path);
   const data = response.data as unknown;
   const store: Store = isNextCachedStorePayload(data)
-    ? data
+    ? rewriteStoreMediaPaths(data)
     : normalizeStore(data as BackendStore);
   return ensureStoreTrialEndsAt(store);
 };
@@ -1144,9 +1245,18 @@ export const getStoreBySlugFromApi = async (slug: string): Promise<Store> => {
   await prefetchFreeTrialDays(prefetchBase, { force: true });
 
   const base = getApiRequestBaseUrl().replace(/\/+$/, '');
-  const res = await fetch(`${base}/store/${encodeURIComponent(key)}`, {
+  const guest = typeof window !== 'undefined' ? getOrCreateStoreEngagementGuestToken() : '';
+  const qs = new URLSearchParams();
+  if (guest) qs.set('guest_token', guest);
+  qs.set('_ts', String(Date.now()));
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  ensureAuthToken();
+  if (authToken) {
+    headers[AUTH_TOKEN_HEADER] = `Bearer ${authToken}`;
+  }
+  const res = await fetch(`${base}/store/${encodeURIComponent(key)}?${qs.toString()}`, {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers,
     cache: 'no-store',
   });
 
@@ -1166,6 +1276,48 @@ export const getStoreBySlugFromApi = async (slug: string): Promise<Store> => {
   }
 
   return ensureStoreTrialEndsAt(normalizeStore(raw as BackendStore));
+};
+
+export type StoreEngagementTogglePayload = {
+  followers_count: number;
+  likes_count: number;
+  viewer_following?: boolean;
+  viewer_liked?: boolean;
+};
+
+export const toggleStoreFollow = async (storeId: string) => {
+  const guest = getOrCreateStoreEngagementGuestToken();
+  return apiRequest<StoreEngagementTogglePayload>(`/stores/${encodeURIComponent(storeId)}/follow`, {
+    method: 'POST',
+    body: guest ? { guest_token: guest } : {},
+    sendAuthIfAvailable: true,
+  });
+};
+
+export const toggleStoreLike = async (storeId: string) => {
+  const guest = getOrCreateStoreEngagementGuestToken();
+  return apiRequest<StoreEngagementTogglePayload>(`/stores/${encodeURIComponent(storeId)}/like`, {
+    method: 'POST',
+    body: guest ? { guest_token: guest } : {},
+    sendAuthIfAvailable: true,
+  });
+};
+
+export type StoreSeenRecordPayload = {
+  seen_count: number;
+  counted: boolean;
+  your_hits: number;
+  capped: boolean;
+};
+
+/** Record a store page visit (max 10 counted contributions per visitor per store on the server). */
+export const recordStoreView = async (storeId: string) => {
+  const guest = getOrCreateStoreEngagementGuestToken();
+  return apiRequest<StoreSeenRecordPayload>(`/stores/${encodeURIComponent(storeId)}/seen`, {
+    method: 'POST',
+    body: guest ? { guest_token: guest } : {},
+    sendAuthIfAvailable: true,
+  });
 };
 
 export const searchAll = async (params: SearchAllParams) => {
@@ -1225,7 +1377,8 @@ export const updateStore = async (payload: UpdateStorePayload) => {
     throw new ApiError('Invalid store update response', 502);
   }
 
-  const normalizedStore = normalizeStore(inner as BackendStore);
+  let normalizedStore = normalizeStore(inner as BackendStore);
+  normalizedStore = mergeUpdateStoreSocialFromPayload(normalizedStore, payload);
 
   await purgeStoresCatalogCacheClient();
   dispatchStoreProfileRefresh();
@@ -1460,9 +1613,27 @@ export const getServiceById = async (serviceId: number | string) => {
   };
 };
 
+const defaultProductCheckout = (): ProductCheckoutPublic => ({
+  onlinePaymentAvailable: false,
+  qrPaymentAvailable: false,
+  paymentQrUrl: null,
+});
+
+function normalizeProductCheckout(raw: BackendProductCheckoutPayload | null | undefined): ProductCheckoutPublic {
+  if (!raw || typeof raw !== 'object') return defaultProductCheckout();
+  const url = raw.payment_qr_url;
+  return {
+    onlinePaymentAvailable: Boolean(raw.online_payment_available),
+    qrPaymentAvailable: Boolean(raw.qr_payment_available),
+    paymentQrUrl: typeof url === 'string' && url.trim() !== '' ? url.trim() : null,
+  };
+}
+
 export const getProductById = async (productId: number | string) => {
-  const response = await apiRequest<BackendProduct & { store?: BackendStore }>(`/product/${productId}`);
-  
+  const response = await apiRequest<BackendProduct & { store?: BackendStore }>(`/product/${productId}`, {
+    sendAuthIfAvailable: true,
+  });
+
   if (!response.data) {
     throw new ApiError('Product not found', 404);
   }
@@ -1481,7 +1652,56 @@ export const getProductById = async (productId: number | string) => {
   return {
     product: normalizeProduct(product, store),
     store: product.store ? normalizeStore(product.store) : null,
+    checkout: normalizeProductCheckout(product.checkout),
   };
+};
+
+export type ProductCheckoutRazorpayOrderData = {
+  razorpay_order_id: string;
+  amount: number;
+  currency: string;
+  razorpay_key_id: string;
+  product_name: string;
+  store_name: string;
+};
+
+export const createProductCheckoutRazorpayOrder = async (
+  productId: string | number,
+  purchaseOption: string,
+  options?: { quantity?: number },
+): Promise<ProductCheckoutRazorpayOrderData> => {
+  const body: Record<string, unknown> = { purchase_option: purchaseOption };
+  if (options?.quantity != null) {
+    body.quantity = options.quantity;
+  }
+  const response = await apiRequest<ProductCheckoutRazorpayOrderData>(
+    `/product/${productId}/checkout/razorpay-order`,
+    {
+      method: 'POST',
+      body,
+      sendAuthIfAvailable: true,
+    },
+  );
+  const data = response.data;
+  if (!data?.razorpay_order_id) {
+    throw new ApiError('Could not start payment.', 502, data);
+  }
+  return data;
+};
+
+export const verifyProductCheckoutRazorpayPayment = async (
+  productId: string | number,
+  payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  },
+): Promise<void> => {
+  await apiRequest(`/product/${productId}/checkout/razorpay-verify`, {
+    method: 'POST',
+    body: payload,
+    sendAuthIfAvailable: true,
+  });
 };
 
 const buildQuery = (params?: Record<string, string | number | undefined>) => {
@@ -1570,44 +1790,43 @@ export const handleApiError = (error: unknown) => {
   throw new ApiError(error instanceof Error ? error.message : 'Unexpected error');
 };
 
+const mapSubscriptionPlanRow = (plan: any): SubscriptionPlan => ({
+  id: String(plan.id),
+  name: plan.name,
+  slug: plan.slug,
+  price: Number(plan.price),
+  billingCycle: plan.billing_cycle,
+  durationDays: plan.duration_days ? Number(plan.duration_days) : undefined,
+  maxProducts: Number(plan.max_products),
+  isPopular: Boolean(plan.is_popular),
+  isActive: Boolean(plan.is_active),
+  features: Array.isArray(plan.features) ? plan.features : [],
+  description: plan.description || "",
+});
+
 export const getSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
-  const response = await apiRequest<any[]>('/subscription-plans', {
+  const response = await apiRequest<any[]>("/subscription-plans", {
     requiresAuth: true,
   });
 
-  return response.data.map((plan) => ({
-    id: String(plan.id),
-    name: plan.name,
-    slug: plan.slug,
-    price: Number(plan.price),
-    billingCycle: plan.billing_cycle,
-    durationDays: plan.duration_days ? Number(plan.duration_days) : undefined,
-    maxProducts: Number(plan.max_products),
-    isPopular: Boolean(plan.is_popular),
-    isActive: Boolean(plan.is_active),
-    features: Array.isArray(plan.features) ? plan.features : [],
-    description: plan.description || '',
-  }));
+  return response.data.map(mapSubscriptionPlanRow);
+};
+
+/** Active + inactive rows — same catalog the admin manages; for dashboard subscription page. */
+export const getSubscriptionPlanCatalog = async (): Promise<SubscriptionPlan[]> => {
+  const response = await apiRequest<any[]>("/subscription-plans/catalog", {
+    requiresAuth: true,
+  });
+
+  return response.data.map(mapSubscriptionPlanRow);
 };
 
 export const getAllSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
-  const response = await apiRequest<any[]>('/subscription-plans/all', {
+  const response = await apiRequest<any[]>("/subscription-plans/all", {
     requiresAuth: true,
   });
 
-  return response.data.map((plan) => ({
-    id: String(plan.id),
-    name: plan.name,
-    slug: plan.slug,
-    price: Number(plan.price),
-    billingCycle: plan.billing_cycle,
-    durationDays: plan.duration_days ? Number(plan.duration_days) : undefined,
-    maxProducts: Number(plan.max_products),
-    isPopular: Boolean(plan.is_popular),
-    isActive: Boolean(plan.is_active),
-    features: Array.isArray(plan.features) ? plan.features : [],
-    description: plan.description || '',
-  }));
+  return response.data.map(mapSubscriptionPlanRow);
 };
 
 export const createSubscriptionPlan = async (payload: Partial<any>) => {
@@ -1804,7 +2023,7 @@ export const activateStoreSubscription = async (
   });
 
   const sub = response.data;
-  return {
+  const mapped: StoreSubscription = {
     id: String(sub.id),
     storeId: String(sub.store_id),
     subscriptionPlanId: String(sub.subscription_plan_id),
@@ -1820,6 +2039,7 @@ export const activateStoreSubscription = async (
       slug: sub.plan.slug,
       price: Number(sub.plan.price),
       billingCycle: sub.plan.billing_cycle,
+      durationDays: sub.plan.duration_days ? Number(sub.plan.duration_days) : undefined,
       maxProducts: Number(sub.plan.max_products),
       isPopular: Boolean(sub.plan.is_popular),
       isActive: Boolean(sub.plan.is_active),
@@ -1827,6 +2047,11 @@ export const activateStoreSubscription = async (
       description: sub.plan.description || '',
     },
   };
+
+  await purgeStoresCatalogCacheClient();
+  dispatchStoreProfileRefresh();
+
+  return mapped;
 };
 
 /** Save subscription add-on toggles (e.g. paid checkout intent). Requires migrated `stores.subscription_addons`. */
@@ -1854,13 +2079,22 @@ export const getStorePaymentIntegration = async (
   return normalizeStorePaymentIntegration(response.data);
 };
 
+/**
+ * Save payment hub settings. Use JSON (Razorpay, flags, QR as base64) — reliable through Next `/api/laravel` rewrites.
+ * `FormData` is optional if you still POST multipart `payment_qr` directly to Laravel.
+ */
 export const updateStorePaymentIntegration = async (
   storeId: number | string,
-  form: FormData
+  body: FormData | StorePaymentIntegrationUpdateJson
 ): Promise<StorePaymentIntegrationSettings> => {
   const response = await apiRequest(`/stores/${storeId}/payment-integration`, {
     method: 'POST',
-    body: form,
+    body:
+      body instanceof FormData
+        ? body
+        : (Object.fromEntries(
+            Object.entries(body).filter(([, v]) => v !== undefined)
+          ) as Record<string, unknown>),
     requiresAuth: true,
   });
   return normalizeStorePaymentIntegration(response.data);
@@ -1930,22 +2164,7 @@ export const createStoreSubscriptionRazorpayOrder = async (
   };
 };
 
-/** After Razorpay Checkout succeeds, verifies signature + payment and activates the subscription. */
-export const verifyStoreSubscriptionRazorpayPayment = async (
-  storeId: number | string,
-  payload: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-  }
-): Promise<StoreSubscription> => {
-  const response = await apiRequest<any>(`/stores/${storeId}/subscription/razorpay-verify`, {
-    method: 'POST',
-    body: payload,
-    requiresAuth: true,
-  });
-
-  const sub = response.data as Record<string, any>;
+function parseActivatedStoreSubscriptionResponse(sub: Record<string, any>): StoreSubscription {
   const plan = sub.plan;
   return {
     id: String(sub.id),
@@ -1971,6 +2190,56 @@ export const verifyStoreSubscriptionRazorpayPayment = async (
       description: plan.description || '',
     },
   };
+}
+
+/** After Razorpay Checkout succeeds, verifies signature + payment and activates the subscription. */
+export const verifyStoreSubscriptionRazorpayPayment = async (
+  storeId: number | string,
+  payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }
+): Promise<StoreSubscription> => {
+  const response = await apiRequest<any>(`/stores/${storeId}/subscription/razorpay-verify`, {
+    method: 'POST',
+    body: payload,
+    requiresAuth: true,
+  });
+
+  const mapped = parseActivatedStoreSubscriptionResponse(response.data as Record<string, any>);
+
+  await purgeStoresCatalogCacheClient();
+  dispatchStoreProfileRefresh();
+
+  return mapped;
+};
+
+/**
+ * Same activation as Razorpay verify, without payment. Laravel allows it by default; set
+ * `SUBSCRIPTION_MOCK_PAYMENT=false` in `backend/.env` to disable. Hide UI with `NEXT_PUBLIC_SUBSCRIPTION_MOCK_PAYMENT=false`.
+ */
+export const completeStoreSubscriptionMockPayment = async (
+  storeId: number | string,
+  payload: { planId: number | string; addons: StoreSubscriptionAddons }
+): Promise<StoreSubscription> => {
+  const response = await apiRequest<any>(`/stores/${storeId}/subscription/mock-complete`, {
+    method: 'POST',
+    body: {
+      plan_id: payload.planId,
+      addon_payment_gateway: Boolean(payload.addons.paymentGateway),
+      addon_qr_code: Boolean(payload.addons.qrCode),
+      addon_payment_gateway_help: Boolean(payload.addons.paymentGatewayHelp),
+    },
+    requiresAuth: true,
+  });
+
+  const mapped = parseActivatedStoreSubscriptionResponse(response.data as Record<string, any>);
+
+  await purgeStoresCatalogCacheClient();
+  dispatchStoreProfileRefresh();
+
+  return mapped;
 };
 
 export const cancelStoreSubscription = async (subscriptionId: number | string): Promise<StoreSubscription> => {

@@ -7,13 +7,13 @@ const CACHE_TTL = null;
 
 /**
  * GET /api/stores?search=&category=&location=&only_verified=1&only_boosted=1&limit=&lat=&lng=&radius_km=&include_inactive=1
- * Proxies Laravel `/stores` and caches in Redis as `stores:list:v4?<query>` (v4: trial end follows current `free_trial_days`).
+ * Proxies Laravel `/stores` and caches in Redis as `stores:list:v5?<query>` (v5: listing includes per-store `banner`).
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const qs = searchParams.toString();
-    const cacheKey = `stores:list:v4?${qs || '_'}`;
+    const cacheKey = `stores:list:v5?${qs || '_'}`;
 
     const stores = await withCache(
       cacheKey,

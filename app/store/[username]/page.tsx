@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import StoreView from '@/components/store/StoreView';
 import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
 import type { Store, Product, Review, Service, RatingSummary, ReviewPagination } from '@/types';
-import { getProductsByStore, getServicesByStore, getStoreBySlug, getStoreReviews, submitStoreReview, isApiError } from '@/src/lib/api';
+import { getProductsByStore, getServicesByStore, getStoreBySlugFromApi, getStoreReviews, submitStoreReview, isApiError } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 
 interface StorePageProps {
@@ -90,7 +90,7 @@ export default function StorePage({ params }: StorePageProps) {
       setLoading(true);
       setError(null);
       try {
-        const fetchedStore = await getStoreBySlug(username);
+        const fetchedStore = await getStoreBySlugFromApi(username);
         const fetchedProducts = await getProductsByStore(fetchedStore.id);
         let fetchedServices: Service[] = [];
         if (fetchedStore?.id) {

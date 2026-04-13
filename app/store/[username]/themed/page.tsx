@@ -1,4 +1,5 @@
-import { getStoreBySlug, getProductsByStore } from '@/src/lib/api';
+import { getProductsByStore } from '@/src/lib/api';
+import { fetchStoreByUsernameFromLaravel } from '@/lib/server/laravel-stores';
 import { getThemeById } from '@/data/themes';
 import BasicTheme from '@/components/themes/BasicTheme';
 import PremiumTheme from '@/components/themes/PremiumTheme';
@@ -9,7 +10,7 @@ export default async function ThemedStorePage({ params }: { params: Promise<{ us
   const { username } = await params;
   
   try {
-    const store = await getStoreBySlug(username);
+    const store = await fetchStoreByUsernameFromLaravel(username);
     
     if (!store) {
       notFound();

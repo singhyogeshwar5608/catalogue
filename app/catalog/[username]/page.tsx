@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { notFound } from 'next/navigation';
-import { getStoreBySlug, getProductsByStore, getStoreReviews } from '@/src/lib/api';
+import { getStoreBySlugFromApi, getProductsByStore, getStoreReviews } from '@/src/lib/api';
 import { getCategoryById } from '@/data/categories';
 import StoreView from '@/components/store/StoreView';
 import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
@@ -106,7 +106,7 @@ export default function AutoCatalogPage({ params }: { params: ParamsPromise }) {
     // Fetch store data, products, and reviews from API
     const fetchStoreData = async () => {
       try {
-        const store = await getStoreBySlug(resolvedParams.username);
+        const store = await getStoreBySlugFromApi(resolvedParams.username);
         setStoreData(store);
 
         if (store) {

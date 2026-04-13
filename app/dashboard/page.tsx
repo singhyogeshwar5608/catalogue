@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
+  BarChart3,
   Briefcase,
   CreditCard,
   Download,
@@ -22,9 +23,12 @@ import {
   Star,
   Store as StoreIcon,
   Users,
+  UserPlus,
+  Heart,
   X,
   Youtube,
   Zap,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   getApiRequestBaseUrl,
@@ -35,8 +39,8 @@ import {
   updateStore,
 } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
-import { isPaidSubscriptionActive } from '@/src/lib/storeAccess';
-import type { Product, Store, StoreSubscription } from '@/types';
+import { getDashboardExpiryWarningDaysRemaining, isPaidSubscriptionActive } from '@/src/lib/storeAccess';
+import type { Product, Store, StoreSubscription, SubscriptionPlan } from '@/types';
 import SubscriptionExpiryPopup from '@/components/SubscriptionExpiryPopup';
 import ProductLimitPopup from '@/components/ProductLimitPopup';
 import BoostExpiryPopup from '@/components/BoostExpiryPopup';
@@ -54,6 +58,96 @@ function daysUntil(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return Math.ceil((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+type DashboardStatVariant = 'violet' | 'sky' | 'amber' | 'indigo' | 'rose' | 'teal';
+
+type DashboardStatItem = {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  variant: DashboardStatVariant;
+};
+
+const DASHBOARD_STAT_STYLES: Record<
+  DashboardStatVariant,
+  { card: string; iconWrap: string; label: string }
+> = {
+  violet: {
+    card: 'border-violet-200/90 bg-gradient-to-br from-violet-50/90 via-white to-indigo-50/40',
+    iconWrap: 'bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25',
+    label: 'text-violet-800/80',
+  },
+  sky: {
+    card: 'border-sky-200/90 bg-gradient-to-br from-sky-50/90 via-white to-blue-50/40',
+    iconWrap: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-lg shadow-sky-500/25',
+    label: 'text-sky-800/80',
+  },
+  amber: {
+    card: 'border-amber-200/90 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/40',
+    iconWrap: 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/25',
+    label: 'text-amber-900/70',
+  },
+  indigo: {
+    card: 'border-indigo-200/90 bg-gradient-to-br from-indigo-50/90 via-white to-violet-50/40',
+    iconWrap: 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25',
+    label: 'text-indigo-800/80',
+  },
+  rose: {
+    card: 'border-rose-200/90 bg-gradient-to-br from-rose-50/90 via-white to-pink-50/40',
+    iconWrap: 'bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-lg shadow-rose-500/25',
+    label: 'text-rose-800/80',
+  },
+  teal: {
+    card: 'border-teal-200/90 bg-gradient-to-br from-teal-50/90 via-white to-cyan-50/40',
+    iconWrap: 'bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/25',
+    label: 'text-teal-800/80',
+  },
+};
+
+function DashboardStatCard({ item }: { item: DashboardStatItem }) {
+  const s = DASHBOARD_STAT_STYLES[item.variant];
+  const Icon = item.icon;
+  return (
+    <div className={`rounded-2xl border p-4 shadow-sm transition hover:shadow-md sm:p-5 ${s.card}`}>
+      <div className={`mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl ${s.iconWrap}`}>
+        <Icon className="h-5 w-5" strokeWidth={2.2} />
+      </div>
+      <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${s.label}`}>{item.label}</p>
+      <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">{item.value}</p>
+    </div>
+  );
+}
+
+/** Billing length from catalog plan (duration_days or billing_cycle). */
+function describePlanBillingDuration(plan: SubscriptionPlan): string {
+  const d = plan.durationDays;
+  if (d && d > 0) {
+    if (d % 365 === 0) return d === 365 ? '1 year' : `${d / 365} years`;
+    if (d % 30 === 0) return d === 30 ? '1 month' : `${d / 30} months`;
+    if (d === 7) return '1 week';
+    return `${d} days`;
+  }
+  return plan.billingCycle === 'yearly' ? 'Yearly' : 'Monthly';
+}
+
+function subscriptionPeriodEndLabel(endsAt: string): string {
+  const end = new Date(endsAt);
+  if (Number.isNaN(end.getTime())) return '';
+  return end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** Active subscription row: API plan name + duration + current period end. */
+function formatActiveSubscriptionPlanLine(sub: StoreSubscription): string {
+  const name = (sub.plan.name ?? sub.plan.slug ?? '').trim() || 'Subscription';
+  const period = describePlanBillingDuration(sub.plan);
+  const end = subscriptionPeriodEndLabel(sub.endsAt);
+  const left = daysUntil(sub.endsAt);
+  const suffix =
+    left != null && left >= 0 && sub.status === 'active'
+      ? ` · ${left} day${left === 1 ? '' : 's'} left`
+      : '';
+  return end ? `${name} (${period}) · until ${end}${suffix}` : `${name} (${period})${suffix}`;
 }
 
 /** True only for a paid plan period — not the platform default `free` slug row from signup. */
@@ -110,10 +204,9 @@ export default function DashboardPage() {
         setSubscription(subData.activeSubscription);
 
         if (subData.activeSubscription) {
-          const endsAt = new Date(subData.activeSubscription.endsAt);
-          const remainingDays = Math.ceil((endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          const remainingDays = getDashboardExpiryWarningDaysRemaining(store, subData.activeSubscription);
 
-          if (remainingDays <= 7) {
+          if (remainingDays != null && remainingDays <= 7 && remainingDays >= 0) {
             setShowSubscriptionExpiry(true);
           }
 
@@ -225,47 +318,102 @@ export default function DashboardPage() {
     return `${days} day${days === 1 ? '' : 's'}`;
   }, [myStore?.trialEndsAt, myStore?.createdAt]);
 
-  const stats = useMemo(() => {
+  const planSummaryText = useMemo(() => {
+    if (!myStore) return '—';
+
+    const activeSub = subscription ?? myStore.activeSubscription ?? null;
+    const endsMs = activeSub ? new Date(activeSub.endsAt).getTime() : NaN;
+    const periodStillOpen =
+      activeSub &&
+      activeSub.status === 'active' &&
+      !Number.isNaN(endsMs) &&
+      endsMs > Date.now();
+
+    if (periodStillOpen && activeSub) {
+      return formatActiveSubscriptionPlanLine(activeSub);
+    }
+
+    if (trialStillActive) {
+      const trialEnd = myStore.trialEndsAt ? subscriptionPeriodEndLabel(myStore.trialEndsAt) : '';
+      const trialLeft = daysUntil(myStore.trialEndsAt);
+      const trialSuffix =
+        trialLeft != null && trialLeft >= 0 ? ` · ${trialLeft} day${trialLeft === 1 ? '' : 's'} left` : '';
+      const base = trialDurationDaysLabel ? `Free trial (${trialDurationDaysLabel})` : 'Free trial';
+      return trialEnd ? `${base} · ends ${trialEnd}${trialSuffix}` : `${base}${trialSuffix}`;
+    }
+
+    if (activeSub) {
+      const name = (activeSub.plan.name ?? activeSub.plan.slug ?? '').trim() || 'Subscription';
+      const period = describePlanBillingDuration(activeSub.plan);
+      const ended = !Number.isNaN(endsMs) && endsMs <= Date.now();
+      if (ended || activeSub.status === 'expired' || activeSub.status === 'cancelled') {
+        const status =
+          activeSub.status === 'expired' || activeSub.status === 'cancelled'
+            ? activeSub.status
+            : 'period ended';
+        const lastEnd = subscriptionPeriodEndLabel(activeSub.endsAt);
+        return lastEnd ? `${name} (${period}) — ${status} · was until ${lastEnd}` : `${name} (${period}) — ${status}`;
+      }
+      return formatActiveSubscriptionPlanLine(activeSub);
+    }
+
+    return '—';
+  }, [myStore, subscription, trialDurationDaysLabel, trialStillActive]);
+
+  const catalogDashboardStats = useMemo((): DashboardStatItem[] => {
     if (!myStore) return [];
-
-    const planLabel = hasActivePaidSubscription
-      ? (subscription?.plan.name ?? 'Subscribed')
-      : trialStillActive
-        ? trialDurationDaysLabel
-          ? `Free trial (${trialDurationDaysLabel})`
-          : 'Free trial'
-        : 'Free';
-
+    const productLabel =
+      myStore.businessType === 'service'
+        ? 'Services'
+        : myStore.businessType === 'hybrid'
+          ? 'Listings'
+          : 'Products';
+    const ProductIcon = myStore.businessType === 'service' ? Briefcase : Package;
     return [
       {
-        label: myStore.businessType === 'service' ? 'Services' : myStore.businessType === 'hybrid' ? 'Listings' : 'Products',
+        label: productLabel,
         value: String(myProducts.length),
-        icon: myStore.businessType === 'service' ? Briefcase : Package,
+        icon: ProductIcon,
+        variant: 'violet',
       },
       {
         label: 'Reviews',
         value: String(myStore.totalReviews),
         icon: Users,
+        variant: 'sky',
       },
       {
         label: 'Rating',
         value: `${myStore.rating}/5`,
         icon: Star,
-      },
-      {
-        label: 'Plan',
-        value: planLabel,
-        icon: CreditCard,
+        variant: 'amber',
       },
     ];
-  }, [
-    hasActivePaidSubscription,
-    myProducts.length,
-    myStore,
-    subscription,
-    trialDurationDaysLabel,
-    trialStillActive,
-  ]);
+  }, [myProducts.length, myStore]);
+
+  const audienceDashboardStats = useMemo((): DashboardStatItem[] => {
+    if (!myStore) return [];
+    return [
+      {
+        label: 'Followers',
+        value: String(myStore.followersCount ?? 0),
+        icon: UserPlus,
+        variant: 'indigo',
+      },
+      {
+        label: 'Likes',
+        value: String(myStore.likesCount ?? 0),
+        icon: Heart,
+        variant: 'rose',
+      },
+      {
+        label: 'Seen',
+        value: String(myStore.seenCount ?? 0),
+        icon: Eye,
+        variant: 'teal',
+      },
+    ];
+  }, [myStore]);
 
   const socialPlatforms = [
     { key: 'facebook', label: 'Facebook', placeholder: 'https://facebook.com/yourstore', icon: Facebook },
@@ -284,14 +432,26 @@ export default function DashboardPage() {
     setSavingSocialLinks(true);
     setSocialLinksMessage(null);
     try {
+      const trimmed = {
+        facebook: socialLinks.facebook.trim(),
+        instagram: socialLinks.instagram.trim(),
+        youtube: socialLinks.youtube.trim(),
+        linkedin: socialLinks.linkedin.trim(),
+      };
       const { store } = await updateStore({
         id: myStore.id,
-        facebook_url: socialLinks.facebook.trim() || null,
-        instagram_url: socialLinks.instagram.trim() || null,
-        youtube_url: socialLinks.youtube.trim() || null,
-        linkedin_url: socialLinks.linkedin.trim() || null,
+        facebook_url: trimmed.facebook || null,
+        instagram_url: trimmed.instagram || null,
+        youtube_url: trimmed.youtube || null,
+        linkedin_url: trimmed.linkedin || null,
       });
       setMyStore(store);
+      setSocialLinks({
+        facebook: store.socialLinks?.facebook?.trim() || trimmed.facebook,
+        instagram: store.socialLinks?.instagram?.trim() || trimmed.instagram,
+        youtube: store.socialLinks?.youtube?.trim() || trimmed.youtube,
+        linkedin: store.socialLinks?.linkedin?.trim() || trimmed.linkedin,
+      });
       setSocialLinksMessage('Social links saved');
     } catch (err) {
       setSocialLinksMessage(isApiError(err) ? err.message : 'Unable to save social links');
@@ -338,7 +498,7 @@ export default function DashboardPage() {
     );
   }
 
-  const subscriptionDaysRemaining = daysUntil(subscription?.endsAt);
+  const subscriptionExpiryPopupDaysRemaining = getDashboardExpiryWarningDaysRemaining(myStore, subscription);
   const boostDaysRemaining = daysUntil(myStore?.activeBoost?.endsAt);
 
   return (
@@ -372,7 +532,12 @@ export default function DashboardPage() {
               {myStore.logo ? (
                 <div className="h-full w-full overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-md">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={myStore.logo} alt={myStore.name} className="h-full w-full object-cover" />
+                  <img
+                    src={myStore.logo}
+                    alt={myStore.name}
+                    className="h-full w-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
               ) : (
                 <div className="flex h-full w-full items-center justify-center rounded-full border-2 border-white bg-slate-900/5 text-slate-700 shadow-md">
@@ -449,24 +614,52 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm sm:rounded-[24px]">
-        <table className="w-full text-left text-sm">
-          <tbody>
-            {stats.map((stat, index) => (
-              <tr
-                key={stat.label}
-                className={`border-slate-200 ${index !== stats.length - 1 ? 'border-b' : ''}`}
-              >
-                <th scope="row" className="w-1/2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:w-1/3 sm:px-5 sm:py-4">
-                  {stat.label}
-                </th>
-                <td className="px-4 py-3 text-base font-semibold text-slate-900 sm:px-5 sm:py-4 sm:text-lg">
-                  {stat.value}
-                </td>
-              </tr>
+      <section className="space-y-5">
+        <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm sm:rounded-[26px]">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-rose-50/50 via-white to-indigo-50/40 px-5 py-4 sm:px-6">
+            <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-600">
+              <Heart className="h-3.5 w-3.5 text-rose-500" aria-hidden />
+              Your audience
+            </p>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Followers, likes & seen</h2>
+            <p className="mt-1 max-w-xl text-sm text-slate-500">
+              Engagement from your public store page. Each visitor can add at most ten to your Seen total.
+            </p>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
+            {audienceDashboardStats.map((item) => (
+              <DashboardStatCard key={item.label} item={item} />
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm sm:rounded-[26px]">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-violet-50/50 via-white to-sky-50/40 px-5 py-4 sm:px-6">
+            <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+              <BarChart3 className="h-3.5 w-3.5 text-violet-600" aria-hidden />
+              Store activity
+            </p>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Catalog & reviews</h2>
+            <p className="mt-1 max-w-xl text-sm text-slate-500">Listings, reviews, and how buyers rate your store.</p>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
+            {catalogDashboardStats.map((item) => (
+              <DashboardStatCard key={item.label} item={item} />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-800/80 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-5 py-4 text-white shadow-lg sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
+              <CreditCard className="h-5 w-5 text-amber-200" aria-hidden />
+            </span>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">Current plan</p>
+              <p className="mt-0.5 text-base font-semibold leading-snug text-white sm:text-lg">{planSummaryText}</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
@@ -490,7 +683,9 @@ export default function DashboardPage() {
                       {platform.label}
                     </span>
                     <input
-                      type="url"
+                      type="text"
+                      inputMode="url"
+                      autoComplete="url"
                       value={socialLinks[platform.key]}
                       onChange={(event) => handleSocialLinkChange(platform.key, event.target.value)}
                       placeholder={platform.placeholder}
@@ -594,7 +789,7 @@ export default function DashboardPage() {
       {showSubscriptionExpiry && subscription && (
         <SubscriptionExpiryPopup
           planName={subscription.plan.name}
-          daysRemaining={subscriptionDaysRemaining ?? 0}
+          daysRemaining={subscriptionExpiryPopupDaysRemaining ?? 0}
           onClose={() => setShowSubscriptionExpiry(false)}
         />
       )}

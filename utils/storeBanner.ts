@@ -24,6 +24,12 @@ export const getStoreBannerImage = ({
     return storeBannerImage;
   }
 
+  // Prefer a concrete uploaded banner path even if only the resolved `store.banner` field carried it.
+  if (typeof resolvedBannerImage === 'string' && resolvedBannerImage.includes('/storage/')) {
+    const t = resolvedBannerImage.trim();
+    if (t) return t;
+  }
+
   const bannerImages = Array.isArray(category?.banner_images)
     ? category.banner_images.filter((url): url is string => Boolean(url && typeof url === 'string' && url.trim()))
     : [];

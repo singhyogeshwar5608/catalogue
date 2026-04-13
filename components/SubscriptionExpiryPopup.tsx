@@ -10,8 +10,9 @@ interface SubscriptionExpiryPopupProps {
 }
 
 export default function SubscriptionExpiryPopup({ planName, daysRemaining, onClose }: SubscriptionExpiryPopupProps) {
-  const isExpired = daysRemaining <= 0;
-  const isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7;
+  // `< 0` only: `0` can mean "last partial day" when whole days use floor (aligned with trial banner).
+  const isExpired = daysRemaining < 0;
+  const isExpiringSoon = !isExpired && daysRemaining <= 7;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -29,7 +30,9 @@ export default function SubscriptionExpiryPopup({ planName, daysRemaining, onClo
                 <p className="mt-0.5 text-sm font-semibold text-red-600">
                   {isExpired
                     ? 'Your subscription has expired'
-                    : `${daysRemaining} day${daysRemaining > 1 ? 's' : ''} remaining`}
+                    : daysRemaining === 0
+                      ? 'Less than 1 day remaining'
+                      : `${daysRemaining} day${daysRemaining > 1 ? 's' : ''} remaining`}
                 </p>
               </div>
             </div>

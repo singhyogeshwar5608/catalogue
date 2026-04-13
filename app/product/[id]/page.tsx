@@ -19,9 +19,19 @@ import {
   ChevronLeft,
   Check,
   CreditCard,
+  QrCode,
 } from 'lucide-react';
-import type { Product, Store, Review, RatingSummary, ReviewPagination } from '@/types';
-import { getProductById, getProductReviews, submitProductReview, isApiError } from '@/src/lib/api';
+import type { Product, Store, Review, RatingSummary, ReviewPagination, ProductCheckoutPublic } from '@/types';
+import {
+  getProductById,
+  getProductReviews,
+  submitProductReview,
+  isApiError,
+  createProductCheckoutRazorpayOrder,
+  verifyProductCheckoutRazorpayPayment,
+} from '@/src/lib/api';
+import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
+import { checkoutQrImageSrc } from '@/src/lib/checkoutAssetUrl';
 import RatingStars from '@/components/RatingStars';
 import ReviewCard from '@/components/ReviewCard';
 import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
@@ -49,6 +59,9 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewForm, setReviewForm] = useState<{ rating: number; comment: string }>({ rating: 0, comment: '' });
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [checkout, setCheckout] = useState<ProductCheckoutPublic | null>(null);
+  const [payBusy, setPayBusy] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
   const themeKey = store?.businessType || product?.category;
   const theme = useMemo(() => getThemeForCategory(themeKey), [themeKey]);
   const reviewColors = useMemo(() => buildReviewColors(theme), [theme]);
@@ -63,16 +76,29 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
   );
   const aggregateRating = reviewSummary?.rating ?? product?.rating ?? 0;
 
+  const viewerOwnsProductStore = useMemo(
+    () =>
+      Boolean(
+        user?.id &&
+          ((store?.userId && user.id === store.userId) ||
+            (user.storeSlug &&
+              store?.username &&
+              user.storeSlug.toLowerCase() === store.username.toLowerCase()))
+      ),
+    [user?.id, user?.storeSlug, store?.userId, store?.username]
+  );
+
   useEffect(() => {
     let isMounted = true;
     const fetchProduct = async () => {
       setLoading(true);
       setError(null);
       try {
-        const { product: fetchedProduct, store: fetchedStore } = await getProductById(id);
+        const { product: fetchedProduct, store: fetchedStore, checkout: fetchedCheckout } = await getProductById(id);
         if (!isMounted) return;
         setProduct(fetchedProduct);
         setStore(fetchedStore);
+        setCheckout(fetchedCheckout);
         setRelatedProducts([]);
         await fetchReviews(id, 1);
       } catch (err) {
@@ -84,6 +110,7 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
         }
         setProduct(null);
         setStore(null);
+        setCheckout(null);
         setRelatedProducts([]);
         setReviews([]);
       } finally {
@@ -265,6 +292,64 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
     : (purchaseOptions[0]?.id ?? 'single');
 
   const selectedPurchaseOption = purchaseOptions.find((option) => option.id === activePurchaseId) ?? purchaseOptions[0];
+
+  const handlePayOnline = async () => {
+    if (!product || !checkout?.onlinePaymentAvailable) return;
+    if (viewerOwnsProductStore) {
+      setPayError('You cannot purchase products from your own store.');
+      return;
+    }
+    setPayError(null);
+    setPayBusy(true);
+    const option = purchaseOptions.some((o) => o.id === selectedPackage)
+      ? selectedPackage
+      : (purchaseOptions[0]?.id ?? 'single');
+    try {
+      await loadRazorpayCheckoutScript();
+      const order = await createProductCheckoutRazorpayOrder(product.id, option);
+      const Razorpay = window.Razorpay;
+      if (!Razorpay) throw new Error('Razorpay failed to load.');
+      const rzp = new Razorpay({
+        key: order.razorpay_key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: order.store_name,
+        description: `${order.product_name} (${option})`,
+        order_id: order.razorpay_order_id,
+        handler: async (response: Record<string, string>) => {
+          try {
+            await verifyProductCheckoutRazorpayPayment(product.id, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            setPayError(null);
+            window.alert(
+              'Payment successful. Please save your receipt; the seller will confirm your order (for example via WhatsApp).',
+            );
+          } catch (err) {
+            setPayError(
+              isApiError(err) ? err.message : err instanceof Error ? err.message : 'Could not verify payment',
+            );
+          } finally {
+            setPayBusy(false);
+          }
+        },
+        theme: { color: '#0d9488' },
+        modal: {
+          ondismiss: () => setPayBusy(false),
+        },
+      });
+      rzp.on('payment.failed', (r: { error?: { description?: string } }) => {
+        setPayError(r.error?.description ?? 'Payment failed');
+        setPayBusy(false);
+      });
+      rzp.open();
+    } catch (err) {
+      setPayError(isApiError(err) ? err.message : err instanceof Error ? err.message : 'Could not start payment');
+      setPayBusy(false);
+    }
+  };
 
   const trustHighlights = [
     {
@@ -631,6 +716,66 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
           </div>
         </motion.section>
 
+        {(checkout?.onlinePaymentAvailable || checkout?.qrPaymentAvailable) && !viewerOwnsProductStore && (
+          <motion.section
+            variants={revealItem}
+            className="relative overflow-hidden rounded-[2rem] border border-emerald-200/60 bg-gradient-to-br from-white via-emerald-50/40 to-white p-5 shadow-[0_28px_80px_-32px_rgba(13,148,136,0.2)] ring-1 ring-emerald-900/[0.06] backdrop-blur-md sm:p-6"
+          >
+            <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-primary/10 blur-2xl" aria-hidden />
+            <div className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold tracking-tight text-slate-900">Pay this seller</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  {checkout?.onlinePaymentAvailable && checkout?.qrPaymentAvailable
+                    ? 'Pay online with UPI or cards, or scan the seller’s QR for the amount below.'
+                    : checkout?.onlinePaymentAvailable
+                      ? 'Checkout is secured with the seller’s Razorpay account.'
+                      : 'Scan the seller’s UPI QR and pay the amount shown for your selected order option.'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-white/90 px-4 py-2 text-right shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Due for selection</p>
+                <p className="text-xl font-bold text-slate-900">
+                  ₹{selectedPurchaseOption ? selectedPurchaseOption.price.toFixed(0) : product.price.toFixed(0)}
+                </p>
+              </div>
+            </div>
+
+            {checkout?.qrPaymentAvailable && checkout.paymentQrUrl && (
+              <div className="relative mt-5 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-inner">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <QrCode className="h-4 w-4 text-primary" aria-hidden />
+                  UPI / QR payment
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Scan with any UPI app and pay the amount above. Then message the seller on WhatsApp with your payment reference.</p>
+                <div className="relative mx-auto mt-4 aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- bypass next/image so /store-payment-qr uses Next → Laravel rewrite */}
+                  <img
+                    src={checkoutQrImageSrc(checkout.paymentQrUrl)}
+                    alt="Seller payment QR"
+                    className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+                  />
+                </div>
+              </div>
+            )}
+
+            {checkout?.onlinePaymentAvailable && (
+              <div className="relative mt-5">
+                {payError && <p className="mb-2 text-sm text-rose-600">{payError}</p>}
+                <button
+                  type="button"
+                  onClick={handlePayOnline}
+                  disabled={payBusy}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-primary to-teal-600 px-5 py-3.5 text-sm font-semibold text-white shadow-[0_18px_40px_-12px_rgba(13,148,136,0.45)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:min-w-[240px]"
+                >
+                  <CreditCard className="h-4 w-4" aria-hidden />
+                  {payBusy ? 'Opening checkout…' : 'Pay online (UPI / card)'}
+                </button>
+              </div>
+            )}
+          </motion.section>
+        )}
+
         <motion.section variants={revealItem} className="grid grid-cols-2 gap-2 sm:gap-3">
           {detailCards.map((item, i) => (
             <motion.div
@@ -663,7 +808,14 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                 whileHover={{ scale: 1.05 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               >
-                <Image src={store.logo} alt={store.name} fill className="object-cover" />
+                <img
+                  src={store.logo}
+                  alt={store.name}
+                  width={64}
+                  height={64}
+                  className="h-full w-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
               </motion.div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -905,23 +1057,38 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
               )}
             </div>
           </div>
-          {sellerPhone ? (
-            <div className="flex items-center gap-2">
-              <a
-                href={`tel:${sellerPhone}`}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900"
-              >
-                <Phone className="h-4 w-4" />
-              </a>
-              <a
-                href={`${whatsappLink}?text=Hi%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(15,118,110,0.25)]"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Order now
-              </a>
+          {sellerPhone || (checkout?.onlinePaymentAvailable && !viewerOwnsProductStore) ? (
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {checkout?.onlinePaymentAvailable && !viewerOwnsProductStore && (
+                <button
+                  type="button"
+                  onClick={handlePayOnline}
+                  disabled={payBusy}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-4 py-3 text-xs font-semibold text-teal-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
+                  {payBusy ? '…' : 'Pay online'}
+                </button>
+              )}
+              {sellerPhone ? (
+                <>
+                  <a
+                    href={`tel:${sellerPhone}`}
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900"
+                  >
+                    <Phone className="h-4 w-4" />
+                  </a>
+                  <a
+                    href={`${whatsappLink}?text=Hi%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(15,118,110,0.25)]"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Order now
+                  </a>
+                </>
+              ) : null}
             </div>
           ) : (
             <a

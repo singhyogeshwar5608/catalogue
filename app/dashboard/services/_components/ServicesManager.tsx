@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Briefcase, Edit, Image as ImageIcon, Plus, Trash2 } from 'lucide-react';
 import type { Service, Store } from '@/types';
-import { addService, getServicesByStore, getStoreBySlug, isApiError } from '@/src/lib/api';
+import { addService, getServicesByStore, getStoreBySlugFromApi, isApiError } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 import { isStoreTrialExpiredWithoutPaidPlan } from '@/src/lib/storeAccess';
 
@@ -111,7 +111,7 @@ export default function ServicesManager({ defaultShowForm = false }: ServicesMan
     setLoading(true);
     setError(null);
     try {
-      const store = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlugFromApi(user.storeSlug);
       if (!store) {
         setServices([]);
         setStoreId(null);

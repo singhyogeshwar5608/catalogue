@@ -27,6 +27,8 @@ export interface BackendStore {
   user_id: number;
   name: string;
   slug: string;
+  /** Unique public path segment (`{name-slug}-{userId}`); `GET /store/{param}` matches slug or username. */
+  username?: string | null;
   category_id?: number;
   category?: {
     id: number;
@@ -83,6 +85,14 @@ export interface BackendStore {
     name?: string | null;
     email?: string | null;
   } | null;
+  /** Denormalized counts; maintained by follow/like toggles. */
+  followers_count?: string | number | null;
+  likes_count?: string | number | null;
+  /** Present on `GET /store/:slug` when `guest_token` query or auth identifies the viewer. */
+  viewer_following?: boolean | null;
+  viewer_liked?: boolean | null;
+  /** Counted storefront visits (each visitor contributes at most 10 to this total). */
+  seen_count?: string | number | null;
 }
 
 export interface BackendProduct {
@@ -111,6 +121,14 @@ export interface BackendProduct {
   total_reviews?: string | number | null;
   is_active: boolean;
   store?: BackendStore;
+  /** Present on `GET /product/{id}` when the API includes public checkout hints. */
+  checkout?: BackendProductCheckoutPayload | null;
+}
+
+export interface BackendProductCheckoutPayload {
+  online_payment_available?: boolean;
+  qr_payment_available?: boolean;
+  payment_qr_url?: string | null;
 }
 
 export interface BackendService {

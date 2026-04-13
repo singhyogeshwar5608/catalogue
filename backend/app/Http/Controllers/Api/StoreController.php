@@ -8,6 +8,7 @@ use App\Models\PlatformSetting;
 use App\Actions\ProvisionDefaultFreeStoreSubscription;
 use App\Models\Store;
 use App\Support\NextCatalogCacheInvalidate;
+use App\Support\StoreLogoUrl;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -114,9 +115,9 @@ class StoreController extends Controller
                     ->having('distance_km', '<=', $radius);
             }
         } else {
-            // Omit huge LONGTEXT columns for listing (banner/description). Keep `logo` — it should be a short URL
-            // after {@see normalizeStoreLogoForPersistence}; listing cards need it for avatars.
-            $omitHeavy = array_values(array_filter(['banner', 'description'], $hasCol));
+            // Omit only very large text fields. Keep `banner` + `logo` — listing cards must show each store's
+            // own imagery (omitting `banner` forced every card to fall back to the same category/stock art).
+            $omitHeavy = array_values(array_filter(['description'], $hasCol));
             $allCols = array_keys($storeCols);
             $slim = array_values(array_diff($allCols, $omitHeavy));
             if (count($slim) >= 3 && in_array('id', $slim, true)) {
@@ -255,7 +256,7 @@ class StoreController extends Controller
             $storeTable = (new Store)->getTable();
             $activeCol = Schema::hasColumn($storeTable, 'is_active');
             $listed = Schema::getColumnListing($storeTable);
-            $slimCols = array_values(array_diff($listed, array_intersect(['banner', 'description'], $listed)));
+            $slimCols = array_values(array_diff($listed, array_intersect(['description'], $listed)));
 
             $stores = Store::query()
                 ->when($activeCol, fn ($q) => $q->where('is_active', true))
@@ -490,7 +491,7 @@ class StoreController extends Controller
         ]);
     }
 
-    public function getStoreBySlug(string $slug)
+    public function getStoreBySlug(Request $request, string $slug)
     {
         try {
             \Log::info('getStoreBySlug called', ['slug' => $slug]);
@@ -538,7 +539,14 @@ class StoreController extends Controller
 
             \Log::info('Returning store response');
 
-            return $this->successResponse('Store retrieved successfully.', $store);
+            $payload = $store->toArray();
+            if (Schema::hasColumn('stores', 'followers_count') && Schema::hasColumn('stores', 'likes_count')) {
+                $viewer = StoreEngagementController::viewerEngagementFor($store, $request);
+                $payload['viewer_following'] = $viewer['viewer_following'];
+                $payload['viewer_liked'] = $viewer['viewer_liked'];
+            }
+
+            return $this->successResponse('Store retrieved successfully.', $payload);
         } catch (\Exception $e) {
             \Log::error('getStoreBySlug error: '.$e->getMessage(), [
                 'slug' => $slug,
@@ -757,6 +765,45 @@ class StoreController extends Controller
         }
 
         return $stores->map(fn ($store) => $transform($store));
+    }
+
+    /**
+     * Public binary response for store logo (disk `store-logos/*`). Not behind auth.
+     * Direct static URLs under `/storage/` often return 422 from the CDN; this matches {@see StoreLogoUrl}.
+     */
+    public function publicStoreLogo(Request $request, Store $store)
+    {
+        $raw = $store->getRawOriginal('logo');
+        if (! is_string($raw) || $raw === '') {
+            abort(404);
+        }
+
+        $relative = StoreLogoUrl::relativePathFromStored($raw);
+        if ($relative === null || ! Storage::disk('public')->exists($relative)) {
+            abort(404);
+        }
+
+        $full = Storage::disk('public')->path($relative);
+        if (! is_file($full)) {
+            abort(404);
+        }
+
+        $mime = 'image/jpeg';
+        if (function_exists('finfo_open')) {
+            $f = finfo_open(FILEINFO_MIME_TYPE);
+            if ($f !== false) {
+                $detected = finfo_file($f, $full);
+                finfo_close($f);
+                if (is_string($detected) && str_starts_with($detected, 'image/')) {
+                    $mime = $detected;
+                }
+            }
+        }
+
+        return response()->file($full, [
+            'Content-Type' => $mime,
+            'Cache-Control' => 'public, max-age=300',
+        ]);
     }
 
     private function geocodeLocation(?string $query): ?array

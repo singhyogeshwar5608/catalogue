@@ -11,10 +11,14 @@ function laravelProxyOrigin(): string {
       return null;
     }
   };
+  /**
+   * Default to local `php artisan serve` so dev does not silently hit production when env vars are missing.
+   * Point at a remote API explicitly: `BACKEND_PROXY_TARGET=https://your-api.example` or `NEXT_PUBLIC_API_BASE_URL=…`.
+   */
   return (
     parseOrigin(process.env.BACKEND_PROXY_TARGET) ??
     parseOrigin(process.env.NEXT_PUBLIC_API_BASE_URL) ??
-    "https://kaushalschoolfurniture.com"
+    "http://127.0.0.1:8000"
   );
 }
 
@@ -43,8 +47,8 @@ const nextConfig: NextConfig = {
     tsconfigPath: './tsconfig.json',
   },
   /**
-   * Proxies `/api/laravel/*` → live Laravel `/api/v1/v1/*`. Used in local dev by default so login
-   * and other API calls stay same-origin (no browser CORS). Set `NEXT_PUBLIC_USE_API_PROXY=0` to disable.
+   * Proxies `/api/laravel/*` → Laravel `/api/v1/v1/*`. Target origin: `BACKEND_PROXY_TARGET`, else
+   * `NEXT_PUBLIC_API_BASE_URL` host, else `http://127.0.0.1:8000`. Restart `next dev` after env changes.
    */
   async rewrites() {
     const origin = laravelProxyOrigin();
@@ -52,6 +56,18 @@ const nextConfig: NextConfig = {
       {
         source: "/api/laravel/:path*",
         destination: `${origin}/api/v1/v1/:path*`,
+      },
+      /**
+       * Laravel saves payment QR files under `public/store-payment-qr/*`. The API returns root-relative
+       * URLs (`/store-payment-qr/...`) so the browser loads them from the Next origin; this forwards to Laravel.
+       */
+      {
+        source: "/store-payment-qr/:path*",
+        destination: `${origin}/store-payment-qr/:path*`,
+      },
+      {
+        source: "/storage/:path*",
+        destination: `${origin}/storage/:path*`,
       },
     ];
   },

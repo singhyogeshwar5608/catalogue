@@ -436,7 +436,14 @@ export default function ProductPage({ params }: ProductPageProps) {
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
                     <div className="relative h-14 w-14 overflow-hidden rounded-2xl border border-white/10">
-                      <Image src={store.logo} alt={store.name} fill className="object-cover" />
+                      <img
+                        src={store.logo}
+                        alt={store.name}
+                        width={56}
+                        height={56}
+                        className="h-full w-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
                     </div>
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/40">Sold by</p>

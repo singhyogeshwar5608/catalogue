@@ -131,7 +131,16 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex }: Verif
         <div className="relative z-10 -mt-14 flex shrink-0 items-start gap-4">
           <div className="relative inline-flex items-center flex-shrink-0">
             <div className="h-20 w-20 overflow-hidden rounded-3xl border-4 border-white bg-white shadow-lg">
-              <Image src={store.logo} alt={store.name} width={80} height={80} className="h-full w-full object-cover" />
+              <img
+                src={store.logo}
+                alt={store.name}
+                width={80}
+                height={80}
+                className="h-full w-full object-cover"
+                loading="lazy"
+                decoding="async"
+                referrerPolicy="no-referrer"
+              />
             </div>
             {(store.isVerified || showBoost || hasSubscription) && highlightIcon && (
               <span

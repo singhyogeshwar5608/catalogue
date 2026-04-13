@@ -103,12 +103,15 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
 
         <div className={`pointer-events-none absolute ${isCompact ? 'bottom-1 left-2' : 'bottom-4 left-4'}`} style={{ zIndex: 2 }}>
           <div className="relative inline-flex items-center">
-            <Image
+            <img
               src={store.logo}
               alt={store.name}
               width={isCompact ? 58 : 56}
               height={isCompact ? 58 : 56}
-              className={`${isCompact ? 'mt-1 h-[58px] w-[58px] rounded-xl' : 'rounded-xl'} border-2 border-white shadow-lg`}
+              className={`${isCompact ? 'mt-1 h-[58px] w-[58px] rounded-xl' : 'rounded-xl'} border-2 border-white shadow-lg object-cover`}
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
             />
           </div>
         </div>

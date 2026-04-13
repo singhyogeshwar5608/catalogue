@@ -299,11 +299,14 @@ export default function AllStoresPage() {
       </section>
       <div
         className="sm:hidden"
-        style={{ height: 'calc(96px + var(--mobile-quick-search-height, 0px))' }}
+        style={{
+          height:
+            'calc(2.75rem + var(--mobile-quick-search-height, 0px))',
+        }}
         aria-hidden="true"
       />
 
-      <section className="mx-auto max-w-7xl px-4 pb-0 pt-8 sm:px-6 sm:pb-14 lg:px-8 lg:pb-20">
+      <section className="mx-auto max-w-7xl px-4 pb-0 pt-3 sm:px-6 sm:pt-8 sm:pb-14 lg:px-8 lg:pb-20">
         {loading ? (
           <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-20 text-center shadow-sm">
             <div className="mx-auto h-10 w-10 animate-spin rounded-full border-b-2 border-slate-900" />
@@ -312,7 +315,7 @@ export default function AllStoresPage() {
         ) : filteredStores.length ? (
           <div className="space-y-10">
             {featuredStores.length ? (
-              <div className="space-y-0 pt-4 sm:pt-0 mt-[5px]">
+              <div className="space-y-0 pt-1 sm:mt-[5px] sm:pt-0">
                 <div className="mb-0 flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Featured</p>
@@ -345,7 +348,7 @@ export default function AllStoresPage() {
         )}
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6 lg:px-8 lg:pb-20">
+      <section className="mx-auto max-w-7xl px-4 pb-6 sm:px-6 sm:pb-14 lg:px-8 lg:pb-20">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Nearby</p>

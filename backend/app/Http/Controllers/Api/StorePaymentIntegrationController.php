@@ -4,17 +4,60 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Store;
+use App\Support\PaymentQrUrl;
+use App\Models\StoreSubscription;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
+/**
+ * Persists each merchant's payment settings on {@see Store}: Razorpay key id/secret (encrypted), QR path, etc.
+ * Product checkout reads these columns — not `.env` (100 stores = 100 DB rows, one platform pair in env).
+ */
 class StorePaymentIntegrationController extends Controller
 {
     private const HELP_WHATSAPP_E164 = '917015150181';
 
-    /** Relative to `public/` — no storage symlink required (shared hosting safe). */
-    private const QR_PUBLIC_PREFIX = 'store-payment-qr';
+    /**
+     * Public binary response for the store’s saved payment QR (catalog + dashboard img tags).
+     * Not behind `auth:api` — only serves the file already linked on the store row.
+     */
+    public function publicQrImage(Request $request, Store $store)
+    {
+        $path = $store->payment_qr_path;
+        if (! is_string($path) || $path === '' || ! PaymentQrUrl::isPublicDiskPath($path)) {
+            abort(404);
+        }
+
+        $normalized = str_replace('\\', '/', $path);
+        $expectedPrefix = PaymentQrUrl::PUBLIC_PREFIX.'/'.$store->id.'/';
+        if (! str_starts_with($normalized, $expectedPrefix)) {
+            abort(404);
+        }
+
+        $full = public_path($path);
+        if (! is_file($full)) {
+            abort(404);
+        }
+
+        $mime = 'image/png';
+        if (function_exists('finfo_open')) {
+            $f = finfo_open(FILEINFO_MIME_TYPE);
+            if ($f !== false) {
+                $detected = finfo_file($f, $full);
+                finfo_close($f);
+                if (is_string($detected) && str_starts_with($detected, 'image/')) {
+                    $mime = $detected;
+                }
+            }
+        }
+
+        return response()->file($full, [
+            'Content-Type' => $mime,
+            'Cache-Control' => 'public, max-age=300',
+        ]);
+    }
 
     private function assertOwner(Request $request, Store $store): ?\Illuminate\Http\JsonResponse
     {
@@ -25,32 +68,55 @@ class StorePaymentIntegrationController extends Controller
         return null;
     }
 
-    private function isPublicQrPath(?string $path): bool
+    /** Same rule as frontend `storeCanAccessPaymentIntegrationHub`: active paid period + payment add-on(s). */
+    private function hasActivePaidSubscription(Store $store): bool
     {
-        return is_string($path)
-            && $path !== ''
-            && str_starts_with($path, self::QR_PUBLIC_PREFIX.'/');
+        /** @var StoreSubscription|null $sub */
+        $sub = $store->storeSubscriptions()
+            ->with('plan')
+            ->active()
+            ->first();
+
+        if ($sub === null || $sub->status !== 'active') {
+            return false;
+        }
+
+        $endsAt = $sub->ends_at;
+        if ($endsAt === null || $endsAt->lte(now())) {
+            return false;
+        }
+
+        $planPrice = (int) ($sub->plan?->price ?? 0);
+        $subPrice = (int) ($sub->price ?? 0);
+        if ($planPrice > 0 || $subPrice > 0) {
+            return true;
+        }
+
+        $slug = strtolower(trim((string) ($sub->plan?->slug ?? '')));
+
+        return $slug !== 'free' && $slug !== '';
     }
 
-    private function paymentQrPublicUrl(?string $path): ?string
+    private function storeHasPaymentAddonSelection(Store $store): bool
     {
-        if (! is_string($path) || $path === '') {
+        $addons = $store->subscription_addons ?? [];
+
+        return (bool) (($addons['payment_gateway'] ?? false)
+            || ($addons['qr_code'] ?? false)
+            || ($addons['payment_gateway_help'] ?? false));
+    }
+
+    private function assertPaymentHubEligible(Request $request, Store $store): ?\Illuminate\Http\JsonResponse
+    {
+        if ($request->user()->role === 'super_admin') {
             return null;
         }
 
-        if ($this->isPublicQrPath($path)) {
-            $full = public_path($path);
-
-            return is_file($full) ? asset($path) : null;
-        }
-
-        // Legacy rows: file under storage/app/public
-        try {
-            if (Storage::disk('public')->exists($path)) {
-                return Storage::disk('public')->url($path);
-            }
-        } catch (\Throwable) {
-            // disk misconfigured — ignore
+        if (! $this->storeHasPaymentAddonSelection($store) || ! $this->hasActivePaidSubscription($store)) {
+            return $this->errorResponse(
+                'Payment settings unlock after you activate a paid subscription and enable payment add-ons.',
+                403
+            );
         }
 
         return null;
@@ -62,7 +128,7 @@ class StorePaymentIntegrationController extends Controller
             return;
         }
 
-        if ($this->isPublicQrPath($path)) {
+        if (PaymentQrUrl::isPublicDiskPath($path)) {
             $full = public_path($path);
             if (is_file($full)) {
                 @unlink($full);
@@ -94,7 +160,7 @@ class StorePaymentIntegrationController extends Controller
             ],
             'razorpay_key_id' => $store->razorpay_key_id,
             'has_razorpay_secret' => is_string($secret) && $secret !== '',
-            'payment_qr_url' => $this->paymentQrPublicUrl($store->payment_qr_path),
+            'payment_qr_url' => PaymentQrUrl::displayUrl($store->payment_qr_path, (int) $store->id),
             'help_whatsapp_e164' => self::HELP_WHATSAPP_E164,
             'help_whatsapp_url' => 'https://wa.me/'.self::HELP_WHATSAPP_E164,
         ];
@@ -103,6 +169,10 @@ class StorePaymentIntegrationController extends Controller
     public function show(Request $request, Store $store)
     {
         if ($deny = $this->assertOwner($request, $store)) {
+            return $deny;
+        }
+
+        if ($deny = $this->assertPaymentHubEligible($request, $store)) {
             return $deny;
         }
 
@@ -115,6 +185,10 @@ class StorePaymentIntegrationController extends Controller
             return $deny;
         }
 
+        if ($deny = $this->assertPaymentHubEligible($request, $store)) {
+            return $deny;
+        }
+
         $addons = $store->subscription_addons ?? [];
         $allowPg = (bool) ($addons['payment_gateway'] ?? false);
         $allowQr = (bool) ($addons['qr_code'] ?? false);
@@ -124,6 +198,9 @@ class StorePaymentIntegrationController extends Controller
             'razorpay_key_secret' => 'sometimes|nullable|string|max:512',
             'clear_razorpay_secret' => 'sometimes|boolean',
             'payment_qr' => 'sometimes|nullable|file|image|mimes:jpeg,jpg,png,webp|max:4096',
+            /** JSON body: survives Next.js → Laravel rewrites better than multipart file uploads. */
+            'payment_qr_base64' => 'sometimes|nullable|string|max:7000000',
+            'payment_qr_mime' => 'sometimes|nullable|string|max:64',
             'remove_payment_qr' => 'sometimes|boolean',
         ]);
 
@@ -161,7 +238,7 @@ class StorePaymentIntegrationController extends Controller
                 $ext = 'png';
             }
 
-            $dirRelative = self::QR_PUBLIC_PREFIX.'/'.$store->id;
+            $dirRelative = PaymentQrUrl::PUBLIC_PREFIX.'/'.$store->id;
             $dirAbsolute = public_path($dirRelative);
             if (! is_dir($dirAbsolute) && ! @mkdir($dirAbsolute, 0755, true) && ! is_dir($dirAbsolute)) {
                 return $this->errorResponse('Could not create upload directory on the server.', 500);
@@ -169,6 +246,62 @@ class StorePaymentIntegrationController extends Controller
 
             $basename = Str::uuid()->toString().'.'.$ext;
             $file->move($dirAbsolute, $basename);
+            $store->payment_qr_path = $dirRelative.'/'.$basename;
+        } elseif (is_string($request->input('payment_qr_base64')) && trim($request->input('payment_qr_base64')) !== '') {
+            if (! $allowQr) {
+                return $this->errorResponse('QR code add-on is not enabled for this store.', 403);
+            }
+
+            $this->deletePaymentQrFile($store->payment_qr_path);
+
+            $b64 = preg_replace('/^\s*data:image\/[^;]+;base64,/', '', trim($request->string('payment_qr_base64')->toString()));
+            $binary = base64_decode($b64, true);
+            if ($binary === false || $binary === '') {
+                return $this->errorResponse('Invalid QR image (could not decode base64).', 422);
+            }
+
+            $maxBytes = 4096 * 1024;
+            if (strlen($binary) > $maxBytes) {
+                return $this->errorResponse('QR image must be 4 MB or smaller.', 422);
+            }
+
+            $info = @getimagesizefromstring($binary);
+            if ($info === false) {
+                return $this->errorResponse('The file is not a valid JPEG, PNG, or WebP image.', 422);
+            }
+
+            $mime = (string) ($info['mime'] ?? '');
+            $ext = match ($mime) {
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/webp' => 'webp',
+                default => null,
+            };
+            if ($ext === null) {
+                $hint = strtolower(trim((string) $request->input('payment_qr_mime', '')));
+                $ext = match ($hint) {
+                    'image/jpeg', 'image/jpg' => 'jpg',
+                    'image/png' => 'png',
+                    'image/webp' => 'webp',
+                    default => null,
+                };
+            }
+            if ($ext === null) {
+                return $this->errorResponse('QR image must be JPEG, PNG, or WebP.', 422);
+            }
+
+            $dirRelative = PaymentQrUrl::PUBLIC_PREFIX.'/'.$store->id;
+            $dirAbsolute = public_path($dirRelative);
+            if (! is_dir($dirAbsolute) && ! @mkdir($dirAbsolute, 0755, true) && ! is_dir($dirAbsolute)) {
+                return $this->errorResponse('Could not create upload directory on the server.', 500);
+            }
+
+            $basename = Str::uuid()->toString().'.'.$ext;
+            $written = @file_put_contents($dirAbsolute.DIRECTORY_SEPARATOR.$basename, $binary);
+            if ($written === false) {
+                return $this->errorResponse('Could not write QR image to disk. Check `public/` permissions.', 500);
+            }
+
             $store->payment_qr_path = $dirRelative.'/'.$basename;
         }
 
@@ -198,7 +331,16 @@ class StorePaymentIntegrationController extends Controller
             }
         }
 
-        $store->save();
+        try {
+            $store->save();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $this->errorResponse(
+                'Could not save payment settings. Ensure `APP_KEY` is set in `backend/.env` (run `php artisan key:generate`) and the database is reachable.',
+                500
+            );
+        }
 
         return $this->successResponse('Payment settings saved.', $this->payload($store->fresh()));
     }

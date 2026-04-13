@@ -5,6 +5,8 @@ import RatingStars from './RatingStars';
 
 interface ReviewCardProps {
   review: Review;
+  /** Softer card for dark / editorial sections (e.g. store testimonials strip). */
+  elevated?: boolean;
 }
 
 function isLikelyImageUrl(value: string | undefined): boolean {
@@ -22,7 +24,7 @@ const avatarFallbackClass =
 const avatarImageClass =
   'h-12 w-12 shrink-0 overflow-hidden rounded-full border border-slate-200/90 object-cover shadow-sm ring-2 ring-white';
 
-export default function ReviewCard({ review }: ReviewCardProps) {
+export default function ReviewCard({ review, elevated = false }: ReviewCardProps) {
   const rawAvatar = review.userAvatar?.trim();
   const canTryImage = isLikelyImageUrl(rawAvatar);
   const [imageFailed, setImageFailed] = useState(false);
@@ -35,7 +37,13 @@ export default function ReviewCard({ review }: ReviewCardProps) {
   const showPhoto = Boolean(canTryImage && rawAvatar && !imageFailed);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div
+      className={
+        elevated
+          ? 'rounded-2xl border border-violet-200/60 bg-gradient-to-br from-white via-violet-50/40 to-white p-5 shadow-lg shadow-violet-900/[0.08] ring-1 ring-violet-100/80'
+          : 'rounded-lg border border-gray-200 bg-white p-4'
+      }
+    >
       <div className="flex items-start gap-3">
         {showPhoto ? (
           <img

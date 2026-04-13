@@ -17,6 +17,19 @@ use Illuminate\Support\Str;
 
 class StoreSubscriptionRazorpayController extends Controller
 {
+    /**
+     * Mock completion when enabled in config (defaults on; set `SUBSCRIPTION_MOCK_PAYMENT=false` to opt out),
+     * or on `APP_ENV=local` when config is off.
+     */
+    private function subscriptionMockPaymentEnabled(): bool
+    {
+        if ((bool) config('services.razorpay.subscription_mock_payment')) {
+            return true;
+        }
+
+        return app()->environment('local');
+    }
+
     public function createOrder(Request $request, Store $store)
     {
         if (! $this->assertStoreOwner($request, $store)) {
@@ -263,6 +276,124 @@ class StoreSubscriptionRazorpayController extends Controller
         $subscription->load('plan');
 
         return $this->successResponse('Subscription activated successfully.', $subscription, 201);
+    }
+
+    /**
+     * Testing-only: same subscription activation as {@see verifyPayment} without calling Razorpay.
+     * Enabled per {@see subscriptionMockPaymentEnabled} (mock is on by default until disabled in `.env`).
+     */
+    public function mockComplete(Request $request, Store $store)
+    {
+        if (! $this->subscriptionMockPaymentEnabled()) {
+            return $this->errorResponse(
+                'Subscription mock payment is disabled (SUBSCRIPTION_MOCK_PAYMENT=false on this host and not APP_ENV=local). Set SUBSCRIPTION_MOCK_PAYMENT=true or remove the line to use the default (on), or run local Laravel. Then `php artisan config:clear` if you use config cache.',
+                403
+            );
+        }
+
+        if (! $this->assertStoreOwner($request, $store)) {
+            return $this->errorResponse('You are not authorized to manage this store subscription.', 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'plan_id' => 'required|exists:subscription_plans,id',
+            'addon_payment_gateway' => 'required|boolean',
+            'addon_qr_code' => 'required|boolean',
+            'addon_payment_gateway_help' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->errorResponse('Validation failed.', 422, $validator->errors());
+        }
+
+        $plan = SubscriptionPlan::findOrFail($request->plan_id);
+
+        if (! $plan->is_active) {
+            return $this->errorResponse('This subscription plan is not available.', 400);
+        }
+
+        if ((int) $plan->price <= 0) {
+            return $this->errorResponse('This plan does not require payment.', 400);
+        }
+
+        $existingActive = $store->storeSubscriptions()->active()->with('plan')->first();
+
+        if ($existingActive && $existingActive->plan && (int) $existingActive->plan->price > 0) {
+            return $this->errorResponse(
+                'You have an active paid subscription until '.$existingActive->ends_at->format('M j, Y').'. You can choose a new plan after that date.',
+                409
+            );
+        }
+
+        $addonsPayload = [
+            'payment_gateway' => $request->boolean('addon_payment_gateway'),
+            'qr_code' => $request->boolean('addon_qr_code'),
+            'payment_gateway_help' => $request->boolean('addon_payment_gateway_help'),
+        ];
+
+        $paymentId = 'mock_pay_'.Str::uuid()->toString();
+        $orderId = 'mock_order_'.Str::uuid()->toString();
+
+        $existingByPayment = StoreSubscription::query()
+            ->where('store_id', $store->id)
+            ->where('metadata->razorpay_payment_id', $paymentId)
+            ->first();
+
+        if ($existingByPayment) {
+            $existingByPayment->load('plan');
+
+            return $this->successResponse('Subscription already activated for this payment.', $existingByPayment);
+        }
+
+        $subscription = DB::transaction(function () use ($existingActive, $plan, $store, $addonsPayload, $paymentId, $orderId) {
+            if ($existingActive) {
+                $existingActive->update([
+                    'status' => 'cancelled',
+                    'auto_renew' => false,
+                    'ends_at' => Carbon::now(),
+                ]);
+            }
+
+            $startsAt = Carbon::now();
+
+            if (isset($plan->duration_days) && $plan->duration_days > 0) {
+                $endsAt = $startsAt->copy()->addDays($plan->duration_days);
+            } else {
+                $endsAt = $plan->billing_cycle === 'monthly'
+                    ? $startsAt->copy()->addMonth()
+                    : $startsAt->copy()->addYear();
+            }
+
+            $metadata = [
+                'addons' => $addonsPayload,
+                'razorpay_payment_id' => $paymentId,
+                'razorpay_order_id' => $orderId,
+                'mock_payment' => true,
+                'mock_completed_at' => Carbon::now()->toIso8601String(),
+            ];
+
+            $subscription = StoreSubscription::create([
+                'store_id' => $store->id,
+                'subscription_plan_id' => $plan->id,
+                'price' => $plan->price,
+                'status' => 'active',
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'auto_renew' => true,
+                'metadata' => $metadata,
+                'activated_by' => auth()->id(),
+            ]);
+
+            if (Schema::hasColumn('stores', 'subscription_addons')) {
+                $store->update(['subscription_addons' => $addonsPayload]);
+            }
+
+            return $subscription;
+        });
+
+        $subscription->load('plan');
+
+        return $this->successResponse('Subscription activated (mock payment).', $subscription, 201);
     }
 
     private function assertStoreOwner(Request $request, Store $store): bool

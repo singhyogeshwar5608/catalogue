@@ -12,6 +12,28 @@ use Illuminate\Support\Str;
 
 class SubscriptionPlanController extends Controller
 {
+    /** Full plan rows (including inactive) for merchant dashboard catalog — same ordering as admin list. */
+    private function allPlansForCatalogQuery()
+    {
+        $query = SubscriptionPlan::query();
+
+        if (Schema::hasColumn('subscription_plans', 'is_active')) {
+            $query->orderByDesc('is_active');
+        }
+
+        if (Schema::hasColumn('subscription_plans', 'is_popular')) {
+            $query->orderByDesc('is_popular');
+        }
+
+        if (Schema::hasColumn('subscription_plans', 'price')) {
+            $query->orderBy('price');
+        } else {
+            $query->orderBy('id');
+        }
+
+        return $query;
+    }
+
     public function publicIndex()
     {
         $query = SubscriptionPlan::query();
@@ -35,6 +57,16 @@ class SubscriptionPlanController extends Controller
         return $this->successResponse('Subscription plans retrieved successfully.', $plans);
     }
 
+    /**
+     * Authenticated merchants: read-only list of every plan row (active + inactive) for the subscription page catalog.
+     */
+    public function catalogIndex()
+    {
+        $plans = $this->allPlansForCatalogQuery()->get();
+
+        return $this->successResponse('Subscription plan catalog retrieved successfully.', $plans);
+    }
+
     /** Read-only add-on prices for checkout (any authenticated merchant). */
     public function publicAddonPrices()
     {
@@ -43,23 +75,7 @@ class SubscriptionPlanController extends Controller
 
     public function index()
     {
-        $query = SubscriptionPlan::query();
-
-        if (Schema::hasColumn('subscription_plans', 'is_active')) {
-            $query->orderByDesc('is_active');
-        }
-
-        if (Schema::hasColumn('subscription_plans', 'is_popular')) {
-            $query->orderByDesc('is_popular');
-        }
-
-        if (Schema::hasColumn('subscription_plans', 'price')) {
-            $query->orderBy('price');
-        } else {
-            $query->orderBy('id');
-        }
-
-        $plans = $query->get();
+        $plans = $this->allPlansForCatalogQuery()->get();
 
         return $this->successResponse('Subscription plans retrieved successfully.', $plans);
     }

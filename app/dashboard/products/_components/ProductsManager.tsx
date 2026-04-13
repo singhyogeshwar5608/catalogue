@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X, Search } from 'lucide-react';
 import type { Product, Service, Store } from '@/types';
-import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlug, isApiError, updateProduct } from '@/src/lib/api';
+import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlugFromApi, isApiError, updateProduct } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 import { useSearch } from '@/src/context/SearchContext';
 import { isStoreTrialExpiredWithoutPaidPlan } from '@/src/lib/storeAccess';
@@ -207,7 +207,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     setLoading(true);
     setError(null);
     try {
-      const store = await getStoreBySlug(user.storeSlug);
+      const store = await getStoreBySlugFromApi(user.storeSlug);
       setOwnerStore(store ?? null);
       setStoreId(store?.id ?? null);
 

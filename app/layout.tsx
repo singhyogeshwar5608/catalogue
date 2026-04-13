@@ -30,6 +30,7 @@ export default function RootLayout({
   const isLoginPage = pathname === '/login';
   const isCreateStorePage = pathname === '/create-store';
   const isAuthPage = pathname === '/auth';
+  const isAllStoresPage = pathname === '/all-stores';
   const hideNavbar = isDashboard;
   const hideFooter = isDashboard || isStorePage || isProductPage || isLoginPage || isCatalogPage;
   const hideBottomNav = isAdminRoute;
@@ -41,7 +42,9 @@ export default function RootLayout({
   // Clear fixed MobileBottomNav (h-[68px] + safe area); md:hidden on nav so reset on desktop.
   const mainBottomPaddingClass = hideBottomNav
     ? ''
-    : 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+1rem)] md:pb-0';
+    : isAllStoresPage
+      ? 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+0.375rem)] md:pb-0'
+      : 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+1rem)] md:pb-0';
   const mainPaddingClass = `${mainBottomPaddingClass} ${mainTopPadding}`.trim();
 
   const bodyClassName = `${inter.className} ${isAuthPage ? 'h-screen overflow-hidden' : ''}`;

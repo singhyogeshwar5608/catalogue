@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\StoreLogoUrl;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -104,6 +105,26 @@ class Store extends Model
 
                 return $this->created_at->copy()->addDays(PlatformSetting::freeTrialDays());
             }
+        );
+    }
+
+    /**
+     * Replace disk `/storage/store-logos/*` URLs with an API stream URL so CDNs do not return 422.
+     */
+    protected function logo(): Attribute
+    {
+        return Attribute::make(
+            get: function (?string $value): ?string {
+                if ($value === null || $value === '') {
+                    return $value;
+                }
+                $id = (int) ($this->getAttributes()['id'] ?? 0);
+                if ($id <= 0) {
+                    return $value;
+                }
+
+                return StoreLogoUrl::toStreamUrl($value, $id) ?? $value;
+            },
         );
     }
 

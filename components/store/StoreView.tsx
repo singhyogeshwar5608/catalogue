@@ -9,10 +9,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import DynamicBanner from '@/components/DynamicBanner';
 import {
   BadgeCheck,
@@ -30,12 +32,22 @@ import {
   SlidersHorizontal,
   Sparkles,
   Check,
+  TrendingUp,
   ShoppingCart,
+  ShoppingBag,
+  CreditCard,
   Briefcase,
   Layers,
   Youtube,
   Minus,
   Plus,
+  QrCode,
+  Heart,
+  UserPlus,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
 } from 'lucide-react';
 import type {
   Store,
@@ -46,12 +58,24 @@ import type {
   ServiceBillingUnit,
   RatingSummary,
   ReviewPagination,
+  ProductCheckoutPublic,
 } from '@/types';
 import RatingStars from '@/components/RatingStars';
 import ReviewCard from '@/components/ReviewCard';
 import { useAuth } from '@/src/context/AuthContext';
 import { buildReviewColors, getThemeForCategory, type ReviewTheme } from '@/src/lib/reviewTheme';
 import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
+import {
+  getProductById,
+  createProductCheckoutRazorpayOrder,
+  verifyProductCheckoutRazorpayPayment,
+  isApiError,
+  toggleStoreFollow,
+  toggleStoreLike,
+  recordStoreView,
+} from '@/src/lib/api';
+import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
+import { checkoutQrImageSrc } from '@/src/lib/checkoutAssetUrl';
 
 type StoreViewProps = {
   store: Store;
@@ -106,7 +130,6 @@ const buildSocialLinks = (store: Store) => {
 };
 
 const MAX_CART_ITEMS = 20;
-const MAX_PER_ITEM = 5;
 
 const PRODUCT_UNIT_LABELS: Record<ProductUnitType, string> = {
   piece: 'piece',
@@ -165,8 +188,22 @@ const formatCurrencyDisplay = (value: number) => {
   })}`;
 };
 
+function buildProductGallery(product: Product): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const add = (u: string | undefined | null) => {
+    if (!u || seen.has(u)) return;
+    seen.add(u);
+    urls.push(u);
+  };
+  add(product.image);
+  (product.images ?? []).forEach(add);
+  return urls;
+}
+
 const ProductImageCarousel = ({ products, services }: { products: Product[]; services: Service[] }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [lightbox, setLightbox] = useState<{ images: string[]; title: string } | null>(null);
 
   const combinedItems = useMemo(() => {
     const items: Array<{ type: 'product' | 'service'; data: Product | Service }> = [];
@@ -200,12 +237,19 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
   }
 
   return (
+    <>
     <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
       <div className="relative aspect-[4/3]">
         {combinedItems.map((item, index) => {
           const itemTitle = item.type === 'product' ? (item.data as Product).name : (item.data as Service).title;
-          const href = item.type === 'product' ? `/product/${item.data.id}` : `/service/${item.data.id}`;
           const hasImage = Boolean((item.data as Product | Service).image);
+          const heroImage = (item.data as Product | Service).image;
+          const galleryImages =
+            item.type === 'product'
+              ? buildProductGallery(item.data as Product)
+              : heroImage
+                ? [heroImage]
+                : [];
 
           return (
             <motion.div
@@ -218,21 +262,30 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
               }}
               transition={{ duration: 0.6, ease: 'easeInOut' }}
             >
-              <Link href={href} className="absolute inset-0 block">
-                {hasImage ? (
+              {hasImage ? (
+                <button
+                  type="button"
+                  className="absolute inset-0 block cursor-pointer border-0 bg-transparent p-0 text-left"
+                  aria-label={`View ${itemTitle} images`}
+                  onClick={() => {
+                    if (galleryImages.length > 0) {
+                      setLightbox({ images: galleryImages, title: itemTitle });
+                    }
+                  }}
+                >
                   <Image
-                    src={(item.data as Product | Service).image}
+                    src={heroImage}
                     alt={itemTitle}
                     fill
                     className="object-cover rounded-[28px]"
                     sizes="(max-width: 640px) 100vw, 512px"
                   />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900 text-white/50 rounded-[28px]">
-                    <Layers className="h-12 w-12" />
-                  </div>
-                )}
-              </Link>
+                </button>
+              ) : (
+                <div className="absolute inset-0 flex h-full w-full items-center justify-center rounded-[28px] bg-gradient-to-br from-slate-800 to-slate-900 text-white/50">
+                  <Layers className="h-12 w-12" aria-hidden />
+                </div>
+              )}
             </motion.div>
           );
         })}
@@ -248,6 +301,14 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
         </div>
       </div>
     </div>
+    <StoreMediaLightbox
+      open={lightbox != null}
+      images={lightbox?.images ?? []}
+      initialIndex={0}
+      title={lightbox?.title ?? ''}
+      onClose={() => setLightbox(null)}
+    />
+    </>
   );
 };
 
@@ -423,6 +484,183 @@ const staggerContainer = {
 
 const baseNavLinks = [{ label: 'Home', href: '#home' }, { label: 'Reviews', href: '#reviews' }, { label: 'Contact', href: '#contact' }];
 
+function StoreEngagementStrip({ store, isOwner }: { store: Store; isOwner: boolean }) {
+  const [followers, setFollowers] = useState(store.followersCount ?? 0);
+  const [likes, setLikes] = useState(store.likesCount ?? 0);
+  const [seen, setSeen] = useState(store.seenCount ?? 0);
+  const [following, setFollowing] = useState(store.viewerFollowing ?? false);
+  const [liked, setLiked] = useState(store.viewerLiked ?? false);
+  const [busy, setBusy] = useState<'follow' | 'like' | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFollowers(store.followersCount ?? 0);
+    setLikes(store.likesCount ?? 0);
+    setSeen(store.seenCount ?? 0);
+    setFollowing(store.viewerFollowing ?? false);
+    setLiked(store.viewerLiked ?? false);
+  }, [store.id, store.followersCount, store.likesCount, store.seenCount, store.viewerFollowing, store.viewerLiked]);
+
+  useEffect(() => {
+    if (isOwner || typeof window === 'undefined') return;
+    const dedupeKey = `storeSeenPing:${store.id}`;
+    const now = Date.now();
+    const last = sessionStorage.getItem(dedupeKey);
+    if (last && now - Number(last) < 2000) return;
+    sessionStorage.setItem(dedupeKey, String(now));
+    let cancelled = false;
+    void recordStoreView(store.id)
+      .then((res) => {
+        if (cancelled) return;
+        if (typeof res.data?.seen_count === 'number') setSeen(res.data.seen_count);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [store.id, isOwner]);
+
+  const onFollow = async () => {
+    if (isOwner || busy) return;
+    setBusy('follow');
+    setErr(null);
+    try {
+      const res = await toggleStoreFollow(store.id);
+      const d = res.data;
+      setFollowers(d.followers_count);
+      setLikes(d.likes_count);
+      if (typeof d.viewer_following === 'boolean') setFollowing(d.viewer_following);
+    } catch (e) {
+      setErr(isApiError(e) ? e.message : 'Could not update follow');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onLike = async () => {
+    if (isOwner || busy) return;
+    setBusy('like');
+    setErr(null);
+    try {
+      const res = await toggleStoreLike(store.id);
+      const d = res.data;
+      setFollowers(d.followers_count);
+      setLikes(d.likes_count);
+      if (typeof d.viewer_liked === 'boolean') setLiked(d.viewer_liked);
+    } catch (e) {
+      setErr(isApiError(e) ? e.message : 'Could not update like');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section id="support-store" className="relative py-6 sm:py-8">
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-violet-200/60 to-transparent" aria-hidden />
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-[0_24px_60px_-12px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/[0.04]">
+          <div className="relative bg-gradient-to-br from-violet-600/5 via-white to-rose-500/5 px-5 py-5 sm:px-7 sm:py-6">
+            <div className="absolute right-0 top-0 h-32 w-32 translate-x-1/4 -translate-y-1/4 rounded-full bg-violet-400/10 blur-2xl" aria-hidden />
+            <div className="absolute bottom-0 left-0 h-28 w-28 -translate-x-1/4 translate-y-1/4 rounded-full bg-rose-400/10 blur-2xl" aria-hidden />
+
+            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-4">
+                <div className="inline-flex items-center gap-2 rounded-full border border-violet-200/80 bg-violet-50/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-violet-700">
+                  <TrendingUp className="h-3.5 w-3.5" aria-hidden />
+                  Support this store
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:max-w-3xl sm:gap-4">
+                  <div className="rounded-2xl border border-indigo-100/90 bg-gradient-to-br from-white to-indigo-50/90 p-4 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-500/25">
+                        <UserPlus className="h-5 w-5" strokeWidth={2.2} />
+                      </span>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600/90">Followers</p>
+                        <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
+                          {followers.toLocaleString('en-IN')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-rose-100/90 bg-gradient-to-br from-white to-rose-50/90 p-4 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-md shadow-rose-500/25">
+                        <Heart className="h-5 w-5" strokeWidth={2.2} />
+                      </span>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-600/90">Likes</p>
+                        <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
+                          {likes.toLocaleString('en-IN')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-span-2 rounded-2xl border border-teal-100/90 bg-gradient-to-br from-white to-teal-50/90 p-4 shadow-sm sm:col-span-1">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-md shadow-teal-500/25">
+                        <Eye className="h-5 w-5" strokeWidth={2.2} />
+                      </span>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-700/90">Seen</p>
+                        <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
+                          {seen.toLocaleString('en-IN')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {err ? <p className="text-xs font-medium text-rose-600">{err}</p> : null}
+              </div>
+
+              {isOwner ? (
+                <div className="flex max-w-md flex-col gap-2 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-orange-50/80 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400/25 text-amber-800">
+                    <Sparkles className="h-5 w-5" />
+                  </span>
+                  <p className="leading-snug">
+                    <span className="font-semibold">Your storefront.</span> Followers, likes, and seen counts update on
+                    your dashboard when visitors engage.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => void onFollow()}
+                    disabled={busy !== null}
+                    className={`inline-flex min-h-[44px] min-w-[140px] items-center justify-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold shadow-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 disabled:opacity-60 ${
+                      following
+                        ? 'bg-slate-900 text-white shadow-slate-900/25 ring-2 ring-indigo-400/30'
+                        : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500'
+                    }`}
+                  >
+                    {busy === 'follow' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                    {following ? 'Following' : 'Follow store'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onLike()}
+                    disabled={busy !== null}
+                    className={`inline-flex min-h-[44px] min-w-[140px] items-center justify-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold shadow-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2 disabled:opacity-60 ${
+                      liked
+                        ? 'bg-rose-600 text-white shadow-rose-600/30 ring-2 ring-rose-300/40'
+                        : 'border border-rose-200/80 bg-white text-rose-700 hover:bg-rose-50'
+                    }`}
+                  >
+                    {busy === 'like' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${liked ? 'fill-current' : ''}`} />}
+                    {liked ? 'Liked' : 'Like store'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 type HeroSectionProps = {
   store: Store;
   heroProduct?: Product;
@@ -464,7 +702,17 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
             >
               <span className="relative inline-flex items-center">
                 <span className="relative inline-flex h-[4.6rem] w-[4.6rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/40 bg-white/95 p-1.5 shadow-xl">
-                  <Image src={store.logo} alt={`${store.name} logo`} fill className="object-cover" sizes="74px" />
+                  {/* Native img: avoids Next image pipeline issues with proxied / cross-origin storage URLs */}
+                  <img
+                    src={store.logo}
+                    alt={`${store.name} logo`}
+                    width={74}
+                    height={74}
+                    className="h-full w-full object-cover"
+                    loading="eager"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                  />
                 </span>
                 {(store.isVerified || isProPlan) && (
                   <span
@@ -603,41 +851,573 @@ const CATALOG_CARD_BG = '#0B111B';
 const CATALOG_ACCENT = '#FF9F29';
 const CATALOG_MUTED = '#8E94A0';
 
-function buildProductGallery(product: Product): string[] {
-  const urls: string[] = [];
-  const seen = new Set<string>();
-  const add = (u: string | undefined | null) => {
-    if (!u || seen.has(u)) return;
-    seen.add(u);
-    urls.push(u);
+/** Full-screen image viewer for store catalog (no navigation away from the store page). */
+function StoreMediaLightbox({
+  open,
+  images,
+  initialIndex,
+  title,
+  onClose,
+}: {
+  open: boolean;
+  images: string[];
+  initialIndex: number;
+  title: string;
+  onClose: () => void;
+}) {
+  const list = useMemo(
+    () => images.filter((u): u is string => typeof u === 'string' && u.trim().length > 0),
+    [images]
+  );
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const filtered = images.filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
+    if (!filtered.length) return;
+    const clamped = Math.max(0, Math.min(initialIndex, filtered.length - 1));
+    setIdx(clamped);
+  }, [open, initialIndex, images]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') setIdx((i) => Math.max(0, i - 1));
+      if (e.key === 'ArrowRight') setIdx((i) => Math.min(list.length - 1, i + 1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose, list.length]);
+
+  const src = list[idx];
+  if (!open || typeof document === 'undefined' || !src) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/90 p-3 sm:p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title ? `Image: ${title}` : 'Image preview'}
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="fixed left-3 top-3 z-[222] rounded-full bg-white/15 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/25 sm:left-auto sm:right-5 sm:top-5 sm:px-5 sm:py-2.5"
+        aria-label="Close image"
+      >
+        Close
+      </button>
+      {list.length > 1 ? (
+        <>
+          <button
+            type="button"
+            aria-label="Previous image"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIdx((i) => Math.max(0, i - 1));
+            }}
+            className="fixed left-2 top-1/2 z-[221] flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white shadow-lg transition hover:bg-black/80 sm:left-4 sm:h-14 sm:w-14"
+          >
+            <ChevronLeft className="h-7 w-7 sm:h-8 sm:w-8" />
+          </button>
+          <button
+            type="button"
+            aria-label="Next image"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIdx((i) => Math.min(list.length - 1, i + 1));
+            }}
+            className="fixed right-2 top-1/2 z-[221] flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white shadow-lg transition hover:bg-black/80 sm:right-4 sm:h-14 sm:w-14"
+          >
+            <ChevronRight className="h-7 w-7 sm:h-8 sm:w-8" />
+          </button>
+        </>
+      ) : null}
+      <div
+        className="flex h-[min(88vh,920px)] w-[min(96vw,1280px)] max-w-full flex-col overflow-hidden rounded-2xl bg-neutral-950/80 shadow-2xl ring-1 ring-white/10 sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative flex min-h-[52vh] w-full flex-1 basis-0 bg-black/50 sm:min-h-[56vh]">
+          <Image
+            src={src}
+            alt={title}
+            fill
+            className="object-contain p-4 sm:p-8 md:p-12"
+            sizes="(max-width: 768px) 96vw, 1280px"
+            priority
+          />
+        </div>
+        <div className="shrink-0 border-t border-white/10 bg-black/40 px-4 py-3 sm:px-6 sm:py-4">
+          {title ? (
+            <p className="text-center text-sm font-semibold text-white sm:text-base md:text-lg">{title}</p>
+          ) : null}
+          {list.length > 1 ? (
+            <p className="mt-1 text-center text-xs text-white/50 sm:text-sm">
+              {idx + 1} / {list.length}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+const BUY_MODAL_MAX_QTY = 99;
+
+type BuyNowProductModalProps = {
+  product: Product;
+  quantity: number;
+  storeName: string;
+  /** Logged-in visitor owns this storefront — Razorpay / cart purchase is blocked. */
+  isStoreOwner: boolean;
+  onClose: () => void;
+  onQuantityChange: (next: number) => void;
+};
+
+function BuyNowProductModal({
+  product,
+  quantity,
+  storeName,
+  isStoreOwner,
+  onClose,
+  onQuantityChange,
+}: BuyNowProductModalProps) {
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [checkoutLoading, setCheckoutLoading] = useState(true);
+  const [checkout, setCheckout] = useState<ProductCheckoutPublic | null>(null);
+  const [checkoutLoadError, setCheckoutLoadError] = useState<string | null>(null);
+  const [payBusy, setPayBusy] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [qrHighlight, setQrHighlight] = useState(false);
+  const qrRef = useRef<HTMLDivElement>(null);
+  const gallery = useMemo(() => buildProductGallery(product), [product]);
+  const heroSrc = gallery[heroIndex] ?? product.image;
+  const discount = getDiscountPercent(product.price, product.originalPrice);
+  const categoryLabel = (product.category || 'General').toUpperCase();
+  const unitLabel = formatPriceUnitLabel(product);
+  const unitDetail = formatProductUnitLabel(product);
+  const addDisabled = !product.inStock;
+  const lineTotal = useMemo(() => product.price * quantity, [product.price, quantity]);
+  const canPayOnline = Boolean(checkout?.onlinePaymentAvailable);
+  const canPayQr = Boolean(checkout?.qrPaymentAvailable && checkout.paymentQrUrl);
+  const hasAnyPayment = canPayOnline || canPayQr;
+
+  useEffect(() => {
+    setHeroIndex(0);
+  }, [product.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isStoreOwner) {
+      setCheckoutLoading(false);
+      setCheckoutLoadError(null);
+      setCheckout({
+        onlinePaymentAvailable: false,
+        qrPaymentAvailable: false,
+        paymentQrUrl: null,
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    setCheckoutLoading(true);
+    setCheckoutLoadError(null);
+    getProductById(product.id)
+      .then(({ checkout: nextCheckout }) => {
+        if (!cancelled) setCheckout(nextCheckout);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setCheckoutLoadError(isApiError(err) ? err.message : 'Could not load payment options');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCheckoutLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [product.id, isStoreOwner]);
+
+  const scrollToQr = () => {
+    qrRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setQrHighlight(true);
+    window.setTimeout(() => setQrHighlight(false), 2000);
   };
-  add(product.image);
-  (product.images ?? []).forEach(add);
-  return urls;
+
+  const startRazorpayCheckout = async () => {
+    if (isStoreOwner || !product.inStock || checkoutLoading || !canPayOnline) return;
+    setPayError(null);
+    setPayBusy(true);
+    try {
+      await loadRazorpayCheckoutScript();
+      const order = await createProductCheckoutRazorpayOrder(product.id, 'single', { quantity });
+      const Razorpay = window.Razorpay;
+      if (!Razorpay) throw new Error('Razorpay failed to load.');
+      const rzp = new Razorpay({
+        key: order.razorpay_key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: order.store_name,
+        description: `${order.product_name} × ${quantity}`,
+        order_id: order.razorpay_order_id,
+        handler: async (response: Record<string, string>) => {
+          try {
+            await verifyProductCheckoutRazorpayPayment(product.id, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            window.alert('Payment successful. The seller will confirm your order.');
+          } catch (err) {
+            setPayError(
+              isApiError(err) ? err.message : err instanceof Error ? err.message : 'Could not verify payment',
+            );
+          } finally {
+            setPayBusy(false);
+          }
+        },
+        theme: { color: CATALOG_ACCENT },
+        modal: {
+          ondismiss: () => setPayBusy(false),
+        },
+      });
+      rzp.on('payment.failed', (r: { error?: { description?: string } }) => {
+        setPayError(r.error?.description ?? 'Payment failed');
+        setPayBusy(false);
+      });
+      rzp.open();
+    } catch (err) {
+      setPayError(isApiError(err) ? err.message : err instanceof Error ? err.message : 'Could not start payment');
+      setPayBusy(false);
+    }
+  };
+
+  const handleBuyNowPayment = async () => {
+    if (isStoreOwner) {
+      setPayError('You cannot purchase products from your own store.');
+      return;
+    }
+    if (!product.inStock || checkoutLoading) return;
+    setPayError(null);
+    if (canPayOnline) {
+      await startRazorpayCheckout();
+      return;
+    }
+    if (canPayQr) {
+      scrollToQr();
+      return;
+    }
+    setPayError('This seller has not enabled online payment on their plan yet. Use the full product page or contact the store.');
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  if (typeof document === 'undefined') return null;
+
+  const panel = (
+    <div className="fixed inset-0 z-[200] flex items-end justify-center sm:items-center sm:p-4">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+        aria-label="Close product details"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="buy-now-product-title"
+        className="relative z-[201] flex max-h-[min(92vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl shadow-2xl sm:max-h-[85vh] sm:rounded-2xl"
+        style={{ backgroundColor: CATALOG_CARD_BG }}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5">
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: CATALOG_ACCENT }}>
+            Buy now
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-3 sm:px-5">
+          {isStoreOwner ? (
+            <p className="mb-3 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-medium text-amber-100">
+              You cannot buy your own products here. Customers use Pay online or QR on your live store.
+            </p>
+          ) : null}
+          <div className="flex justify-center">
+            {/* Fixed 1:1 frame, smaller than full modal width */}
+            <div className="relative h-40 w-40 shrink-0 overflow-hidden rounded-xl bg-white aspect-square sm:h-48 sm:w-48">
+              <Image
+                src={heroSrc}
+                alt={product.name}
+                fill
+                className="object-contain p-1.5 sm:p-2"
+                sizes="(max-width: 640px) 160px, 192px"
+                priority
+              />
+              {discount ? (
+                <div
+                  className="absolute left-1.5 top-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white sm:left-2 sm:top-2 sm:px-2.5 sm:py-1 sm:text-[11px]"
+                  style={{ backgroundColor: CATALOG_ACCENT, borderRadius: '10px 4px 10px 4px' }}
+                >
+                  {discount}% off
+                </div>
+              ) : null}
+              {!product.inStock ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/55">
+                  <span className="text-center text-xs font-semibold text-white sm:text-sm">Out of stock</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {gallery.length > 1 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {gallery.map((src, i) => (
+                <button
+                  key={`${src}-${i}`}
+                  type="button"
+                  onClick={() => setHeroIndex(i)}
+                  className="relative h-12 w-12 overflow-hidden rounded-lg bg-white transition sm:h-14 sm:w-14"
+                  style={{
+                    boxShadow:
+                      heroIndex === i ? `inset 0 0 0 2px ${CATALOG_ACCENT}` : 'inset 0 0 0 1px rgba(0,0,0,0.08)',
+                  }}
+                  aria-label={`Image ${i + 1}`}
+                >
+                  <Image src={src} alt="" fill className="object-cover" sizes="56px" />
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <p className="mt-4 text-[11px] font-medium uppercase tracking-wider" style={{ color: CATALOG_MUTED }}>
+            {categoryLabel}
+          </p>
+          <h2 id="buy-now-product-title" className="mt-1 text-lg font-semibold leading-snug text-white sm:text-xl">
+            {product.name}
+          </h2>
+
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-xl font-bold tabular-nums text-white sm:text-2xl">{formatCurrencyDisplay(product.price)}</span>
+            {unitLabel ? (
+              <span className="text-sm font-semibold" style={{ color: CATALOG_MUTED }}>
+                /{unitLabel}
+              </span>
+            ) : null}
+            {product.originalPrice ? (
+              <span className="text-sm font-medium tabular-nums line-through opacity-60" style={{ color: CATALOG_MUTED }}>
+                {formatCurrencyDisplay(product.originalPrice)}
+              </span>
+            ) : null}
+          </div>
+
+          <p className="mt-2 text-xs sm:text-sm" style={{ color: CATALOG_MUTED }}>
+            Sold as: <span className="font-semibold text-white/90">{unitDetail}</span>
+            {product.minOrderQuantity != null && product.minOrderQuantity > 1 ? (
+              <span className="ml-2">· Min order {product.minOrderQuantity}</span>
+            ) : null}
+          </p>
+
+          {product.wholesaleEnabled && product.wholesalePrice != null ? (
+            <p className="mt-2 text-xs font-semibold sm:text-sm" style={{ color: CATALOG_MUTED }}>
+              <span className="rounded-md bg-white/10 px-2 py-1 text-emerald-300">
+                Wholesale {formatCurrencyDisplay(product.wholesalePrice)}
+                {product.wholesaleMinQty ? ` · Min ${product.wholesaleMinQty}` : ''}
+              </span>
+            </p>
+          ) : null}
+
+          <div className="mt-3 flex items-center gap-2 text-sm" style={{ color: CATALOG_MUTED }}>
+            <Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-400" aria-hidden />
+            <span className="font-medium text-white/90">{product.rating.toFixed(1)}</span>
+            <span>· {product.totalReviews} review{product.totalReviews === 1 ? '' : 's'}</span>
+          </div>
+
+          {product.description?.trim() ? (
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: CATALOG_MUTED }}>
+                Details
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-white/85">{product.description.trim()}</p>
+            </div>
+          ) : null}
+
+          <div className="mt-6 border-t border-white/10 pt-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: CATALOG_MUTED }}>
+              Quantity
+            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                aria-label="Decrease quantity"
+                onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
+                disabled={quantity <= 1}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Minus className="h-4 w-4 text-slate-700" strokeWidth={2.5} />
+              </button>
+              <span className="min-w-[2.5rem] text-center text-lg font-bold tabular-nums text-white">{quantity}</span>
+              <button
+                type="button"
+                aria-label="Increase quantity"
+                onClick={() => onQuantityChange(Math.min(BUY_MODAL_MAX_QTY, quantity + 1))}
+                disabled={quantity >= BUY_MODAL_MAX_QTY}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4 text-slate-700" strokeWidth={2.5} />
+              </button>
+            </div>
+            <p className="mt-2 text-[11px]" style={{ color: CATALOG_MUTED }}>
+              Max {BUY_MODAL_MAX_QTY} per line · Total {formatCurrencyDisplay(lineTotal)}
+            </p>
+          </div>
+
+          {!checkoutLoading && canPayQr ? (
+            <div
+              ref={qrRef}
+              className={`mt-6 rounded-xl border p-4 transition-[box-shadow] ${
+                qrHighlight ? 'shadow-[0_0_0_2px_#FF9F29]' : ''
+              }`}
+              style={{ borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.04)' }}
+            >
+              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                <QrCode className="h-4 w-4 shrink-0" style={{ color: CATALOG_ACCENT }} aria-hidden />
+                Pay with UPI / QR
+              </div>
+              <p className="mt-1 text-xs" style={{ color: CATALOG_MUTED }}>
+                Scan and pay {formatCurrencyDisplay(lineTotal)} for {storeName}. Then message the seller with your reference.
+              </p>
+              <div className="relative mx-auto mt-3 aspect-square w-full max-w-[200px] overflow-hidden rounded-xl bg-white">
+                {checkout?.paymentQrUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- must bypass next/image so /store-payment-qr hits Next rewrites
+                  <img
+                    src={checkoutQrImageSrc(checkout.paymentQrUrl)}
+                    alt="Seller payment QR"
+                    className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+                  />
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="shrink-0 border-t border-white/10 bg-[#070b12] px-4 py-3 sm:px-5">
+          {checkoutLoadError ? (
+            <p className="mb-2 text-center text-xs text-amber-400/90">{checkoutLoadError}</p>
+          ) : null}
+          {payError ? <p className="mb-2 text-center text-xs text-rose-400">{payError}</p> : null}
+          {checkoutLoading ? (
+            <p className="mb-3 text-center text-xs text-white/45">Loading payment options…</p>
+          ) : null}
+          {canPayOnline && canPayQr ? (
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setPayError(null);
+                  scrollToQr();
+                }}
+                disabled={addDisabled || checkoutLoading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#FF9F29] to-amber-500 px-4 py-3.5 text-sm font-semibold text-slate-900 shadow-lg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <QrCode className="h-4 w-4 shrink-0" aria-hidden />
+                Pay with UPI / QR
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void startRazorpayCheckout();
+                }}
+                disabled={addDisabled || checkoutLoading || payBusy}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
+                {payBusy ? 'Opening checkout…' : 'Pay online (card / UPI)'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void handleBuyNowPayment();
+              }}
+              disabled={addDisabled || checkoutLoading || payBusy || !hasAnyPayment}
+              title={
+                !hasAnyPayment && !checkoutLoading
+                  ? 'Seller has not enabled payment gateway or QR on their subscription'
+                  : undefined
+              }
+              className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold shadow-lg transition ${
+                addDisabled || checkoutLoading || payBusy || !hasAnyPayment
+                  ? 'cursor-not-allowed border border-white/10 bg-white/5 text-white/35'
+                  : 'bg-gradient-to-r from-[#FF9F29] to-amber-500 text-slate-900 hover:brightness-105'
+              }`}
+            >
+              <ShoppingBag className="h-4 w-4 shrink-0" aria-hidden />
+              {checkoutLoading ? 'Loading…' : payBusy ? 'Opening checkout…' : canPayQr ? 'Show QR to pay' : 'Buy now'}
+            </button>
+          )}
+          {!checkoutLoading && !hasAnyPayment ? (
+            <p className="mt-2 text-center text-[11px] text-white/45">
+              Online pay and QR appear here when the seller enables them with an active paid plan.
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(panel, document.body);
 }
 
 type StoreCatalogProductCardProps = {
   product: Product;
   whatsappLink: string;
   storeName: string;
+  isStoreOwner: boolean;
   cartQty: number;
-  quantity: number;
-  maxPerItem: number;
-  onQuantityChange: (next: number) => void;
   onAddToCart: () => void;
+  onBuyNow: () => void;
 };
 
 function StoreCatalogProductCard({
   product,
   whatsappLink,
   storeName,
+  isStoreOwner,
   cartQty,
-  quantity,
-  maxPerItem,
-  onQuantityChange,
   onAddToCart,
+  onBuyNow,
 }: StoreCatalogProductCardProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const gallery = useMemo(() => buildProductGallery(product), [product]);
   const heroSrc = gallery[activeIndex] ?? product.image;
   const discount = getDiscountPercent(product.price, product.originalPrice);
@@ -653,9 +1433,11 @@ function StoreCatalogProductCard({
       style={{ backgroundColor: CATALOG_CARD_BG }}
     >
       <div className="relative overflow-hidden rounded-xl bg-white sm:rounded-[15px]">
-        <Link
-          href={`/product/${product.id}`}
-          className="relative block aspect-square w-full sm:aspect-[5/4] md:aspect-[4/3] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F29]/60"
+        <button
+          type="button"
+          onClick={() => setImageLightboxOpen(true)}
+          className="relative block aspect-square w-full cursor-zoom-in border-0 bg-transparent p-0 sm:aspect-[5/4] md:aspect-[4/3] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F29]/60"
+          aria-label={`View ${product.name} images`}
         >
           <Image
             src={heroSrc}
@@ -666,7 +1448,7 @@ function StoreCatalogProductCard({
           />
           {discount ? (
             <div
-              className="absolute left-1.5 top-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white sm:left-2 sm:top-2 sm:px-2.5 sm:py-1 sm:text-[11px]"
+              className="pointer-events-none absolute left-1.5 top-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white sm:left-2 sm:top-2 sm:px-2.5 sm:py-1 sm:text-[11px]"
               style={{
                 backgroundColor: CATALOG_ACCENT,
                 borderRadius: '10px 4px 10px 4px',
@@ -676,11 +1458,11 @@ function StoreCatalogProductCard({
             </div>
           ) : null}
           {!product.inStock ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/55">
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55">
               <span className="font-semibold text-white">Out of stock</span>
             </div>
           ) : null}
-        </Link>
+        </button>
       </div>
 
       {gallery.length > 1 ? (
@@ -720,9 +1502,9 @@ function StoreCatalogProductCard({
         <p className="text-[10px] font-medium uppercase tracking-wider sm:text-[11px]" style={{ color: CATALOG_MUTED }}>
           {categoryLabel}
         </p>
-        <Link href={`/product/${product.id}`} className="mt-0.5 block min-w-0 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F29]/50 sm:mt-1">
-          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-white sm:text-[15px]">{product.name}</h3>
-        </Link>
+        <h3 className="mt-0.5 line-clamp-2 min-w-0 text-sm font-semibold leading-snug text-white sm:mt-1 sm:text-[15px]">
+          {product.name}
+        </h3>
         <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 sm:mt-2 sm:gap-x-2">
           <span className="text-base font-bold tabular-nums text-white sm:text-lg">{formatCurrencyDisplay(product.price)}</span>
           {unitLabel ? (
@@ -746,59 +1528,71 @@ function StoreCatalogProductCard({
         ) : null}
       </div>
 
-      <div className="mt-2.5 flex items-center justify-start gap-2 sm:mt-4 sm:gap-3">
-        <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="mt-2 flex min-w-0 flex-col gap-1 sm:mt-3 sm:gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-1 sm:gap-2">
+          <a
+            href={`${whatsappLink}?text=Hi%20${encodeURIComponent(storeName)}%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="WhatsApp"
+            className="flex min-w-0 touch-manipulation flex-row items-center justify-center gap-0.5 rounded-md bg-gradient-to-r from-emerald-500 to-green-500 px-1 py-[calc(0.25rem+1.5px)] text-[9px] font-semibold leading-none text-white shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition hover:opacity-95 active:opacity-90 sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-[calc(0.375rem+1.5px)] sm:text-[11px]"
+          >
+            <MessageCircle className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
+            <span className="min-w-0 max-sm:truncate">WhatsApp</span>
+          </a>
           <button
             type="button"
-            aria-label="Decrease quantity"
-            onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white transition hover:bg-white/90 sm:h-9 sm:w-9 sm:rounded-lg"
+            onClick={onAddToCart}
+            disabled={!product.inStock || isStoreOwner}
+            title={
+              isStoreOwner
+                ? 'You cannot add your own products to the cart'
+                : cartQty
+                  ? `Added to cart (${cartQty})`
+                  : 'Add to cart'
+            }
+            className={`flex min-w-0 touch-manipulation flex-row items-center justify-center gap-0.5 rounded-md border px-1 py-[calc(0.25rem+1.5px)] text-[9px] font-semibold leading-none transition active:opacity-90 sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-[calc(0.375rem+1.5px)] sm:text-[11px] ${
+              !product.inStock || isStoreOwner
+                ? 'border-white/20 text-white/40'
+                : 'border-[#FF9F29] bg-[#FF9F29]/10 text-[#FF9F29] hover:bg-[#FF9F29]/20'
+            }`}
           >
-            <Minus className="h-3.5 w-3.5 text-slate-600 sm:h-4 sm:w-4" strokeWidth={2.5} />
-          </button>
-          <span className="min-w-[1.25rem] text-center text-xs font-semibold tabular-nums text-white sm:text-sm">{quantity}</span>
-          <button
-            type="button"
-            aria-label="Increase quantity"
-            onClick={() => onQuantityChange(Math.min(maxPerItem, quantity + 1))}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white transition hover:bg-white/90 sm:h-9 sm:w-9 sm:rounded-lg"
-          >
-            <Plus className="h-3.5 w-3.5 text-slate-600 sm:h-4 sm:w-4" strokeWidth={2.5} />
+            <ShoppingCart className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
+            <span className="min-w-0 flex-1 text-center max-sm:truncate sm:flex-none">
+              <span className="sm:hidden">{cartQty > 0 ? `(${cartQty})` : 'Add'}</span>
+              <span className="hidden sm:inline">{cartQty ? `Added (${cartQty})` : 'Add to cart'}</span>
+            </span>
           </button>
         </div>
-      </div>
-
-      <div className="mt-2 grid min-w-0 grid-cols-2 gap-1 sm:mt-3 sm:gap-2">
-        <a
-          href={`${whatsappLink}?text=Hi%20${encodeURIComponent(storeName)}%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="WhatsApp"
-          className="flex min-w-0 touch-manipulation flex-row items-center justify-center gap-0.5 rounded-md bg-gradient-to-r from-emerald-500 to-green-500 px-1 py-[calc(0.25rem+1.5px)] text-[9px] font-semibold leading-none text-white shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition hover:opacity-95 active:opacity-90 sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-[calc(0.375rem+1.5px)] sm:text-[11px]"
-        >
-          <MessageCircle className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
-          <span className="min-w-0 max-sm:truncate">WhatsApp</span>
-        </a>
         <button
           type="button"
-          onClick={onAddToCart}
-          disabled={cartQty >= maxPerItem}
-          title={cartQty ? `Added to cart (${cartQty})` : 'Add to cart'}
-          className={`flex min-w-0 touch-manipulation flex-row items-center justify-center gap-0.5 rounded-md border px-1 py-[calc(0.25rem+1.5px)] text-[9px] font-semibold leading-none transition active:opacity-90 sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-[calc(0.375rem+1.5px)] sm:text-[11px] ${
-            cartQty >= maxPerItem
-              ? 'border-white/20 text-white/40'
-              : 'border-[#FF9F29] bg-[#FF9F29]/10 text-[#FF9F29] hover:bg-[#FF9F29]/20'
+          onClick={onBuyNow}
+          disabled={!product.inStock || isStoreOwner}
+          title={
+            isStoreOwner
+              ? 'You cannot purchase your own products'
+              : product.inStock
+                ? 'View details and choose quantity'
+                : 'Out of stock'
+          }
+          className={`flex min-w-0 touch-manipulation items-center justify-center gap-1.5 rounded-md border px-2 py-[calc(0.3rem+1.5px)] text-[10px] font-semibold leading-none transition active:opacity-90 sm:rounded-lg sm:py-[calc(0.4rem+1.5px)] sm:text-xs ${
+            product.inStock && !isStoreOwner
+              ? 'border-white/25 bg-white/5 text-white hover:bg-white/10'
+              : 'cursor-not-allowed border-white/10 text-white/30'
           }`}
         >
-          <ShoppingCart className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
-          <span className="min-w-0 flex-1 text-center max-sm:truncate sm:flex-none">
-            <span className="sm:hidden">
-              {cartQty >= maxPerItem ? 'Limit' : cartQty > 0 ? `(${cartQty})` : 'Add'}
-            </span>
-            <span className="hidden sm:inline">{cartQty ? `Added (${cartQty})` : 'Add to cart'}</span>
-          </span>
+          <ShoppingBag className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+          Buy now
         </button>
       </div>
+
+      <StoreMediaLightbox
+        open={imageLightboxOpen}
+        images={gallery}
+        initialIndex={activeIndex}
+        title={product.name}
+        onClose={() => setImageLightboxOpen(false)}
+      />
     </article>
   );
 }
@@ -813,6 +1607,8 @@ type ProductGridProps = {
   whatsappLink: string;
   storeName: string;
   storeWhatsapp?: string;
+  /** Viewer is the store owner — hide self-purchase actions. */
+  isStoreOwner: boolean;
   cartEntries: CartEntry[];
   onAddToCart: (product: Product, quantity: number) => void;
 };
@@ -830,6 +1626,7 @@ const ServiceCard = ({
   whatsappLink: string;
   whatsappNumber?: string | null;
 }) => {
+  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const billingLabel = formatServiceBillingLabel(service);
   const hasServicePrice = service.price != null;
   const minQuantity = service.minQuantity && service.minQuantity > 0 ? service.minQuantity : null;
@@ -837,26 +1634,33 @@ const ServiceCard = ({
 
   return (
     <article className="group min-w-0 w-full rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.08)] ring-1 ring-white/40 backdrop-blur transition hover:-translate-y-2 hover:shadow-[0_30px_70px_rgba(15,23,42,0.12)]">
-      <Link href={`/service/${service.id}`} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/40 rounded-2xl">
+      <div className="block rounded-2xl focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-900/40">
         <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-white/40 bg-slate-50">
           {service.image ? (
-            <Image
-              src={service.image}
-              alt={service.title}
-              fill
-              className="object-cover transition duration-700 group-hover:scale-105"
-              sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 90vw"
-            />
+            <button
+              type="button"
+              onClick={() => setImageLightboxOpen(true)}
+              className="relative block h-full w-full cursor-zoom-in border-0 bg-transparent p-0 text-left"
+              aria-label={`View ${service.title} image`}
+            >
+              <Image
+                src={service.image}
+                alt={service.title}
+                fill
+                className="object-cover transition duration-700 group-hover:scale-105"
+                sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 90vw"
+              />
+            </button>
           ) : (
             <div className="flex h-full items-center justify-center text-slate-400">
               <Briefcase className="h-10 w-10" />
             </div>
           )}
-          <div className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-slate-900 shadow">
+          <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-slate-900 shadow">
             Service
           </div>
           <div
-            className={`absolute right-3 top-3 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${
+            className={`pointer-events-none absolute right-3 top-3 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${
               service.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
             }`}
           >
@@ -903,7 +1707,16 @@ const ServiceCard = ({
             </div>
           </div>
         </div>
-      </Link>
+      </div>
+      {service.image ? (
+        <StoreMediaLightbox
+          open={imageLightboxOpen}
+          images={[service.image]}
+          initialIndex={0}
+          title={service.title}
+          onClose={() => setImageLightboxOpen(false)}
+        />
+      ) : null}
       <div className="mt-4">
         <a
           href={`${whatsappLink}?text=${encodeURIComponent(
@@ -934,6 +1747,7 @@ const ProductGrid = ({
   whatsappLink,
   storeName,
   storeWhatsapp,
+  isStoreOwner,
   cartEntries,
   onAddToCart,
 }: ProductGridProps) => {
@@ -941,8 +1755,9 @@ const ProductGrid = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('featured');
   const [priceFilter, setPriceFilter] = useState<PriceFilter>('all');
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [buyNowProduct, setBuyNowProduct] = useState<Product | null>(null);
+  const [buyNowQty, setBuyNowQty] = useState(1);
 
   useEffect(() => {
     setSearchQuery('');
@@ -1201,13 +2016,13 @@ const ProductGrid = ({
                         product={product}
                         whatsappLink={whatsappLink}
                         storeName={storeName}
+                        isStoreOwner={isStoreOwner}
                         cartQty={cartQuantities[product.id] ?? 0}
-                        quantity={quantities[product.id] ?? 1}
-                        maxPerItem={MAX_PER_ITEM}
-                        onQuantityChange={(next) =>
-                          setQuantities((prev) => ({ ...prev, [product.id]: next }))
-                        }
-                        onAddToCart={() => onAddToCart(product, quantities[product.id] ?? 1)}
+                        onAddToCart={() => onAddToCart(product, 1)}
+                        onBuyNow={() => {
+                          setBuyNowProduct(product);
+                          setBuyNowQty(1);
+                        }}
                       />
                     </motion.div>
                   );
@@ -1227,6 +2042,17 @@ const ProductGrid = ({
             </button>
           </div>
         )}
+
+        {buyNowProduct ? (
+          <BuyNowProductModal
+            product={buyNowProduct}
+            quantity={buyNowQty}
+            storeName={storeName}
+            isStoreOwner={isStoreOwner}
+            onClose={() => setBuyNowProduct(null)}
+            onQuantityChange={setBuyNowQty}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -1284,7 +2110,16 @@ const StoreFooter = ({ store, theme, navLinks }: { store: Store; theme: Theme; n
         <div className="rounded-3xl border border-white/20 bg-slate-950/60 p-5 shadow-[0_25px_60px_rgba(2,6,23,0.55)]">
           <div className="flex items-center gap-4">
             <span className="relative block h-12 w-12 overflow-hidden rounded-full border border-white/20">
-              <Image src={store.logo} alt={store.name} fill className="object-cover" sizes="48px" />
+              <img
+                src={store.logo}
+                alt={store.name}
+                width={48}
+                height={48}
+                className="h-full w-full object-cover"
+                loading="lazy"
+                decoding="async"
+                referrerPolicy="no-referrer"
+              />
             </span>
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-white/60">{store.businessType}</p>
@@ -1349,7 +2184,7 @@ export default function StoreView({
   onLoadMoreReviews,
   onSubmitStoreReview,
 }: StoreViewProps) {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
   const planIdentifier = store.activeSubscription?.plan?.slug?.toLowerCase()
     ?? store.activeSubscription?.plan?.name?.toLowerCase()
     ?? '';
@@ -1358,6 +2193,13 @@ export default function StoreView({
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
   const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
+  /** Prefer store owner id — slug-only match can wrongly skip visit tracking if slugs collide or auth slug is stale. */
+  const viewerOwnsStore = Boolean(
+    (user?.id && store.userId && user.id === store.userId) ||
+      (user?.storeSlug &&
+        store.username &&
+        user.storeSlug.toLowerCase() === store.username.toLowerCase())
+  );
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([]);
   const [cartNotice, setCartNotice] = useState<string | null>(null);
@@ -1446,6 +2288,11 @@ export default function StoreView({
 
   const handleAddToCart = useCallback(
     (product: Product, quantity: number) => {
+      if (viewerOwnsStore) {
+        setCartNotice("You can't add your own products to the cart.");
+        window.setTimeout(() => setCartNotice(null), 3000);
+        return;
+      }
       setCartEntries((prev) => {
         const totalItems = prev.reduce((sum, entry) => sum + entry.quantity, 0);
         if (totalItems >= MAX_CART_ITEMS) {
@@ -1457,7 +2304,7 @@ export default function StoreView({
         const existingIndex = prev.findIndex((entry) => entry.productId === product.id);
         if (existingIndex >= 0) {
           const updated = [...prev];
-          const newQuantity = Math.min(updated[existingIndex].quantity + quantity, MAX_PER_ITEM);
+          const newQuantity = updated[existingIndex].quantity + quantity;
           updated[existingIndex] = { ...updated[existingIndex], quantity: newQuantity };
           return updated;
         }
@@ -1468,22 +2315,20 @@ export default function StoreView({
             productId: product.id,
             name: product.name,
             price: product.price,
-            quantity: Math.min(quantity, MAX_PER_ITEM),
+            quantity,
             image: product.image,
           },
         ];
       });
     },
-    []
+    [viewerOwnsStore]
   );
 
   const handleUpdateQuantity = useCallback((productId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
     setCartEntries((prev) =>
       prev.map((entry) =>
-        entry.productId === productId
-          ? { ...entry, quantity: Math.min(newQuantity, MAX_PER_ITEM) }
-          : entry
+        entry.productId === productId ? { ...entry, quantity: newQuantity } : entry
       )
     );
   }, []);
@@ -1583,6 +2428,8 @@ export default function StoreView({
           isProPlan={isProPlan}
         />
 
+        <StoreEngagementStrip store={store} isOwner={viewerOwnsStore} />
+
         <ProductGrid
           products={products}
           services={services}
@@ -1593,71 +2440,97 @@ export default function StoreView({
           whatsappLink={whatsappLink}
           storeName={store.name}
           storeWhatsapp={store.whatsapp}
+          isStoreOwner={viewerOwnsStore}
           cartEntries={cartEntries}
           onAddToCart={handleAddToCart}
         />
 
-        {/* Reviews Section */}
-        <section id="reviews" className="py-16 bg-slate-50">
-          <div className="mx-auto max-w-5xl px-4 sm:px-6">
-            <div className="text-center">
-              <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Store reviews</p>
-              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+        {/* Reviews — dark “testimonials” strip so it reads as its own chapter below the catalog */}
+        <section
+          id="reviews"
+          className="relative isolate z-10 overflow-hidden bg-slate-950 py-16 text-slate-100 sm:py-20"
+          style={{ backgroundColor: '#020617' }}
+        >
+          <div
+            className="absolute inset-0 z-0 bg-gradient-to-b from-slate-950 via-indigo-950/95 to-slate-950"
+            aria-hidden
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -left-24 top-10 z-0 h-72 w-72 rounded-full blur-3xl opacity-35"
+            style={{ backgroundColor: `${reviewColors.primary}66` }}
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-20 bottom-8 z-0 h-64 w-64 rounded-full blur-3xl opacity-25"
+            style={{ backgroundColor: `${reviewColors.accent}55` }}
+          />
+          <div
+            aria-hidden
+            className="absolute inset-0 z-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[length:44px_44px] opacity-90"
+          />
+
+          <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.35em] text-violet-200/95">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-300" />
+                Store reviews
+              </p>
+              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                 Loved by shoppers across {store.location || 'your city'}
               </h2>
-              <p className="mt-3 text-sm text-slate-600">
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">
                 Average rating {reviewSummary?.rating?.toFixed(1) ?? store.rating.toFixed(1)} from{' '}
                 {reviewSummary?.totalReviews ?? store.totalReviews} orders.
               </p>
             </div>
 
-            <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               {isLoggedIn && onSubmitStoreReview ? (
                 <button
                   type="button"
                   onClick={() => setIsReviewFormOpen((previous) => !previous)}
-                  className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-white shadow-sm"
+                  className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/25 ring-1 ring-white/20 transition hover:brightness-110"
                   style={{ backgroundColor: reviewColors.primary }}
                 >
                   {isReviewFormOpen ? 'Close form' : 'Write a review'}
                 </button>
               ) : (
-                <span className="text-sm text-slate-600">Sign in to rate this store.</span>
+                <span className="text-sm text-slate-300">Sign in to rate this store.</span>
               )}
-              <span className="text-xs text-slate-400">Reviews are verified by our community</span>
+              <span className="text-center text-xs text-slate-400 sm:text-left">
+                Reviews are verified by our community
+              </span>
             </div>
 
-            <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <div
-                className="rounded-2xl border border-slate-200 bg-white p-6 text-center"
-                style={{ boxShadow: `0 12px 32px ${reviewColors.primary}14` }}
-              >
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Average rating</p>
+            <div className="mt-10 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/15 bg-white/[0.07] p-6 text-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] backdrop-blur-md">
+                <p className="text-[10px] uppercase tracking-[0.4em] text-violet-200/85">Average rating</p>
                 <div className="mt-4 flex items-end justify-center gap-3">
-                  <span className="text-5xl font-semibold text-slate-900">{aggregateRating.toFixed(1)}</span>
+                  <span className="text-5xl font-semibold tabular-nums text-white">{aggregateRating.toFixed(1)}</span>
                   <span className="pb-2 text-sm text-slate-400">/ 5</span>
                 </div>
-                <div className="mt-3 flex items-center justify-center gap-2 text-slate-900">
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-white">
                   <RatingStars rating={aggregateRating} size="md" />
                   <span className="text-sm font-semibold">
                     {totalRecordedReviews || reviewSummary?.totalReviews || store.totalReviews} reviews
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-2 text-sm text-slate-400">
                   Trusted by shoppers across {store.location || 'India'}.
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Rating breakdown</p>
+              <div className="rounded-2xl border border-white/15 bg-white/[0.06] p-6 backdrop-blur-md">
+                <p className="text-[10px] uppercase tracking-[0.4em] text-violet-200/85">Rating breakdown</p>
                 <div className="mt-4 space-y-2">
                   {[5, 4, 3, 2, 1].map((star) => {
                     const count = ratingBreakdown[star as 1 | 2 | 3 | 4 | 5];
                     const percentage = totalRecordedReviews ? (count / totalRecordedReviews) * 100 : 0;
                     return (
                       <div key={star} className="flex items-center gap-3">
-                        <span className="w-10 text-sm text-slate-500">{star}.0</span>
-                        <div className="h-2 flex-1 rounded-full bg-slate-100">
+                        <span className="w-10 text-sm text-slate-400">{star}.0</span>
+                        <div className="h-2 flex-1 rounded-full bg-white/10">
                           <div
                             className="h-full rounded-full"
                             style={{
@@ -1666,7 +2539,7 @@ export default function StoreView({
                             }}
                           />
                         </div>
-                        <span className="w-12 text-right text-xs text-slate-500">{count}</span>
+                        <span className="w-12 text-right text-xs text-slate-400">{count}</span>
                       </div>
                     );
                   })}
@@ -1679,19 +2552,22 @@ export default function StoreView({
                 {highlights.map((highlight) => (
                   <div
                     key={highlight.label}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 text-center"
+                    className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 text-center backdrop-blur-sm"
                   >
-                    <p className="text-2xl font-semibold text-slate-900">{highlight.value.toFixed(1)}</p>
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{highlight.label}</p>
+                    <p className="text-2xl font-semibold tabular-nums text-white">{highlight.value.toFixed(1)}</p>
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{highlight.label}</p>
                   </div>
                 ))}
               </div>
             )}
 
             {isReviewFormOpen && onSubmitStoreReview && isLoggedIn && (
-              <form onSubmit={handleSubmitStoreReview} className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <form
+                onSubmit={handleSubmitStoreReview}
+                className="mt-10 rounded-2xl border border-white/15 bg-white/[0.06] p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-md"
+              >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="text-sm font-semibold text-slate-900">Your rating</label>
+                  <label className="text-sm font-semibold text-white">Your rating</label>
                   <RatingStars
                     interactive
                     rating={reviewForm.rating}
@@ -1700,7 +2576,7 @@ export default function StoreView({
                   />
                 </div>
                 <div className="mt-4">
-                  <label className="text-sm font-semibold text-slate-900" htmlFor="store_review_comment">
+                  <label className="text-sm font-semibold text-white" htmlFor="store_review_comment">
                     Share more about your visit
                   </label>
                   <textarea
@@ -1708,17 +2584,17 @@ export default function StoreView({
                     rows={4}
                     value={reviewForm.comment}
                     onChange={(event) => handleReviewFormChange({ comment: event.target.value })}
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
+                    className="mt-2 w-full rounded-2xl border border-white/15 bg-slate-950/45 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-violet-400/50 focus:outline-none focus:ring-1 focus:ring-violet-400/30"
                     placeholder="Talk about the service quality, delivery, and support…"
                     required
                   />
                 </div>
-                {reviewError && <p className="mt-3 text-sm text-rose-500">{reviewError}</p>}
+                {reviewError && <p className="mt-3 text-sm text-rose-400">{reviewError}</p>}
                 <div className="mt-4 flex justify-end">
                   <button
                     type="submit"
                     disabled={isSubmittingReview}
-                    className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-2 text-sm font-semibold text-slate-900 shadow-md disabled:opacity-60"
                   >
                     {isSubmittingReview ? 'Submitting…' : 'Submit review'}
                   </button>
@@ -1726,27 +2602,27 @@ export default function StoreView({
               </form>
             )}
 
-            <div className="mt-8 space-y-4">
+            <div className="mt-10 space-y-4">
               {reviewsLoading && approvedReviews.length === 0 ? (
-                <p className="text-sm text-slate-500">Loading reviews…</p>
+                <p className="text-sm text-slate-400">Loading reviews…</p>
               ) : approvedReviews.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-white/25 bg-white/[0.04] p-6 text-center text-sm text-slate-300 backdrop-blur-sm">
                   This store hasn&apos;t received reviews yet.
                 </div>
               ) : (
-                approvedReviews.map((review) => <ReviewCard key={review.id} review={review} />)
+                approvedReviews.map((review) => <ReviewCard key={review.id} review={review} elevated />)
               )}
             </div>
 
-            {reviewsError && <p className="mt-4 text-sm text-rose-500">{reviewsError}</p>}
+            {reviewsError && <p className="mt-4 text-sm text-rose-400">{reviewsError}</p>}
 
             {reviewPagination?.hasMore && onLoadMoreReviews && (
-              <div className="mt-6 flex justify-center">
+              <div className="mt-8 flex justify-center">
                 <button
                   type="button"
                   onClick={onLoadMoreReviews}
                   disabled={reviewsLoading}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-6 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 py-2.5 text-sm font-semibold text-white transition hover:border-white/35 hover:bg-white/10 disabled:opacity-60"
                 >
                   {reviewsLoading ? 'Loading…' : 'Load more reviews'}
                 </button>
@@ -1817,8 +2693,7 @@ export default function StoreView({
                             <button
                               type="button"
                               onClick={() => handleUpdateQuantity(entry.productId, entry.quantity + 1)}
-                              disabled={entry.quantity >= MAX_PER_ITEM}
-                              className="px-2 text-xs text-slate-600 disabled:opacity-40"
+                              className="px-2 text-xs text-slate-600"
                             >
                               +
                             </button>

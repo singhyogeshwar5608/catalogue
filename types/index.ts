@@ -5,6 +5,13 @@ export interface StoreSubscriptionAddons {
   paymentGatewayHelp: boolean;
 }
 
+/** Public product page: what checkout options the seller has enabled and configured. */
+export interface ProductCheckoutPublic {
+  onlinePaymentAvailable: boolean;
+  qrPaymentAvailable: boolean;
+  paymentQrUrl: string | null;
+}
+
 /** Owner-only payment hub payload from `GET/POST …/payment-integration`. */
 export interface StorePaymentIntegrationSettings {
   subscriptionAddons: StoreSubscriptionAddons;
@@ -13,6 +20,18 @@ export interface StorePaymentIntegrationSettings {
   paymentQrUrl: string | null;
   helpWhatsappE164: string;
   helpWhatsappUrl: string;
+}
+
+/** JSON body for `POST …/payment-integration` when not uploading a QR file (avoids multipart through dev proxy). */
+export interface StorePaymentIntegrationUpdateJson {
+  razorpay_key_id?: string;
+  razorpay_key_secret?: string;
+  clear_razorpay_secret?: boolean;
+  remove_payment_qr?: boolean;
+  /** Raw base64 (no `data:...;base64,` prefix). Preferred over multipart through proxies. */
+  payment_qr_base64?: string;
+  /** e.g. `image/png` — hint only; server validates bytes as an image. */
+  payment_qr_mime?: string;
 }
 
 export type BoostStatus = 'active' | 'expired' | 'cancelled';
@@ -92,6 +111,15 @@ export interface Store {
   subscriptionAddons?: StoreSubscriptionAddons;
   productsCount?: number;
   servicesCount?: number;
+  /** Public store profile: follower / like totals (from API). */
+  followersCount?: number;
+  likesCount?: number;
+  /** Whether the current viewer (logged-in or guest token) follows this store. */
+  viewerFollowing?: boolean;
+  /** Whether the current viewer liked this store. */
+  viewerLiked?: boolean;
+  /** Counted page visits (capped per visitor on the server). */
+  seenCount?: number;
   user?: {
     id: string;
     name: string;

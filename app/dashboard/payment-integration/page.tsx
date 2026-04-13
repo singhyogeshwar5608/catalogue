@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
@@ -20,12 +20,42 @@ import {
 } from "@/src/lib/api";
 import {
   dispatchStoreProfileRefresh,
-  storeHasSubscriptionAddonAccess,
+  storeCanAccessPaymentIntegrationHub,
 } from "@/src/lib/storeSubscriptionAddons";
+import { checkoutQrImageSrc } from "@/src/lib/checkoutAssetUrl";
 import type { Store, StorePaymentIntegrationSettings } from "@/types";
 
 const HELP_COPY =
   "Need help connecting Razorpay or finishing UPI setup? Message us on WhatsApp and our team will assist you.";
+
+const QR_MAX_BYTES = 4 * 1024 * 1024;
+
+function readQrFileAsPayload(file: File): Promise<{ payment_qr_base64: string; payment_qr_mime: string }> {
+  if (file.size > QR_MAX_BYTES) {
+    return Promise.reject(new Error("QR image must be 4 MB or smaller."));
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      if (typeof dataUrl !== "string") {
+        reject(new Error("Could not read image file."));
+        return;
+      }
+      const comma = dataUrl.indexOf(",");
+      if (comma < 0) {
+        reject(new Error("Could not read image file."));
+        return;
+      }
+      resolve({
+        payment_qr_base64: dataUrl.slice(comma + 1),
+        payment_qr_mime: file.type || "image/png",
+      });
+    };
+    reader.onerror = () => reject(new Error("Could not read image file."));
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function PaymentIntegrationPage() {
   const router = useRouter();
@@ -41,6 +71,7 @@ export default function PaymentIntegrationPage() {
   const [razorpayKeyId, setRazorpayKeyId] = useState("");
   const [razorpaySecret, setRazorpaySecret] = useState("");
   const [qrFile, setQrFile] = useState<File | null>(null);
+  const qrFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSettings = useCallback(async (storeId: string) => {
     setSettingsLoading(true);
@@ -87,10 +118,10 @@ export default function PaymentIntegrationPage() {
     };
   }, [loadSettings]);
 
-  const hasAccess = store != null && storeHasSubscriptionAddonAccess(store);
+  const hasAccess = store != null && storeCanAccessPaymentIntegrationHub(store);
 
   useEffect(() => {
-    if (!loading && store != null && !storeHasSubscriptionAddonAccess(store)) {
+    if (!loading && store != null && !storeCanAccessPaymentIntegrationHub(store)) {
       router.replace("/dashboard/subscription");
     }
   }, [loading, store, router]);
@@ -110,11 +141,18 @@ export default function PaymentIntegrationPage() {
     setSaveMessage(null);
     setSaveError(null);
     try {
-      const fd = new FormData();
-      fd.append("payment_qr", qrFile);
-      const next = await updateStorePaymentIntegration(store.id, fd);
+      const payload = await readQrFileAsPayload(qrFile);
+      const next = await updateStorePaymentIntegration(store.id, payload);
+      if (!next.paymentQrUrl) {
+        throw new Error(
+          "The server did not store the QR image (no public URL). Check that `public/` is writable on the API host, then try again."
+        );
+      }
       setSettings(next);
       setQrFile(null);
+      if (qrFileInputRef.current) {
+        qrFileInputRef.current.value = "";
+      }
       setSaveMessage("QR code saved.");
       dispatchStoreProfileRefresh();
     } catch (e) {
@@ -130,11 +168,12 @@ export default function PaymentIntegrationPage() {
     setSaveMessage(null);
     setSaveError(null);
     try {
-      const fd = new FormData();
-      fd.append("remove_payment_qr", "1");
-      const next = await updateStorePaymentIntegration(store.id, fd);
+      const next = await updateStorePaymentIntegration(store.id, { remove_payment_qr: true });
       setSettings(next);
       setQrFile(null);
+      if (qrFileInputRef.current) {
+        qrFileInputRef.current.value = "";
+      }
       setSaveMessage("QR code removed.");
       dispatchStoreProfileRefresh();
     } catch (e) {
@@ -158,12 +197,10 @@ export default function PaymentIntegrationPage() {
     setSaveMessage(null);
     setSaveError(null);
     try {
-      const fd = new FormData();
-      fd.append("razorpay_key_id", razorpayKeyId.trim());
-      if (razorpaySecret.trim()) {
-        fd.append("razorpay_key_secret", razorpaySecret.trim());
-      }
-      const next = await updateStorePaymentIntegration(store.id, fd);
+      const next = await updateStorePaymentIntegration(store.id, {
+        razorpay_key_id: razorpayKeyId.trim(),
+        ...(razorpaySecret.trim() ? { razorpay_key_secret: razorpaySecret.trim() } : {}),
+      });
       setSettings(next);
       setRazorpaySecret("");
       setSaveMessage("Razorpay keys saved.");
@@ -181,9 +218,7 @@ export default function PaymentIntegrationPage() {
     setSaveMessage(null);
     setSaveError(null);
     try {
-      const fd = new FormData();
-      fd.append("clear_razorpay_secret", "1");
-      const next = await updateStorePaymentIntegration(store.id, fd);
+      const next = await updateStorePaymentIntegration(store.id, { clear_razorpay_secret: true });
       setSettings(next);
       setRazorpaySecret("");
       setSaveMessage("API secret cleared.");
@@ -375,7 +410,8 @@ export default function PaymentIntegrationPage() {
                   <p className="mb-2 text-xs font-medium text-gray-600">Current QR</p>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={settings.paymentQrUrl}
+                    key={settings.paymentQrUrl}
+                    src={checkoutQrImageSrc(settings.paymentQrUrl)}
                     alt="Saved payment QR"
                     className="mx-auto max-h-48 max-w-full rounded border border-gray-200 object-contain sm:max-h-52"
                   />
@@ -385,6 +421,7 @@ export default function PaymentIntegrationPage() {
                 <div>
                   <label className="text-xs font-medium text-gray-600">Upload QR image</label>
                   <input
+                    ref={qrFileInputRef}
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
                     onChange={(e) => setQrFile(e.target.files?.[0] ?? null)}
