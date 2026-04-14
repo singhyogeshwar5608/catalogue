@@ -87,7 +87,10 @@ export default function CreateStorePage() {
     description: '',
     address: '',
     pinCode: '',
+<<<<<<< HEAD
     city: '',
+=======
+>>>>>>> origin/main
     district: '',
     state: '',
   });
@@ -132,7 +135,10 @@ export default function CreateStorePage() {
       }
       setFormData((prev) => ({
         ...prev,
+<<<<<<< HEAD
         city: result.locality ?? result.city ?? prev.city,
+=======
+>>>>>>> origin/main
         district: result.district ?? prev.district,
         state: result.state ?? prev.state,
       }));
@@ -195,7 +201,11 @@ export default function CreateStorePage() {
     const normalizedDescription =
       formData.description?.trim() || `Discover curated ${selectedCategory?.name.toLowerCase() || 'products'} in your area.`;
 
+<<<<<<< HEAD
     const locationLabel = [formData.city.trim(), formData.district.trim(), formData.state.trim()].filter(Boolean).join(', ');
+=======
+    const locationLabel = [formData.district.trim(), formData.state.trim()].filter(Boolean).join(', ');
+>>>>>>> origin/main
     const fullAddress = [
       formData.address.trim(),
       locationLabel,
@@ -404,6 +414,7 @@ export default function CreateStorePage() {
             {fieldErrors.address && <p className="text-sm text-red-600">{fieldErrors.address[0]}</p>}
           </div>
 
+<<<<<<< HEAD
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label htmlFor="pinCode" className="text-sm font-medium text-gray-700">
@@ -434,6 +445,23 @@ export default function CreateStorePage() {
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
               />
             </div>
+=======
+          <div className="space-y-2">
+            <label htmlFor="pinCode" className="text-sm font-medium text-gray-700">
+              PIN code
+            </label>
+            <input
+              id="pinCode"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={formData.pinCode}
+              onChange={(e) => setFormData({ ...formData, pinCode: e.target.value.replace(/[^0-9]/g, '').slice(0, 6) })}
+              placeholder="e.g. 136027"
+              required
+              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+            />
+>>>>>>> origin/main
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

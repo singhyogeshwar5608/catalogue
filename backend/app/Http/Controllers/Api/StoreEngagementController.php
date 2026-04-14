@@ -7,6 +7,10 @@ use App\Models\Store;
 use App\Models\StoreFollow;
 use App\Models\StoreLike;
 use App\Models\StoreSeenHit;
+<<<<<<< HEAD
+=======
+use App\Support\StoreNotificationRecorder;
+>>>>>>> origin/main
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -131,6 +135,13 @@ class StoreEngagementController extends Controller
             ? 'Visit recorded.'
             : (($result['capped'] ?? false) ? 'Your view limit for this store is reached.' : 'Visit not counted.');
 
+<<<<<<< HEAD
+=======
+        if (($result['counted'] ?? false) && (int) ($result['your_hits'] ?? 0) === 1) {
+            StoreNotificationRecorder::seen($store, $actorKey, (int) ($result['seen_count'] ?? 0));
+        }
+
+>>>>>>> origin/main
         return $this->successResponse($message, $result);
     }
 
@@ -213,6 +224,16 @@ class StoreEngagementController extends Controller
             return $this->errorResponse('Store not found.', 404);
         }
 
+<<<<<<< HEAD
+=======
+        if ($kind === 'follow' && $payload['viewer_following']) {
+            StoreNotificationRecorder::follow($store, $actorKey, (int) $payload['followers_count']);
+        }
+        if ($kind === 'like' && $payload['viewer_liked']) {
+            StoreNotificationRecorder::like($store, $actorKey, (int) $payload['likes_count']);
+        }
+
+>>>>>>> origin/main
         if ($kind === 'follow') {
             return $this->successResponse(
                 $payload['viewer_following'] ? 'You are now following this store.' : 'You unfollowed this store.',

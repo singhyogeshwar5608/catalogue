@@ -50,8 +50,11 @@ export default function ReviewCard({ review, elevated = false }: ReviewCardProps
             src={rawAvatar}
             alt={review.userName}
             className={avatarImageClass}
+<<<<<<< HEAD
             loading="lazy"
             decoding="async"
+=======
+>>>>>>> origin/main
             onError={() => setImageFailed(true)}
           />
         ) : (

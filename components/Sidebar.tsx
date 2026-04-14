@@ -16,9 +16,16 @@ import {
   LogOut,
   Home,
   Plug2,
+<<<<<<< HEAD
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
 import { getStoreBySlugFromApi } from '@/src/lib/api';
+=======
+  Bell,
+} from 'lucide-react';
+import { useAuth } from '@/src/context/AuthContext';
+import { getMyStoreNotifications, getStoreBySlugFromApi } from '@/src/lib/api';
+>>>>>>> origin/main
 import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
 
@@ -28,6 +35,10 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [myStore, setMyStore] = useState<Store | null>(null);
+<<<<<<< HEAD
+=======
+  const [unreadCount, setUnreadCount] = useState(0);
+>>>>>>> origin/main
 
   const loadStore = useCallback(async () => {
     if (!user?.storeSlug) {
@@ -55,12 +66,45 @@ export default function Sidebar() {
     return () => window.removeEventListener(STORE_PROFILE_REFRESH_EVENT, onRefresh);
   }, [loadStore]);
 
+<<<<<<< HEAD
+=======
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return undefined;
+    }
+    let stopped = false;
+    const loadUnread = async () => {
+      try {
+        const payload = await getMyStoreNotifications({ limit: 1 });
+        if (!stopped) {
+          setUnreadCount(payload.unread_count);
+        }
+      } catch {
+        // Ignore sidebar badge failures.
+      }
+    };
+    void loadUnread();
+    const id = window.setInterval(() => {
+      void loadUnread();
+    }, 4000);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [user, pathname]);
+
+>>>>>>> origin/main
   const businessType = myStore?.businessType || 'product';
   const showPaymentsHub = storeCanAccessPaymentIntegrationHub(myStore);
 
   const menuItems = [
     { href: '/', icon: Home, label: 'Home Page' },
     { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+<<<<<<< HEAD
+=======
+    { href: '/dashboard/notifications', icon: Bell, label: 'Notifications' },
+>>>>>>> origin/main
     ...(businessType === 'product' || businessType === 'hybrid' 
       ? [{ href: '/dashboard/products', icon: Package, label: 'Products' }] 
       : []),
@@ -122,7 +166,13 @@ export default function Sidebar() {
               <ul className="space-y-2">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
+<<<<<<< HEAD
                   const isActive = false;
+=======
+                  const isActive = item.href === '/dashboard'
+                    ? pathname === '/dashboard'
+                    : pathname?.startsWith(item.href);
+>>>>>>> origin/main
                   
                   return (
                     <li key={item.href}>
@@ -137,6 +187,14 @@ export default function Sidebar() {
                       >
                         <Icon className="w-5 h-5" />
                         <span className="font-medium">{item.label}</span>
+<<<<<<< HEAD
+=======
+                        {item.href === '/dashboard/notifications' && unreadCount > 0 ? (
+                          <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? 'bg-white text-primary' : 'bg-primary text-white'}`}>
+                            {unreadCount > 99 ? '99+' : unreadCount}
+                          </span>
+                        ) : null}
+>>>>>>> origin/main
                       </Link>
                     </li>
                   );
@@ -168,7 +226,13 @@ export default function Sidebar() {
             <ul className="space-y-2">
               {menuItems.map((item) => {
                 const Icon = item.icon;
+<<<<<<< HEAD
                 const isActive = false;
+=======
+                const isActive = item.href === '/dashboard'
+                  ? pathname === '/dashboard'
+                  : pathname?.startsWith(item.href);
+>>>>>>> origin/main
                 
                 return (
                   <li key={item.href}>
@@ -182,6 +246,14 @@ export default function Sidebar() {
                     >
                       <Icon className="w-5 h-5" />
                       <span className="font-medium">{item.label}</span>
+<<<<<<< HEAD
+=======
+                      {item.href === '/dashboard/notifications' && unreadCount > 0 ? (
+                        <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? 'bg-white text-primary' : 'bg-primary text-white'}`}>
+                          {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                      ) : null}
+>>>>>>> origin/main
                     </Link>
                   </li>
                 );

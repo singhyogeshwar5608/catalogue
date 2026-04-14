@@ -6,6 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\PlatformSetting;
 use App\Models\Store;
 use App\Models\StoreSubscription;
+<<<<<<< HEAD
+=======
+use App\Support\StoreNotificationRecorder;
+>>>>>>> origin/main
 use App\Models\SubscriptionPlan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -275,6 +279,11 @@ class StoreSubscriptionRazorpayController extends Controller
 
         $subscription->load('plan');
 
+<<<<<<< HEAD
+=======
+        StoreNotificationRecorder::subscriptionActivated($store, $subscription);
+
+>>>>>>> origin/main
         return $this->successResponse('Subscription activated successfully.', $subscription, 201);
     }
 
@@ -393,6 +402,11 @@ class StoreSubscriptionRazorpayController extends Controller
 
         $subscription->load('plan');
 
+<<<<<<< HEAD
+=======
+        StoreNotificationRecorder::subscriptionActivated($store, $subscription);
+
+>>>>>>> origin/main
         return $this->successResponse('Subscription activated (mock payment).', $subscription, 201);
     }
 

@@ -183,14 +183,22 @@ export default function AllStoresPage() {
 
           if (isFullWidth) {
             return (
+<<<<<<< HEAD
               <div key={store.id} className="col-span-2 min-h-0 w-full">
+=======
+              <div key={store.id} className="col-span-2 h-full min-h-0">
+>>>>>>> origin/main
                 <VerifiedSellerCard store={store} categoryBannerIndex={categoryBannerIndex} />
               </div>
             );
           }
 
           return (
+<<<<<<< HEAD
             <div key={store.id} className="col-span-1 min-h-0 min-w-0 w-full">
+=======
+            <div key={store.id} className="col-span-1 min-h-0 min-w-0 h-full">
+>>>>>>> origin/main
               <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />
             </div>
           );
@@ -199,7 +207,11 @@ export default function AllStoresPage() {
 
       <div className="hidden grid-cols-1 gap-6 sm:grid lg:grid-cols-3">
         {list.map((store) => (
+<<<<<<< HEAD
           <div key={store.id} className="min-h-0 w-full">
+=======
+          <div key={store.id} className="h-full min-h-0">
+>>>>>>> origin/main
             <VerifiedSellerCard store={store} categoryBannerIndex={bannerIndexMap?.get(store.id) ?? 0} />
           </div>
         ))}

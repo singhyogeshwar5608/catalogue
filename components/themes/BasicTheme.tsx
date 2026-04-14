@@ -25,7 +25,11 @@ export default function BasicTheme({ theme, products, storeName, storeLogo, stor
         <div className="relative h-full flex items-center justify-center">
           <div className="text-center">
             {storeLogo && (
+<<<<<<< HEAD
               <img src={storeLogo} alt={storeName} className="w-20 h-20 rounded-full mx-auto mb-4 border-4 border-white shadow-lg" loading="lazy" decoding="async" />
+=======
+              <img src={storeLogo} alt={storeName} className="w-20 h-20 rounded-full mx-auto mb-4 border-4 border-white shadow-lg" />
+>>>>>>> origin/main
             )}
             <h1 className="text-4xl font-bold text-white mb-2">{storeName}</h1>
             <p className="text-white/90">Welcome to our store</p>
