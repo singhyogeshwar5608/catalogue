@@ -7,7 +7,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\StoreSubscription;
 use App\Models\SubscriptionPlan;
-use App\Support\StoreNotificationRecorder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -167,8 +166,6 @@ class StoreSubscriptionController extends Controller
         });
 
         $subscription->load('plan');
-
-        StoreNotificationRecorder::subscriptionActivated($store, $subscription);
 
         return $this->successResponse('Subscription activated successfully.', $subscription, 201);
     }

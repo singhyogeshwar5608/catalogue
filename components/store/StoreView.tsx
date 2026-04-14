@@ -971,6 +971,8 @@ type BuyNowProductModalProps = {
   product: Product;
   quantity: number;
   storeName: string;
+  /** Logged-in visitor owns this storefront — Razorpay / cart purchase is blocked. */
+  isStoreOwner: boolean;
   onClose: () => void;
   onQuantityChange: (next: number) => void;
 };
@@ -979,6 +981,7 @@ function BuyNowProductModal({
   product,
   quantity,
   storeName,
+  isStoreOwner,
   onClose,
   onQuantityChange,
 }: BuyNowProductModalProps) {
@@ -1008,6 +1011,18 @@ function BuyNowProductModal({
 
   useEffect(() => {
     let cancelled = false;
+    if (isStoreOwner) {
+      setCheckoutLoading(false);
+      setCheckoutLoadError(null);
+      setCheckout({
+        onlinePaymentAvailable: false,
+        qrPaymentAvailable: false,
+        paymentQrUrl: null,
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
     setCheckoutLoading(true);
     setCheckoutLoadError(null);
     getProductById(product.id)
@@ -1025,7 +1040,7 @@ function BuyNowProductModal({
     return () => {
       cancelled = true;
     };
-  }, [product.id]);
+  }, [product.id, isStoreOwner]);
 
   const scrollToQr = () => {
     qrRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1034,7 +1049,7 @@ function BuyNowProductModal({
   };
 
   const startRazorpayCheckout = async () => {
-    if (!product.inStock || checkoutLoading || !canPayOnline) return;
+    if (isStoreOwner || !product.inStock || checkoutLoading || !canPayOnline) return;
     setPayError(null);
     setPayBusy(true);
     try {
@@ -1082,6 +1097,10 @@ function BuyNowProductModal({
   };
 
   const handleBuyNowPayment = async () => {
+    if (isStoreOwner) {
+      setPayError('You cannot purchase products from your own store.');
+      return;
+    }
     if (!product.inStock || checkoutLoading) return;
     setPayError(null);
     if (canPayOnline) {
@@ -1127,7 +1146,7 @@ function BuyNowProductModal({
       >
         <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5">
           <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: CATALOG_ACCENT }}>
-            Product details
+            Buy now
           </p>
           <button
             type="button"
@@ -1140,6 +1159,11 @@ function BuyNowProductModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-3 sm:px-5">
+          {isStoreOwner ? (
+            <p className="mb-3 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-medium text-amber-100">
+              You cannot buy your own products here. Customers use Pay online or QR on your live store.
+            </p>
+          ) : null}
           <div className="flex justify-center">
             {/* Fixed 1:1 frame, smaller than full modal width */}
             <div className="relative h-40 w-40 shrink-0 overflow-hidden rounded-xl bg-white aspect-square sm:h-48 sm:w-48">
@@ -1199,11 +1223,6 @@ function BuyNowProductModal({
             {unitLabel ? (
               <span className="text-sm font-semibold" style={{ color: CATALOG_MUTED }}>
                 /{unitLabel}
-              </span>
-            ) : null}
-            {product.originalPrice ? (
-              <span className="text-sm font-medium tabular-nums line-through opacity-60" style={{ color: CATALOG_MUTED }}>
-                {formatCurrencyDisplay(product.originalPrice)}
               </span>
             ) : null}
           </div>
@@ -1291,6 +1310,8 @@ function BuyNowProductModal({
                     src={checkoutQrImageSrc(checkout.paymentQrUrl)}
                     alt="Seller payment QR"
                     className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+                    loading="lazy"
+                    decoding="async"
                   />
                 ) : null}
               </div>
@@ -1375,136 +1396,108 @@ function BuyNowProductModal({
 
 type StoreCatalogProductCardProps = {
   product: Product;
+  whatsappLink: string;
+  storeName: string;
+  isStoreOwner: boolean;
   cartQty: number;
   onAddToCart: () => void;
-  onOpenDetails: () => void;
+  onBuyNow: () => void;
 };
 
 function StoreCatalogProductCard({
   product,
+  whatsappLink,
+  storeName,
+  isStoreOwner,
   cartQty,
   onAddToCart,
-  onOpenDetails,
+  onBuyNow,
 }: StoreCatalogProductCardProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const gallery = useMemo(() => buildProductGallery(product), [product]);
   const heroSrc = gallery[activeIndex] ?? product.image;
   const discount = getDiscountPercent(product.price, product.originalPrice);
   const categoryLabel = (product.category || 'General').toUpperCase();
-  const maxThumbs = 3;
-  const visibleThumbs = gallery.slice(0, maxThumbs);
-  const moreCount = Math.max(0, gallery.length - maxThumbs);
+  const badgeLabel = discount ? 'Best Seller' : 'Featured';
+  const brandInitial = (storeName?.trim()?.charAt(0) || 'B').toUpperCase();
   const unitLabel = formatPriceUnitLabel(product);
-
-  const openDetailsUnlessInteractive = (e: React.MouseEvent<HTMLElement>) => {
-    const el = e.target as HTMLElement;
-    if (el.closest('[data-product-card-thumbs]') || el.closest('[data-product-card-actions]')) {
-      return;
-    }
-    onOpenDetails();
-  };
 
   return (
     <article
-      className="group flex h-full min-w-0 w-full flex-col overflow-hidden rounded-2xl p-2 font-sans transition hover:opacity-[0.98] sm:rounded-[20px] sm:p-3"
-      style={{ backgroundColor: CATALOG_CARD_BG }}
-      onClick={openDetailsUnlessInteractive}
+      className="group flex h-full min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white font-sans shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition hover:opacity-[0.98]"
     >
-      <div className="relative cursor-pointer overflow-hidden rounded-xl bg-white sm:rounded-[15px]">
-        {/* 1:1 image frame so every product card looks consistent */}
-        <div className="relative block aspect-square w-full">
+      <div className="relative overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setImageLightboxOpen(true)}
+          className="relative block h-[45vw] max-h-[180px] w-full cursor-zoom-in border-0 bg-slate-100 p-0 md:h-auto md:max-h-none md:aspect-[4/3] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F29]/60"
+          aria-label={`View ${product.name} images`}
+        >
           <Image
             src={heroSrc}
             alt={product.name}
             fill
-            className="pointer-events-none object-contain p-0.5 transition duration-300 group-hover:scale-[1.02] sm:p-1 md:p-1.5"
+            className="object-cover transition duration-300 group-hover:scale-[1.02]"
             sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
           />
-          {/* Next/Image can swallow or odd-bubble clicks on the img; this layer receives taps reliably. */}
-          <button
-            type="button"
-            aria-label={`View ${product.name} details`}
-            className="absolute inset-0 z-[1] border-0 bg-transparent p-0 cursor-pointer"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenDetails();
-            }}
-          />
-          {discount ? (
-            <div
-              className="pointer-events-none absolute left-1.5 top-1.5 z-[2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white sm:left-2 sm:top-2 sm:px-2.5 sm:py-1 sm:text-[11px]"
-              style={{
-                backgroundColor: CATALOG_ACCENT,
-                borderRadius: '10px 4px 10px 4px',
-              }}
-            >
-              {discount}% off
-            </div>
-          ) : null}
+          <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-800 shadow-sm md:left-3 md:top-3 md:px-2.5 md:py-1 md:text-[10px]">
+            {badgeLabel}
+          </span>
+          <span className="pointer-events-none absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[10px] font-bold text-slate-800 shadow-sm md:right-3 md:top-3 md:h-8 md:w-8 md:text-xs">
+            {brandInitial}
+          </span>
           {!product.inStock ? (
-            <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-black/55">
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55">
               <span className="font-semibold text-white">Out of stock</span>
             </div>
           ) : null}
-        </div>
+          {gallery.length > 1 ? (
+            <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5">
+              {gallery.slice(0, 5).map((src, i) => (
+                <span
+                  key={`${src}-${i}`}
+                  className={`h-1.5 w-1.5 rounded-full md:h-2 md:w-2 ${activeIndex === i ? 'bg-white' : 'bg-white/55'}`}
+                />
+              ))}
+            </div>
+          ) : null}
+        </button>
       </div>
 
-      {gallery.length > 1 ? (
-        <div className="mt-1.5 flex items-center gap-1 sm:mt-2 sm:gap-1.5" data-product-card-thumbs>
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-1">
-            {visibleThumbs.map((src, i) => {
-              const selected = activeIndex === i;
-              return (
-                <button
-                  key={`${src}-${i}`}
-                  type="button"
-                  onClick={() => setActiveIndex(i)}
-                  className="relative h-6 w-6 shrink-0 overflow-hidden rounded-md bg-white transition sm:h-7 sm:w-7"
-                  style={{
-                    boxShadow: selected
-                      ? `inset 0 0 0 2px ${CATALOG_ACCENT}`
-                      : 'inset 0 0 0 1px rgba(0,0,0,0.08)',
-                  }}
-                  aria-label={`Show product image ${i + 1}`}
-                >
-                  <Image src={src} alt="" fill className="object-cover" sizes="32px" />
-                </button>
-              );
-            })}
-          </div>
-          {moreCount > 0 ? (
-            <span className="shrink-0 text-[11px] font-semibold tabular-nums sm:text-xs" style={{ color: CATALOG_ACCENT }}>
-              + {moreCount}
-            </span>
-          ) : null}
-        </div>
-      ) : (
-        <div className="mt-1.5 h-0 shrink-0 sm:mt-2" aria-hidden />
-      )}
-
-      <div className="mt-1 flex min-h-0 flex-1 cursor-pointer flex-col sm:mt-1.5">
-        <p className="text-[10px] font-medium uppercase tracking-wider sm:text-[11px]" style={{ color: CATALOG_MUTED }}>
-          {categoryLabel}
-        </p>
-        <h3 className="mt-0.5 line-clamp-2 min-w-0 text-[13px] font-semibold leading-snug text-white sm:text-sm">
+      <div className="flex min-h-0 flex-1 flex-col bg-white p-3 md:p-4">
+        <h3 className="line-clamp-2 min-w-0 text-[15px] font-bold leading-tight text-slate-900 md:text-lg">
           {product.name}
         </h3>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 sm:mt-1.5 sm:gap-x-2">
-          <span className="text-[15px] font-bold tabular-nums text-white sm:text-base">{formatCurrencyDisplay(product.price)}</span>
-          {unitLabel ? (
-            <span className="text-[11px] font-semibold" style={{ color: CATALOG_MUTED }}>
-              /{unitLabel}
-            </span>
-          ) : null}
-          {product.originalPrice ? (
-            <span className="text-xs font-medium tabular-nums line-through opacity-60" style={{ color: CATALOG_MUTED }}>
-              {formatCurrencyDisplay(product.originalPrice)}
-            </span>
-          ) : null}
+        <p className="mt-0.5 text-xs font-medium text-slate-500 md:mt-1 md:text-sm">{categoryLabel}</p>
+        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-500 md:mt-1 md:text-xs md:leading-relaxed">{product.description}</p>
+        <div className="mt-3 flex items-center justify-between gap-2 md:mt-4">
+          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-slate-800 md:px-3 md:py-1 md:text-sm">
+            {formatCurrencyDisplay(product.price)}
+            {unitLabel ? ` /${unitLabel}` : ''}
+          </span>
+          <button
+            type="button"
+            onClick={onBuyNow}
+            disabled={!product.inStock || isStoreOwner}
+            title={
+              isStoreOwner
+                ? 'You cannot purchase your own products'
+                : product.inStock
+                  ? 'View details and choose quantity'
+                  : 'Out of stock'
+            }
+            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold text-white transition md:px-3.5 md:py-1.5 md:text-xs ${
+              product.inStock && !isStoreOwner ? 'bg-black hover:bg-slate-900' : 'cursor-not-allowed bg-slate-400'
+            }`}
+          >
+            Buy Now
+            <ArrowRight className="h-3 w-3 md:h-3.5 md:w-3.5" />
+          </button>
         </div>
         {product.wholesaleEnabled && product.wholesalePrice != null ? (
-          <p className="mt-1 text-[10px] font-semibold sm:mt-1.5 sm:text-[11px]" style={{ color: CATALOG_MUTED }}>
-            <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-emerald-300 sm:px-2 sm:py-0.5">
+          <p className="mt-1.5 text-[10px] font-semibold text-slate-500 md:text-[11px] sm:mt-2">
+            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-emerald-700 sm:px-2 sm:py-1">
               Wholesale {formatCurrencyDisplay(product.wholesalePrice)}
               {product.wholesaleMinQty ? ` · Min ${product.wholesaleMinQty}` : ''}
             </span>
@@ -1512,48 +1505,13 @@ function StoreCatalogProductCard({
         ) : null}
       </div>
 
-      <div
-        className="mt-1.5 grid min-w-0 grid-cols-2 gap-1 sm:mt-2 sm:gap-1.5"
-        data-product-card-actions
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onAddToCart();
-          }}
-          disabled={!product.inStock}
-          title={cartQty ? `Added to cart (${cartQty})` : 'Add to cart'}
-          className={`flex min-w-0 touch-manipulation flex-row items-center justify-center gap-0.5 rounded-md border px-1 py-[calc(0.18rem+1px)] text-[9px] font-semibold leading-none transition active:opacity-90 sm:gap-1 sm:rounded-lg sm:px-2 sm:py-[calc(0.28rem+1px)] sm:text-[11px] ${
-            !product.inStock
-              ? 'border-white/20 text-white/40'
-              : 'border-[#FF9F29] bg-[#FF9F29]/10 text-[#FF9F29] hover:bg-[#FF9F29]/20'
-          }`}
-        >
-          <ShoppingCart className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
-          <span className="min-w-0 flex-1 text-center max-sm:truncate sm:flex-none">
-            <span className="sm:hidden">{cartQty > 0 ? `(${cartQty})` : 'Cart'}</span>
-            <span className="hidden sm:inline">{cartQty ? `Cart (${cartQty})` : 'Add to cart'}</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenDetails();
-          }}
-          disabled={!product.inStock}
-          title={product.inStock ? 'View details and pay' : 'Out of stock'}
-          className={`flex min-w-0 touch-manipulation items-center justify-center gap-1 rounded-md border px-1 py-[calc(0.18rem+1px)] text-[9px] font-semibold leading-none transition active:opacity-90 sm:rounded-lg sm:px-2 sm:py-[calc(0.28rem+1px)] sm:text-[11px] ${
-            product.inStock
-              ? 'border-white/25 bg-white/5 text-white hover:bg-white/10'
-              : 'cursor-not-allowed border-white/10 text-white/30'
-          }`}
-        >
-          <ShoppingBag className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
-          <span className="max-sm:truncate">Buy now</span>
-        </button>
-      </div>
+      <StoreMediaLightbox
+        open={imageLightboxOpen}
+        images={gallery}
+        initialIndex={activeIndex}
+        title={product.name}
+        onClose={() => setImageLightboxOpen(false)}
+      />
     </article>
   );
 }
@@ -1568,6 +1526,8 @@ type ProductGridProps = {
   whatsappLink: string;
   storeName: string;
   storeWhatsapp?: string;
+  /** Viewer is the store owner — hide self-purchase actions. */
+  isStoreOwner: boolean;
   cartEntries: CartEntry[];
   onAddToCart: (product: Product, quantity: number) => void;
 };
@@ -1592,9 +1552,9 @@ const ServiceCard = ({
   const packagePrice = service.packagePrice != null ? service.packagePrice : null;
 
   return (
-    <article className="group min-w-0 w-full rounded-3xl border border-slate-100 bg-white/90 p-3 shadow-[0_20px_45px_rgba(15,23,42,0.08)] ring-1 ring-white/40 backdrop-blur transition hover:-translate-y-2 hover:shadow-[0_30px_70px_rgba(15,23,42,0.12)] sm:p-3.5">
+    <article className="group min-w-0 w-full rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.08)] ring-1 ring-white/40 backdrop-blur transition hover:-translate-y-2 hover:shadow-[0_30px_70px_rgba(15,23,42,0.12)]">
       <div className="block rounded-2xl focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-900/40">
-        <div className="relative aspect-[3/2] overflow-hidden rounded-2xl border border-white/40 bg-slate-50 sm:aspect-[4/3]">
+        <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-white/40 bg-slate-50">
           {service.image ? (
             <button
               type="button"
@@ -1626,17 +1586,17 @@ const ServiceCard = ({
             {service.isActive ? 'Live' : 'Hidden'}
           </div>
         </div>
-        <div className="mt-2 flex h-full flex-col space-y-2 sm:mt-2.5 sm:space-y-2">
+        <div className="mt-4 flex h-full flex-col space-y-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 sm:text-[11px]">Signature service</p>
-            <h3 className="mt-0.5 text-sm font-semibold text-slate-900 line-clamp-1 sm:text-base">{service.title}</h3>
+            <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400">Signature service</p>
+            <h3 className="mt-1 text-base font-semibold text-slate-900 line-clamp-1 sm:text-lg">{service.title}</h3>
             {service.description && (
-              <p className="mt-0.5 text-xs text-slate-500 line-clamp-2 sm:text-sm">{service.description}</p>
+              <p className="mt-1 text-sm text-slate-500 line-clamp-2">{service.description}</p>
             )}
           </div>
-          <div className="mt-auto space-y-1.5">
+          <div className="mt-auto space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-base font-semibold text-slate-900 sm:text-lg">
+              <span className="text-lg font-semibold text-slate-900 sm:text-xl">
                 {hasServicePrice ? formatCurrencyDisplay(service.price as number) : 'Custom quote'}
               </span>
               <span className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold text-slate-600">
@@ -1683,9 +1643,9 @@ const ServiceCard = ({
           )}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-green-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_6px_14px_rgba(16,185,129,0.35)] transition hover:-translate-y-0.5 hover:opacity-95 sm:py-2"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-green-500 px-3 py-2 text-xs font-semibold text-white shadow-[0_6px_14px_rgba(16,185,129,0.35)] transition hover:-translate-y-0.5 hover:opacity-95"
         >
-          <MessageCircle className="h-4 w-4 shrink-0" />
+          <MessageCircle className="h-4 w-4" />
           WhatsApp {whatsappNumber && whatsappNumber.trim().length > 0 ? `· ${whatsappNumber}` : ''}
         </a>
       </div>
@@ -1706,6 +1666,7 @@ const ProductGrid = ({
   whatsappLink,
   storeName,
   storeWhatsapp,
+  isStoreOwner,
   cartEntries,
   onAddToCart,
 }: ProductGridProps) => {
@@ -1972,9 +1933,12 @@ const ProductGrid = ({
                     >
                       <StoreCatalogProductCard
                         product={product}
+                        whatsappLink={whatsappLink}
+                        storeName={storeName}
+                        isStoreOwner={isStoreOwner}
                         cartQty={cartQuantities[product.id] ?? 0}
                         onAddToCart={() => onAddToCart(product, 1)}
-                        onOpenDetails={() => {
+                        onBuyNow={() => {
                           setBuyNowProduct(product);
                           setBuyNowQty(1);
                         }}
@@ -2003,6 +1967,7 @@ const ProductGrid = ({
             product={buyNowProduct}
             quantity={buyNowQty}
             storeName={storeName}
+            isStoreOwner={isStoreOwner}
             onClose={() => setBuyNowProduct(null)}
             onQuantityChange={setBuyNowQty}
           />
@@ -2242,6 +2207,11 @@ export default function StoreView({
 
   const handleAddToCart = useCallback(
     (product: Product, quantity: number) => {
+      if (viewerOwnsStore) {
+        setCartNotice("You can't add your own products to the cart.");
+        window.setTimeout(() => setCartNotice(null), 3000);
+        return;
+      }
       setCartEntries((prev) => {
         const totalItems = prev.reduce((sum, entry) => sum + entry.quantity, 0);
         if (totalItems >= MAX_CART_ITEMS) {
@@ -2270,7 +2240,7 @@ export default function StoreView({
         ];
       });
     },
-    []
+    [viewerOwnsStore]
   );
 
   const handleUpdateQuantity = useCallback((productId: string, newQuantity: number) => {
@@ -2389,6 +2359,7 @@ export default function StoreView({
           whatsappLink={whatsappLink}
           storeName={store.name}
           storeWhatsapp={store.whatsapp}
+          isStoreOwner={viewerOwnsStore}
           cartEntries={cartEntries}
           onAddToCart={handleAddToCart}
         />

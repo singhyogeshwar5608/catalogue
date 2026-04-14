@@ -7,7 +7,7 @@ interface RatingStarsProps {
   rating?: number;
   interactive?: boolean;
   onChange?: (rating: number) => void;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: '2xs' | 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }
 
@@ -22,6 +22,7 @@ export default function RatingStars({
   const [selectedRating, setSelectedRating] = useState(rating);
 
   const sizeClasses = {
+    '2xs': 'w-3 h-3',
     xs: 'w-3.5 h-3.5',
     sm: 'w-4 h-4',
     md: 'w-5 h-5',
@@ -38,7 +39,7 @@ export default function RatingStars({
   const raw = interactive ? hoverRating || selectedRating : Number(rating);
   const displayRating = Number.isFinite(raw) ? Math.min(5, Math.max(0, raw)) : 0;
 
-  const gapClass = size === 'xs' ? 'gap-0.5' : 'gap-1';
+  const gapClass = size === '2xs' || size === 'xs' ? 'gap-0.5' : 'gap-1';
 
   return (
     <div className={`flex shrink-0 items-center ${gapClass} ${className}`.trim()} aria-label={`Rating ${displayRating} out of 5`}>

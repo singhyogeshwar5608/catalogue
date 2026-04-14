@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   BarChart3,
-  Bell,
   Briefcase,
   CreditCard,
   Download,
@@ -29,18 +28,14 @@ import {
   X,
   Youtube,
   Zap,
-  Loader2,
   type LucideIcon,
 } from 'lucide-react';
 import {
   getApiRequestBaseUrl,
-  getMyStoreNotifications,
   getProductsByStore,
   getStoreBySlugFromApi,
   getStoreSubscription,
   isApiError,
-  markStoreNotificationRead,
-  type StoreOwnerNotification,
   updateStore,
 } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
@@ -142,34 +137,6 @@ function subscriptionPeriodEndLabel(endsAt: string): string {
   return end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function dashboardNotificationIcon(type: string) {
-  switch (type) {
-    case 'follow':
-      return UserPlus;
-    case 'like':
-      return Heart;
-    case 'seen':
-      return Eye;
-    case 'subscription':
-      return CreditCard;
-    default:
-      return Bell;
-  }
-}
-
-function dashboardNotificationTime(iso?: string | null): string {
-  if (! iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const diff = Date.now() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 48) return `${hrs}h ago`;
-  return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
 /** Active subscription row: API plan name + duration + current period end. */
 function formatActiveSubscriptionPlanLine(sub: StoreSubscription): string {
   const name = (sub.plan.name ?? sub.plan.slug ?? '').trim() || 'Subscription';
@@ -207,29 +174,10 @@ export default function DashboardPage() {
   const [socialLinksMessage, setSocialLinksMessage] = useState<string | null>(null);
   const [showPhone, setShowPhone] = useState(true);
   const [savingPhoneVisibility, setSavingPhoneVisibility] = useState(false);
-  const [headerNotifOpen, setHeaderNotifOpen] = useState(false);
-  const [headerNotifs, setHeaderNotifs] = useState<StoreOwnerNotification[]>([]);
-  const [headerUnread, setHeaderUnread] = useState(0);
-  const [headerNotifLoading, setHeaderNotifLoading] = useState(false);
-  const headerNotifWrapRef = useRef<HTMLDivElement>(null);
 
   const hasProducts = myProducts.length > 0;
   const storeUrl = myStore ? `https://cateloge.com/store/${myStore.username}` : '';
   const prettyUrl = storeUrl.replace(/^https?:\/\//, '');
-
-  const loadHeaderNotifications = useCallback(async () => {
-    if (!isLoggedIn) return;
-    try {
-      setHeaderNotifLoading(true);
-      const payload = await getMyStoreNotifications({ limit: 8 });
-      setHeaderNotifs(payload.notifications);
-      setHeaderUnread(payload.unread_count);
-    } catch {
-      // Ignore header notification fetch failures.
-    } finally {
-      setHeaderNotifLoading(false);
-    }
-  }, [isLoggedIn]);
 
   const loadStoreData = useCallback(async () => {
     if (!user?.storeSlug) {
@@ -300,26 +248,6 @@ export default function DashboardPage() {
     }
     loadStoreData();
   }, [isLoggedIn, loadStoreData, router]);
-
-  useEffect(() => {
-    if (!isLoggedIn) return undefined;
-    void loadHeaderNotifications();
-    const id = window.setInterval(() => {
-      void loadHeaderNotifications();
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [isLoggedIn, loadHeaderNotifications]);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (headerNotifWrapRef.current && !headerNotifWrapRef.current.contains(target)) {
-        setHeaderNotifOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, []);
 
   useEffect(() => {
     if (!myStore) return;
@@ -487,21 +415,6 @@ export default function DashboardPage() {
     ];
   }, [myStore]);
 
-  const shouldShowSubscriptionNudge = useMemo(() => {
-    if (!myStore) return false;
-    return !hasActivePaidSubscription && !trialStillActive;
-  }, [hasActivePaidSubscription, myStore, trialStillActive]);
-
-  const subscriptionNudgeMetrics = useMemo(() => {
-    const followers = Math.max(0, myStore?.followersCount ?? 0);
-    const likes = Math.max(0, myStore?.likesCount ?? 0);
-    const seen = Math.max(0, myStore?.seenCount ?? 0);
-    const engagedUsers = followers + likes + seen;
-    // Conservative estimate so copy feels realistic on early-stage stores too.
-    const potentialExtraFollowers = Math.max(5, Math.ceil(engagedUsers * 0.25));
-    return { engagedUsers, potentialExtraFollowers };
-  }, [myStore?.followersCount, myStore?.likesCount, myStore?.seenCount]);
-
   const socialPlatforms = [
     { key: 'facebook', label: 'Facebook', placeholder: 'https://facebook.com/yourstore', icon: Facebook },
     { key: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/yourstore', icon: Instagram },
@@ -566,20 +479,6 @@ export default function DashboardPage() {
     }
   };
 
-  const markHeaderNotificationRead = async (notification: StoreOwnerNotification) => {
-    if (notification.read_at) return;
-    try {
-      await markStoreNotificationRead(notification.id);
-      const nowIso = new Date().toISOString();
-      setHeaderNotifs((prev) =>
-        prev.map((item) => (item.id === notification.id ? { ...item, read_at: nowIso } : item))
-      );
-      setHeaderUnread((prev) => Math.max(0, prev - 1));
-    } catch {
-      // ignore
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-slate-200 bg-white">
@@ -604,78 +503,6 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-4 sm:space-y-6">
-      <div className="flex justify-end">
-        <div className="relative" ref={headerNotifWrapRef}>
-          <button
-            type="button"
-            onClick={() => setHeaderNotifOpen((prev) => !prev)}
-            className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
-            aria-label="Open notifications"
-          >
-            <Bell className="h-5 w-5" />
-            {headerUnread > 0 ? (
-              <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                {headerUnread > 99 ? '99+' : headerUnread}
-              </span>
-            ) : null}
-          </button>
-
-          {headerNotifOpen ? (
-            <div className="absolute right-0 z-30 mt-2 w-[min(92vw,360px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <p className="text-sm font-semibold text-slate-900">Notifications</p>
-                <Link
-                  href="/dashboard/notifications"
-                  onClick={() => setHeaderNotifOpen(false)}
-                  className="text-xs font-semibold text-primary hover:underline"
-                >
-                  View all
-                </Link>
-              </div>
-              <div className="max-h-[360px] overflow-y-auto">
-                {headerNotifLoading && headerNotifs.length === 0 ? (
-                  <div className="flex items-center justify-center py-10 text-slate-500">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  </div>
-                ) : headerNotifs.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-slate-500">No notifications yet.</div>
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {headerNotifs.map((n) => {
-                      const Icon = dashboardNotificationIcon(n.type);
-                      return (
-                        <li key={n.id}>
-                          <button
-                            type="button"
-                            onClick={() => void markHeaderNotificationRead(n)}
-                            className={`w-full px-4 py-3 text-left transition hover:bg-slate-50 ${
-                              !n.read_at ? 'bg-primary/[0.04]' : ''
-                            }`}
-                          >
-                            <div className="flex items-start gap-3">
-                              <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                                <Icon className="h-4 w-4" />
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="flex items-center gap-2">
-                                  <span className="line-clamp-1 text-sm font-semibold text-slate-900">{n.title}</span>
-                                  {!n.read_at ? <span className="h-2 w-2 shrink-0 rounded-full bg-primary" /> : null}
-                                </span>
-                                {n.body ? <span className="mt-0.5 line-clamp-2 block text-xs text-slate-600">{n.body}</span> : null}
-                                <span className="mt-1 block text-[11px] text-slate-400">{dashboardNotificationTime(n.created_at)}</span>
-                              </span>
-                            </div>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
       <TrialCountdownBanner
         trialEndsAt={myStore.trialEndsAt}
         createdAt={myStore.createdAt}
@@ -833,39 +660,6 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-
-        {shouldShowSubscriptionNudge ? (
-          <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-orange-50/70 to-rose-50/70 px-4 py-4 shadow-sm sm:px-5">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
-                <Zap className="h-5 w-5" aria-hidden />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-700">Subscription update</p>
-                <h3 className="mt-1 text-base font-semibold text-slate-900 sm:text-lg">
-                  Aapne abhi tak koi active subscription nahi liya hai.
-                </h3>
-                <p className="mt-1.5 text-sm leading-6 text-slate-700">
-                  Aap lagbhag <span className="font-semibold text-slate-900">{subscriptionNudgeMetrics.engagedUsers}</span>{' '}
-                  users/followers ka momentum miss kar chuke ho. Agar subscription active hota to around{' '}
-                  <span className="font-semibold text-slate-900">
-                    {subscriptionNudgeMetrics.potentialExtraFollowers} followers
-                  </span>{' '}
-                  aur badh sakte the.
-                </p>
-                <div className="mt-3">
-                  <Link
-                    href="/dashboard/subscription"
-                    className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                  >
-                    <CreditCard className="h-4 w-4" />
-                    Subscription Activate Karein
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
       </section>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">

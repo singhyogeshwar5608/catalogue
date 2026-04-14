@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getCategories, getHeroBannerSlides, type Category } from '@/src/lib/api';
+import { useCallback, useEffect, useState } from 'react';
+import { getCategories, type Category } from '@/src/lib/api';
 import { absolutizeStorageUrl } from '@/src/lib/api-shared';
 
 type HeroSlide = {
@@ -44,74 +44,45 @@ const FALLBACK_SLIDES: HeroSlide[] = [
   },
 ];
 
-function coerceBannerImageStrings(value: unknown): string[] {
-  if (value == null) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    const out: string[] = [];
-    for (const u of value) {
+function collectCategoryBannerUrls(category: Category): string[] {
+  const out: string[] = [];
+  if (Array.isArray(category.banner_images) && category.banner_images.length > 0) {
+    for (const u of category.banner_images) {
       if (typeof u === 'string' && u.trim()) {
         out.push(u.trim());
       }
     }
-    return out;
   }
-  if (typeof value === 'string') {
-    const t = value.trim();
-    if (!t) {
-      return [];
-    }
-    if ((t.startsWith('[') && t.endsWith(']')) || (t.startsWith('{') && t.endsWith('}'))) {
-      try {
-        const parsed = JSON.parse(t) as unknown;
-        if (Array.isArray(parsed)) {
-          return coerceBannerImageStrings(parsed);
-        }
-      } catch {
-        return [t];
-      }
-    }
-    return [t];
+  if (out.length === 0 && category.banner_image && String(category.banner_image).trim()) {
+    out.push(String(category.banner_image).trim());
   }
-  return [];
+  return out;
 }
 
-/** First banner URL for a category: `banner_images[0]`, else `banner_image`. */
-function firstCategoryBannerUrl(category: Category): string | null {
-  const urls = coerceBannerImageStrings(category.banner_images);
-  const fromList = urls[0]?.trim();
-  if (fromList) {
-    return fromList;
-  }
-  if (category.banner_image && String(category.banner_image).trim()) {
-    return String(category.banner_image).trim();
-  }
-  return null;
-}
-
-/** One hero slide per category — only that category's first banner. */
 function slidesFromCategories(categories: Category[]): HeroSlide[] {
   const slides: HeroSlide[] = [];
   for (const c of categories) {
-    const raw = firstCategoryBannerUrl(c);
-    if (!raw) {
-      continue;
+    const urls = collectCategoryBannerUrls(c);
+    const seen = new Set<string>();
+    let i = 0;
+    for (const raw of urls) {
+      if (seen.has(raw)) continue;
+      seen.add(raw);
+      const title =
+        typeof c.banner_title === 'string' && c.banner_title.trim() !== ''
+          ? c.banner_title.trim()
+          : c.name;
+      const subtitle =
+        typeof c.banner_subtitle === 'string' && c.banner_subtitle.trim() !== ''
+          ? c.banner_subtitle.trim()
+          : undefined;
+      slides.push({
+        key: `cat-${c.id}-${i++}`,
+        image: absolutizeStorageUrl(raw),
+        title,
+        subtitle,
+      });
     }
-    const title =
-      typeof c.banner_title === 'string' && c.banner_title.trim() !== ''
-        ? c.banner_title.trim()
-        : c.name;
-    const subtitle =
-      typeof c.banner_subtitle === 'string' && c.banner_subtitle.trim() !== ''
-        ? c.banner_subtitle.trim()
-        : undefined;
-    slides.push({
-      key: `cat-${c.id}`,
-      image: absolutizeStorageUrl(raw),
-      title,
-      subtitle,
-    });
   }
   return slides;
 }
@@ -124,19 +95,6 @@ export default function HeroBanner() {
     let cancelled = false;
     (async () => {
       try {
-        const dto = await getHeroBannerSlides();
-        if (cancelled) return;
-        if (dto.length > 0) {
-          setSlides(
-            dto.map((s) => ({
-              key: s.key,
-              image: absolutizeStorageUrl(s.image),
-              title: s.title,
-              subtitle: typeof s.subtitle === 'string' && s.subtitle.trim() !== '' ? s.subtitle.trim() : undefined,
-            }))
-          );
-          return;
-        }
         const categories = await getCategories();
         if (cancelled) return;
         const built = slidesFromCategories(categories);
@@ -168,9 +126,6 @@ export default function HeroBanner() {
     return () => clearInterval(interval);
   }, [len, tick]);
 
-  const dots = useMemo(() => slides.map((_, index) => index), [slides]);
-  const showDotNav = len > 1 && len <= 24;
-
   return (
     <>
       <section className="relative w-full bg-black">
@@ -178,7 +133,7 @@ export default function HeroBanner() {
           {slides.map((slide, index) => (
             <div
               key={slide.key}
-              className={`absolute inset-0 transition-opacity duration-700 ease-out ${
+              className={`absolute inset-0 will-change-[opacity] transition-opacity duration-700 ease-out ${
                 index === currentSlide ? 'opacity-100' : 'opacity-0'
               }`}
             >
@@ -186,46 +141,13 @@ export default function HeroBanner() {
                 src={slide.image}
                 alt=""
                 className="w-full h-full object-cover min-h-[360px] sm:min-h-[450px]"
+                loading="eager"
                 referrerPolicy="no-referrer"
               />
-              {/* Light bottom fade so slide indicators stay visible on bright photos; no text on hero. */}
+              {/* Light bottom fade to improve contrast on bright photos; no text on hero. */}
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
             </div>
           ))}
-          {showDotNav ? (
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-5 flex items-center gap-2">
-              {dots.map((index) => (
-                <button
-                  key={slides[index]!.key}
-                  type="button"
-                  onClick={() => setCurrentSlide(index)}
-                  className={`h-2 rounded-full transition-all duration-300 ${
-                    currentSlide === index ? 'w-10 bg-white' : 'w-4 bg-white/40'
-                  }`}
-                  aria-label={`Go to slide ${index + 1}`}
-                />
-              ))}
-            </div>
-          ) : null}
-          {len > 24 ? (
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-5 flex max-w-[min(90vw,24rem)] items-center gap-3 px-2 text-sm text-white/95">
-              <span className="shrink-0 tabular-nums" aria-live="polite">
-                {currentSlide + 1} / {len}
-              </span>
-              <div
-                className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/25"
-                role="progressbar"
-                aria-valuenow={currentSlide + 1}
-                aria-valuemin={1}
-                aria-valuemax={len}
-              >
-                <div
-                  className="h-full rounded-full bg-white transition-[width] duration-500 ease-out"
-                  style={{ width: `${((currentSlide + 1) / len) * 100}%` }}
-                />
-              </div>
-            </div>
-          ) : null}
         </div>
       </section>
     </>
