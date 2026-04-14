@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 255, 255, 255;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Hide Google Translate toolbar and fix body positioning */
+.goog-te-banner-frame {
+  display: none !important;
+}
+
+body {
+  top: 0px !important;
+}
+
+iframe.skiptranslate {
+  display: none !important;
+}
+
+.goog-te-gadget {
+  display: none !important;
+}
+
+/* Hide Google Translate branding */
+.goog-logo-link {
+  display: none !important;
+}
+
+.goog-te-gadget span {
+  display: none !important;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth touch scrolling for common scroll containers */
+.overflow-y-auto,
+.overflow-auto,
+.overscroll-contain,
+.overscroll-auto,
+[class*='overflow-y-auto'],
+[class*='overflow-auto'] {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+/* Reduce expensive decorative animations on small screens */
+@media (max-width: 768px) {
+  .motion-safe\:animate-pulse {
+    animation: none !important;
+  }
+}
