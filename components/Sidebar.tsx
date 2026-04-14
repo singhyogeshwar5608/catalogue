@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -11,7 +12,6 @@ import {
   Users,
   Menu,
   X,
-  ShoppingBag,
   Briefcase,
   LogOut,
   Home,
@@ -22,6 +22,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { getMyStoreNotifications, getStoreBySlugFromApi } from '@/src/lib/api';
 import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
+import dashboardLogo from '@/assets/Larawans.svg';
 
 export default function Sidebar() {
   const router = useRouter();
@@ -118,8 +119,7 @@ export default function Sidebar() {
         style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
       >
         <Link href="/" className="flex items-center gap-2">
-          <ShoppingBag className="w-6 h-6 text-primary" />
-          <span className="text-lg font-bold text-gray-900">Cateloge</span>
+          <Image src={dashboardLogo} alt="Larawans" className="h-8 w-auto object-contain" priority />
         </Link>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -196,9 +196,8 @@ export default function Sidebar() {
       {/* Desktop Sidebar */}
       <div className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:w-64 md:border-r md:border-gray-200 md:bg-white">
         <div className="flex flex-col flex-1 overflow-y-auto">
-          <div className="flex items-center gap-2 px-4 py-6 border-b border-gray-200">
-            <ShoppingBag className="w-8 h-8 text-primary" />
-            <span className="text-xl font-bold text-gray-900">Cateloge</span>
+          <div className="flex items-center px-4 py-6 border-b border-gray-200">
+            <Image src={dashboardLogo} alt="Larawans" className="h-9 w-auto object-contain" priority />
           </div>
           <nav className="flex-1 p-4">
             <ul className="space-y-2">

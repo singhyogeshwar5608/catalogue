@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import { Search, ShoppingBag, User, EllipsisVertical, MapPin, ChevronDown, LogOut, LayoutTemplate, Briefcase } from 'lucide-react';
+import { Search, User, EllipsisVertical, MapPin, ChevronDown, LogOut, LayoutTemplate, Briefcase } from 'lucide-react';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '@/src/context/AuthContext';
 import { useStoreSelection } from '@/src/context/StoreContext';
@@ -14,7 +14,6 @@ import { searchAll } from '@/src/lib/api';
 import type { LocationSuggestion } from '@/src/lib/location';
 import type { Product, Service, Store, UnifiedSearchResult } from '@/types';
 import LanguageToggle from '@/components/LanguageToggle';
-import appLogo from '@/assets/icon-512x512.svg';
 import desktopLogo from '@/assets/Larawans.svg';
 
 export default function Navbar() {
@@ -436,10 +435,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16 gap-3">
           <div className="flex items-center gap-5">
             <Link href="/" className="flex items-center">
-              <span className="md:hidden inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl">
-                <Image src={appLogo} alt="Catelog" className="h-full w-full object-cover" priority />
-              </span>
-              <Image src={desktopLogo} alt="Catelog" className="hidden md:block h-10 w-auto object-contain" priority />
+              <Image src={desktopLogo} alt="Larawans" className="h-9 w-auto object-contain md:h-10" priority />
             </Link>
             
             <div className="hidden md:flex items-center gap-4 text-sm">
