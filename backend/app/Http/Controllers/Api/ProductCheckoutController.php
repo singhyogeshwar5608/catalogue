@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 /**
  * Buyer → seller product checkout. Online pay uses only that store's Razorpay keys from the database
@@ -27,10 +26,6 @@ class ProductCheckoutController extends Controller
         $product->loadMissing('store');
         $store = $product->store;
         if (! $store) {
-            return self::emptyCheckoutPayload();
-        }
-
-        if ($request instanceof Request && self::bearerTokenUserOwnsStore($request, $store)) {
             return self::emptyCheckoutPayload();
         }
 
@@ -73,29 +68,6 @@ class ProductCheckoutController extends Controller
             'qr_payment_available' => false,
             'payment_qr_url' => null,
         ];
-    }
-
-    /**
-     * True when the request has a valid Bearer JWT for the user who owns $store.
-     */
-    private static function bearerTokenUserOwnsStore(Request $request, Store $store): bool
-    {
-        $token = $request->bearerToken();
-        if (! is_string($token) || $token === '') {
-            return false;
-        }
-
-        try {
-            JWTAuth::setToken($token);
-            $user = JWTAuth::authenticate();
-            if ($user === null) {
-                return false;
-            }
-
-            return (int) $store->user_id === (int) $user->getAuthIdentifier();
-        } catch (\Throwable) {
-            return false;
-        }
     }
 
     private static function storeHasPaidSubscriptionPeriod(Store $store): bool
@@ -144,10 +116,6 @@ class ProductCheckoutController extends Controller
 
         if (! $product->is_active) {
             return $this->errorResponse('This product is not available for purchase.', 403);
-        }
-
-        if (self::bearerTokenUserOwnsStore($request, $store)) {
-            return $this->errorResponse('You cannot purchase products from your own store.', 403);
         }
 
         if (! self::storeHasPaidSubscriptionPeriod($store)) {
@@ -243,10 +211,6 @@ class ProductCheckoutController extends Controller
         $addons = $store->subscription_addons ?? [];
         if (! ($addons['payment_gateway'] ?? false)) {
             return $this->errorResponse('Verification failed.', 403);
-        }
-
-        if (self::bearerTokenUserOwnsStore($request, $store)) {
-            return $this->errorResponse('You cannot verify payment for your own store.', 403);
         }
 
         $secret = $store->razorpay_key_secret;

@@ -76,18 +76,6 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
   );
   const aggregateRating = reviewSummary?.rating ?? product?.rating ?? 0;
 
-  const viewerOwnsProductStore = useMemo(
-    () =>
-      Boolean(
-        user?.id &&
-          ((store?.userId && user.id === store.userId) ||
-            (user.storeSlug &&
-              store?.username &&
-              user.storeSlug.toLowerCase() === store.username.toLowerCase()))
-      ),
-    [user?.id, user?.storeSlug, store?.userId, store?.username]
-  );
-
   useEffect(() => {
     let isMounted = true;
     const fetchProduct = async () => {
@@ -295,10 +283,6 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
 
   const handlePayOnline = async () => {
     if (!product || !checkout?.onlinePaymentAvailable) return;
-    if (viewerOwnsProductStore) {
-      setPayError('You cannot purchase products from your own store.');
-      return;
-    }
     setPayError(null);
     setPayBusy(true);
     const option = purchaseOptions.some((o) => o.id === selectedPackage)
@@ -716,7 +700,7 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
           </div>
         </motion.section>
 
-        {(checkout?.onlinePaymentAvailable || checkout?.qrPaymentAvailable) && !viewerOwnsProductStore && (
+        {(checkout?.onlinePaymentAvailable || checkout?.qrPaymentAvailable) && (
           <motion.section
             variants={revealItem}
             className="relative overflow-hidden rounded-[2rem] border border-emerald-200/60 bg-gradient-to-br from-white via-emerald-50/40 to-white p-5 shadow-[0_28px_80px_-32px_rgba(13,148,136,0.2)] ring-1 ring-emerald-900/[0.06] backdrop-blur-md sm:p-6"
@@ -1057,9 +1041,9 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
               )}
             </div>
           </div>
-          {sellerPhone || (checkout?.onlinePaymentAvailable && !viewerOwnsProductStore) ? (
+          {sellerPhone || checkout?.onlinePaymentAvailable ? (
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-              {checkout?.onlinePaymentAvailable && !viewerOwnsProductStore && (
+              {checkout?.onlinePaymentAvailable && (
                 <button
                   type="button"
                   onClick={handlePayOnline}

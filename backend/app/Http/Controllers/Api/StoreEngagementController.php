@@ -7,6 +7,7 @@ use App\Models\Store;
 use App\Models\StoreFollow;
 use App\Models\StoreLike;
 use App\Models\StoreSeenHit;
+use App\Support\StoreNotificationRecorder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -131,6 +132,10 @@ class StoreEngagementController extends Controller
             ? 'Visit recorded.'
             : (($result['capped'] ?? false) ? 'Your view limit for this store is reached.' : 'Visit not counted.');
 
+        if (($result['counted'] ?? false) && (int) ($result['your_hits'] ?? 0) === 1) {
+            StoreNotificationRecorder::seen($store, $actorKey, (int) ($result['seen_count'] ?? 0));
+        }
+
         return $this->successResponse($message, $result);
     }
 
@@ -211,6 +216,13 @@ class StoreEngagementController extends Controller
 
         if ($payload === null) {
             return $this->errorResponse('Store not found.', 404);
+        }
+
+        if ($kind === 'follow' && $payload['viewer_following']) {
+            StoreNotificationRecorder::follow($store, $actorKey, (int) $payload['followers_count']);
+        }
+        if ($kind === 'like' && $payload['viewer_liked']) {
+            StoreNotificationRecorder::like($store, $actorKey, (int) $payload['likes_count']);
         }
 
         if ($kind === 'follow') {

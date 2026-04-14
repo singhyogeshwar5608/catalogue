@@ -171,6 +171,11 @@ class Store extends Model
         return $this->hasMany(StoreSubscription::class);
     }
 
+    public function storeNotifications(): HasMany
+    {
+        return $this->hasMany(StoreNotification::class);
+    }
+
     public function activeSubscription(): HasOne
     {
         // Temporarily disable latestOfMany to avoid SQLite issues

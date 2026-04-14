@@ -1039,6 +1039,21 @@ export const getCategories = async (options?: { auth?: boolean }): Promise<Categ
   return response.data;
 };
 
+/** One home-hero slide per category; server uses each category's first `banner_images` entry (or `banner_image`). */
+export type HeroBannerSlideDto = {
+  key: string;
+  image: string;
+  title: string;
+  subtitle?: string | null;
+};
+
+export const getHeroBannerSlides = async (): Promise<HeroBannerSlideDto[]> => {
+  const response = await apiRequest<HeroBannerSlideDto[]>('/categories/hero-banners', {
+    requiresAuth: false,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+};
+
 export const createCategory = async (payload: CreateCategoryPayload): Promise<Category> => {
   const response = await apiRequest<Category>('/categories', {
     method: 'POST',
@@ -1064,6 +1079,57 @@ export const updateCategoryBanner = async (
 
 export const deleteCategory = async (categoryId: number | string): Promise<void> => {
   await apiRequest(`/categories/${categoryId}`, {
+    method: 'DELETE',
+    requiresAuth: true,
+  });
+};
+
+export type StoreOwnerNotificationType = 'follow' | 'like' | 'seen' | 'subscription' | string;
+
+export type StoreOwnerNotification = {
+  id: number;
+  store_id: number;
+  store_name?: string | null;
+  type: StoreOwnerNotificationType;
+  title: string;
+  body?: string | null;
+  meta?: Record<string, unknown> | null;
+  read_at?: string | null;
+  created_at?: string | null;
+};
+
+export type StoreOwnerNotificationsResponse = {
+  notifications: StoreOwnerNotification[];
+  unread_count: number;
+};
+
+export const getMyStoreNotifications = async (options?: {
+  limit?: number;
+}): Promise<StoreOwnerNotificationsResponse> => {
+  const limit = options?.limit ?? 50;
+  const response = await apiRequest<StoreOwnerNotificationsResponse>(`/my/store-notifications?limit=${limit}`, {
+    requiresAuth: true,
+  });
+  const raw = response.data as unknown;
+  if (!raw || typeof raw !== 'object') {
+    return { notifications: [], unread_count: 0 };
+  }
+  const d = raw as Record<string, unknown>;
+  return {
+    notifications: Array.isArray(d.notifications) ? (d.notifications as StoreOwnerNotification[]) : [],
+    unread_count: typeof d.unread_count === 'number' ? d.unread_count : Number(d.unread_count) || 0,
+  };
+};
+
+export const markStoreNotificationRead = async (notificationId: number | string): Promise<void> => {
+  await apiRequest(`/my/store-notifications/${notificationId}/read`, {
+    method: 'POST',
+    requiresAuth: true,
+  });
+};
+
+export const deleteStoreNotification = async (notificationId: number | string): Promise<void> => {
+  await apiRequest(`/my/store-notifications/${notificationId}`, {
     method: 'DELETE',
     requiresAuth: true,
   });
