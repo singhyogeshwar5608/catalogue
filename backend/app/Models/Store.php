@@ -54,6 +54,7 @@ class Store extends Model
         'latitude',
         'longitude',
         'description',
+        'seo_keywords',
         'short_description',
         'layout_type',
         'theme',

@@ -1,191 +1,91 @@
-"use client";
+import type { Metadata } from 'next';
+import type { Store } from '@/types';
+import StorePageClient from './StorePageClient';
 
-import { use, useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import StoreView from '@/components/store/StoreView';
-import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
-import type { Store, Product, Review, Service, RatingSummary, ReviewPagination } from '@/types';
-import { getProductsByStore, getServicesByStore, getStoreBySlugFromApi, getStoreReviews, submitStoreReview, isApiError } from '@/src/lib/api';
-import { useAuth } from '@/src/context/AuthContext';
-
-interface StorePageProps {
+type StorePageProps = {
   params: Promise<{ username: string }>;
+};
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://kaushalschoolfurniture.com/api/v1/v1';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kaushalschoolfurniture.com';
+
+type ApiEnvelope<T> = { success: boolean; message: string; data: T };
+type StoreSeoPayload = Partial<Store> & { seo_keywords?: string | null; keywords?: string | null };
+
+async function fetchStoreSeo(username: string): Promise<StoreSeoPayload | null> {
+  try {
+    const res = await fetch(`${API_BASE.replace(/\/+$/, '')}/store/${encodeURIComponent(username)}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      next: { revalidate: 120 },
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as ApiEnvelope<StoreSeoPayload>;
+    return json?.data ?? null;
+  } catch {
+    return null;
+  }
 }
 
-export default function StorePage({ params }: StorePageProps) {
-  const { username } = use(params);
-  const router = useRouter();
-  const { user } = useAuth();
-  const [store, setStore] = useState<Store | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [reviewSummary, setReviewSummary] = useState<RatingSummary | null>(null);
-  const [reviewPagination, setReviewPagination] = useState<ReviewPagination | null>(null);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [reviewPage, setReviewPage] = useState(1);
-  const [reviewsError, setReviewsError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+function buildKeywords(store: StoreSeoPayload | null): string {
+  if (!store) return 'store, online shopping, marketplace';
+  const explicit = (store.seo_keywords ?? store.keywords ?? '').trim();
+  if (explicit) return explicit;
+  const parts = [store.name, store.categoryName, store.location, 'buy online', 'marketplace'].filter(Boolean);
+  return parts.join(', ');
+}
 
-  const fetchStoreReviews = useCallback(
-    async (storeId: string, page = 1, append = false) => {
-      setReviewsLoading(true);
-      setReviewsError(null);
-      try {
-        const response = await getStoreReviews(storeId, { page, perPage: 5 });
-        setReviewSummary(response.summary);
-        setReviewPagination(response.pagination);
-        setReviewPage(page);
-        setReviews((previous) => (append ? [...previous, ...response.reviews] : response.reviews));
-      } catch (err) {
-        setReviewsError(
-          isApiError(err)
-            ? err.message || 'Unable to load reviews'
-            : err instanceof Error
-              ? err.message
-              : 'Unable to load reviews'
-        );
-      } finally {
-        setReviewsLoading(false);
-      }
+export async function generateMetadata({ params }: StorePageProps): Promise<Metadata> {
+  const { username } = await params;
+  const store = await fetchStoreSeo(username);
+  const title = store?.name ? `${store.name} - Buy Online` : 'Store - Buy Online';
+  const description = (store?.description ?? store?.shortDescription ?? 'Browse products and services from this store.')
+    .toString()
+    .slice(0, 160);
+  const canonical = `${SITE_URL.replace(/\/+$/, '')}/store/${encodeURIComponent(username)}`;
+  const keywords = buildKeywords(store);
+
+  return {
+    title,
+    description,
+    keywords,
+    alternates: { canonical },
+    openGraph: {
+      title,
+      description,
+      url: canonical,
+      type: 'website',
     },
-    []
-  );
-
-  const handleLoadMoreReviews = useCallback(() => {
-    if (!store || !reviewPagination?.hasMore || reviewsLoading) return;
-    const nextPage = reviewPage + 1;
-    fetchStoreReviews(store.id, nextPage, true);
-  }, [store, reviewPagination?.hasMore, reviewsLoading, reviewPage, fetchStoreReviews]);
-
-  const handleSubmitStoreReview = useCallback(
-    async (payload: { rating: number; comment: string }) => {
-      if (!store?.id) {
-        throw new Error('Store not available');
-      }
-
-      const response = await submitStoreReview(store.id, payload);
-
-      setReviews((previous) => {
-        const filtered = previous.filter((review) => review.id !== response.review.id);
-        return [response.review, ...filtered];
-      });
-      setReviewSummary(response.summary);
-      setReviewPagination((previous) =>
-        previous
-          ? {
-              ...previous,
-              total: response.summary.totalReviews,
-            }
-          : previous
-      );
+    robots: {
+      index: true,
+      follow: true,
     },
-    [store]
-  );
+  };
+}
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchStore = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const fetchedStore = await getStoreBySlugFromApi(username);
-        const fetchedProducts = await getProductsByStore(fetchedStore.id);
-        let fetchedServices: Service[] = [];
-        if (fetchedStore?.id) {
-          try {
-            fetchedServices = await getServicesByStore(fetchedStore.id);
-          } catch (serviceError) {
-            console.warn('Unable to load services', serviceError);
-          }
-        }
-        if (!isMounted) return;
-        setStore(fetchedStore ?? null);
-        setProducts(fetchedProducts ?? []);
-        setServices(fetchedServices ?? []);
-        if (fetchedStore?.id) {
-          fetchStoreReviews(fetchedStore.id);
-        } else {
-          setReviews([]);
-          setReviewSummary(null);
-          setReviewPagination(null);
-        }
-      } catch (err) {
-        if (!isMounted) return;
-        if (isApiError(err)) {
-          if (err.status === 401) {
-            router.replace('/login');
-            return;
-          }
-          setError(err.message || 'Unable to load store');
-        } else {
-          setError(err instanceof Error ? err.message : 'Unable to load store');
-        }
-        setStore(null);
-        setProducts([]);
-        setServices([]);
-        setReviews([]);
-        setReviewSummary(null);
-        setReviewPagination(null);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+export default async function StorePage({ params }: StorePageProps) {
+  const { username } = await params;
+  const store = await fetchStoreSeo(username);
+  const canonical = `${SITE_URL.replace(/\/+$/, '')}/store/${encodeURIComponent(username)}`;
+  const jsonLd = store
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Store',
+        name: store.name ?? 'Store',
+        url: canonical,
+        description: store.description ?? store.shortDescription ?? '',
       }
-    };
-
-    fetchStore();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [username, router, fetchStoreReviews]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-sm text-gray-500">Loading store...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Store unavailable</h1>
-          <p className="text-gray-600">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!store) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Store Not Found</h1>
-          <p className="text-gray-600">The store you&apos;re looking for doesn&apos;t exist.</p>
-        </div>
-      </div>
-    );
-  }
+    : null;
 
   return (
-    <PublicStorefrontAccessGate store={store} user={user}>
-      <StoreView
-        store={store}
-        products={products}
-        services={services}
-        reviews={reviews}
-        reviewSummary={reviewSummary ?? undefined}
-        reviewPagination={reviewPagination ?? undefined}
-        reviewsLoading={reviewsLoading}
-        reviewsError={reviewsError}
-        onLoadMoreReviews={handleLoadMoreReviews}
-        onSubmitStoreReview={handleSubmitStoreReview}
-      />
-    </PublicStorefrontAccessGate>
+    <>
+      {jsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      ) : null}
+      <StorePageClient username={username} initialStore={(store as Store) ?? null} />
+    </>
   );
 }

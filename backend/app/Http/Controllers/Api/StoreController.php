@@ -348,6 +348,8 @@ class StoreController extends Controller
             'show_phone' => 'nullable|boolean',
             'address' => 'nullable|string',
             'description' => 'nullable|string',
+            'seo_keywords' => 'nullable|string|max:4000',
+            'keywords' => 'nullable|string|max:4000',
             'location' => 'nullable|string|max:255',
             'facebook_url' => 'nullable|url|max:255',
             'instagram_url' => 'nullable|url|max:255',
@@ -365,6 +367,12 @@ class StoreController extends Controller
         if (array_key_exists('logo', $data)) {
             $data['logo'] = $this->normalizeStoreLogoForPersistence($data['logo'] ?? null);
         }
+        $data['seo_keywords'] = $this->normalizeStoreKeywords(
+            $data['seo_keywords'] ?? $data['keywords'] ?? null,
+            $data['name'] ?? null,
+            $data['location'] ?? null
+        );
+        unset($data['keywords']);
         $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? Str::slug($data['name']));
         $data['username'] = Str::slug($data['name']).'-'.$user->id;
         $data['user_id'] = $user->id;
@@ -436,6 +444,8 @@ class StoreController extends Controller
             'show_phone' => 'nullable|boolean',
             'address' => 'nullable|string',
             'description' => 'nullable|string',
+            'seo_keywords' => 'nullable|string|max:4000',
+            'keywords' => 'nullable|string|max:4000',
             'is_verified' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',
             'location' => 'nullable|string|max:255',
@@ -457,6 +467,14 @@ class StoreController extends Controller
 
         if (array_key_exists('logo', $data)) {
             $data['logo'] = $this->normalizeStoreLogoForPersistence($data['logo'] ?? null);
+        }
+        if (array_key_exists('seo_keywords', $data) || array_key_exists('keywords', $data) || array_key_exists('name', $data) || array_key_exists('location', $data)) {
+            $data['seo_keywords'] = $this->normalizeStoreKeywords(
+                $data['seo_keywords'] ?? $data['keywords'] ?? $store->seo_keywords ?? null,
+                $data['name'] ?? $store->name ?? null,
+                $data['location'] ?? $store->location ?? null
+            );
+            unset($data['keywords']);
         }
 
         $hasLocationChange = array_key_exists('location', $data) || array_key_exists('address', $data);
@@ -545,6 +563,7 @@ class StoreController extends Controller
                 $payload['viewer_following'] = $viewer['viewer_following'];
                 $payload['viewer_liked'] = $viewer['viewer_liked'];
             }
+            $payload['keywords'] = $store->seo_keywords ?: $this->normalizeStoreKeywords(null, $store->name, $store->location);
 
             return $this->successResponse('Store retrieved successfully.', $payload);
         } catch (\Exception $e) {
@@ -577,6 +596,22 @@ class StoreController extends Controller
         return $this->successResponse('Store deleted successfully.');
     }
 
+    /**
+     * Lightweight links payload for sitemap and crawlable internal linking.
+     */
+    public function publicStoreInternalLinks()
+    {
+        $query = Store::query()
+            ->select(['id', 'slug', 'username', 'updated_at'])
+            ->orderByDesc('updated_at');
+
+        if (Schema::hasColumn('stores', 'is_active')) {
+            $query->where('is_active', true);
+        }
+
+        return $this->successResponse('Store links retrieved successfully.', $query->limit(5000)->get());
+    }
+
     private function generateUniqueSlug(string $baseSlug, ?int $ignoreId = null): string
     {
         $slug = Str::slug($baseSlug);
@@ -590,6 +625,23 @@ class StoreController extends Controller
         }
 
         return $slug;
+    }
+
+    private function normalizeStoreKeywords(?string $rawKeywords, ?string $storeName, ?string $location): string
+    {
+        $raw = trim((string) ($rawKeywords ?? ''));
+        if ($raw !== '') {
+            return Str::limit($raw, 4000, '');
+        }
+        $parts = array_values(array_filter([
+            $storeName ? Str::title((string) $storeName) : null,
+            $location ? Str::title((string) $location) : null,
+            'buy online',
+            'marketplace',
+            'local store',
+        ]));
+
+        return implode(', ', $parts);
     }
 
     /**
