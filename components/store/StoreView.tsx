@@ -1245,7 +1245,7 @@ function BuyNowProductModal({
 
           <div className="mt-3 flex items-center gap-2 text-sm" style={{ color: CATALOG_MUTED }}>
             <Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-400" aria-hidden />
-            <span className="font-medium text-white/90">{product.rating.toFixed(1)}</span>
+            <span className="font-medium text-white/90">{Number(product.rating || 0).toFixed(1)}</span>
             <span>· {product.totalReviews} review{product.totalReviews === 1 ? '' : 's'}</span>
           </div>
 
@@ -2111,7 +2111,11 @@ export default function StoreView({
   const INITIAL_VISIBLE_COUNT = 8;
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
-  const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
+  const whatsappLink = useMemo(() => {
+    const raw = typeof store.whatsapp === 'string' ? store.whatsapp : '';
+    const digits = raw.replace(/[^0-9]/g, '');
+    return `https://wa.me/${digits}`;
+  }, [store.whatsapp]);
   /** Prefer store owner id — slug-only match can wrongly skip visit tracking if slugs collide or auth slug is stale. */
   const viewerOwnsStore = Boolean(
     (user?.id && store.userId && user.id === store.userId) ||
@@ -2141,16 +2145,27 @@ export default function StoreView({
     [ratingBreakdown]
   );
   const aggregateRating = reviewSummary?.rating ?? store.rating;
-  const highlights = useMemo(() => {
-    const clampScore = (value: number) => Math.min(5, Math.max(1, Number(value.toFixed(1))));
-    return [
-      { label: 'Service', value: clampScore(aggregateRating + 0.1) },
-      { label: 'Cleanliness', value: clampScore(aggregateRating) },
-      { label: 'Staff', value: clampScore(aggregateRating - 0.2) },
-      { label: 'Value', value: clampScore(aggregateRating + 0.2) },
-      { label: 'Location', value: clampScore(aggregateRating - 0.1) },
-    ];
+  const aggregateRatingValue = useMemo(() => {
+    const numeric = typeof aggregateRating === 'number' ? aggregateRating : Number(aggregateRating);
+    return Number.isFinite(numeric) ? numeric : 0;
   }, [aggregateRating]);
+  const averageRatingText = useMemo(() => {
+    return aggregateRatingValue.toFixed(1);
+  }, [aggregateRatingValue]);
+  const highlights = useMemo(() => {
+    const clampScore = (value: unknown) => {
+      const numeric = typeof value === 'number' ? value : Number(value);
+      const safe = Number.isFinite(numeric) ? numeric : 0;
+      return Math.min(5, Math.max(1, Number(safe.toFixed(1))));
+    };
+    return [
+      { label: 'Service', value: clampScore(aggregateRatingValue + 0.1) },
+      { label: 'Cleanliness', value: clampScore(aggregateRatingValue) },
+      { label: 'Staff', value: clampScore(aggregateRatingValue - 0.2) },
+      { label: 'Value', value: clampScore(aggregateRatingValue + 0.2) },
+      { label: 'Location', value: clampScore(aggregateRatingValue - 0.1) },
+    ];
+  }, [aggregateRatingValue]);
   const [reviewForm, setReviewForm] = useState<{ rating: number; comment: string }>({ rating: 0, comment: '' });
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -2399,7 +2414,7 @@ export default function StoreView({
                 Loved by shoppers across {store.location || 'your city'}
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-slate-300">
-                Average rating {reviewSummary?.rating?.toFixed(1) ?? store.rating.toFixed(1)} from{' '}
+                Average rating {averageRatingText} from{' '}
                 {reviewSummary?.totalReviews ?? store.totalReviews} orders.
               </p>
             </div>
@@ -2426,11 +2441,11 @@ export default function StoreView({
               <div className="rounded-2xl border border-white/15 bg-white/[0.07] p-6 text-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] backdrop-blur-md">
                 <p className="text-[10px] uppercase tracking-[0.4em] text-violet-200/85">Average rating</p>
                 <div className="mt-4 flex items-end justify-center gap-3">
-                  <span className="text-5xl font-semibold tabular-nums text-white">{aggregateRating.toFixed(1)}</span>
+                  <span className="text-5xl font-semibold tabular-nums text-white">{averageRatingText}</span>
                   <span className="pb-2 text-sm text-slate-400">/ 5</span>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-white">
-                  <RatingStars rating={aggregateRating} size="md" />
+                  <RatingStars rating={aggregateRatingValue} size="md" />
                   <span className="text-sm font-semibold">
                     {totalRecordedReviews || reviewSummary?.totalReviews || store.totalReviews} reviews
                   </span>
@@ -2473,7 +2488,7 @@ export default function StoreView({
                     key={highlight.label}
                     className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 text-center backdrop-blur-sm"
                   >
-                    <p className="text-2xl font-semibold tabular-nums text-white">{highlight.value.toFixed(1)}</p>
+                    <p className="text-2xl font-semibold tabular-nums text-white">{Number(highlight.value || 0).toFixed(1)}</p>
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{highlight.label}</p>
                   </div>
                 ))}

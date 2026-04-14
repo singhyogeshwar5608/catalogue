@@ -36,6 +36,80 @@ class CategoryController extends Controller
         return $this->successResponse('Categories retrieved successfully.', $categories);
     }
 
+    /** One hero slide per visible category: first banner_images URL, else legacy banner_image. */
+    public function heroBanners(Request $request)
+    {
+        $table = (new Category)->getTable();
+        $cols = Schema::getColumnListing($table);
+        $has = static fn (string $c): bool => in_array($c, $cols, true);
+
+        $query = Category::query();
+        if ($has('name')) {
+            $query->orderBy('name');
+        }
+
+        if (
+            (! $request->user() || $request->user()->role !== 'super_admin')
+            && $has('is_active')
+        ) {
+            $query->where('is_active', true);
+        }
+
+        $select = array_values(array_filter(
+            ['id', 'name', 'banner_image', 'banner_images', 'banner_title', 'banner_subtitle'],
+            $has
+        ));
+        $categories = $select !== [] ? $query->get($select) : $query->get();
+
+        $slides = [];
+        foreach ($categories as $category) {
+            $raw = $has('banner_images') ? $category->getAttribute('banner_images') : null;
+            if (is_string($raw) && trim($raw) !== '') {
+                $decoded = json_decode($raw, true);
+                $raw = is_array($decoded) ? $decoded : [];
+            }
+            if (! is_array($raw)) {
+                $raw = [];
+            }
+
+            $first = null;
+            foreach ($raw as $url) {
+                if (is_string($url) && trim($url) !== '') {
+                    $first = trim($url);
+                    break;
+                }
+            }
+
+            if ($first === null && $has('banner_image')) {
+                $single = $category->getAttribute('banner_image');
+                if (is_string($single) && trim($single) !== '') {
+                    $first = trim($single);
+                }
+            }
+
+            if ($first === null) {
+                continue;
+            }
+
+            $title = $has('banner_title') && is_string($category->getAttribute('banner_title')) && trim((string) $category->getAttribute('banner_title')) !== ''
+                ? trim((string) $category->getAttribute('banner_title'))
+                : (string) ($has('name') ? $category->getAttribute('name') : 'Category');
+
+            $subtitle = $has('banner_subtitle') && is_string($category->getAttribute('banner_subtitle')) && trim((string) $category->getAttribute('banner_subtitle')) !== ''
+                ? trim((string) $category->getAttribute('banner_subtitle'))
+                : null;
+
+            $slides[] = [
+                'key' => (string) $category->getKey(),
+                'image' => $first,
+                'title' => $title,
+                'subtitle' => $subtitle,
+            ];
+        }
+
+        return $this->successResponse('Hero banners retrieved successfully.', $slides);
+    }
+
     public function show(string $slug)
     {
         $category = Category::where('slug', $slug)

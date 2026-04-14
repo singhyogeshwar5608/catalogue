@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { getCategories, type Category } from '@/src/lib/api';
+import { getCategories, getHeroBannerSlides, type Category } from '@/src/lib/api';
 import { absolutizeStorageUrl } from '@/src/lib/api-shared';
 
 type HeroSlide = {
@@ -44,45 +44,55 @@ const FALLBACK_SLIDES: HeroSlide[] = [
   },
 ];
 
-function collectCategoryBannerUrls(category: Category): string[] {
-  const out: string[] = [];
-  if (Array.isArray(category.banner_images) && category.banner_images.length > 0) {
-    for (const u of category.banner_images) {
-      if (typeof u === 'string' && u.trim()) {
-        out.push(u.trim());
+function coerceBannerImageStrings(value: unknown): string[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value
+      .filter((u): u is string => typeof u === 'string' && u.trim() !== '')
+      .map((u) => u.trim());
+  }
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (!t) return [];
+    if (t.startsWith('[') && t.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(t) as unknown;
+        return coerceBannerImageStrings(parsed);
+      } catch {
+        return [t];
       }
     }
+    return [t];
   }
-  if (out.length === 0 && category.banner_image && String(category.banner_image).trim()) {
-    out.push(String(category.banner_image).trim());
-  }
-  return out;
+  return [];
+}
+
+function firstCategoryBannerUrl(category: Category): string | null {
+  const firstFromList = coerceBannerImageStrings(category.banner_images)[0];
+  if (firstFromList) return firstFromList;
+  const single = typeof category.banner_image === 'string' ? category.banner_image.trim() : '';
+  return single || null;
 }
 
 function slidesFromCategories(categories: Category[]): HeroSlide[] {
   const slides: HeroSlide[] = [];
   for (const c of categories) {
-    const urls = collectCategoryBannerUrls(c);
-    const seen = new Set<string>();
-    let i = 0;
-    for (const raw of urls) {
-      if (seen.has(raw)) continue;
-      seen.add(raw);
-      const title =
-        typeof c.banner_title === 'string' && c.banner_title.trim() !== ''
-          ? c.banner_title.trim()
-          : c.name;
-      const subtitle =
-        typeof c.banner_subtitle === 'string' && c.banner_subtitle.trim() !== ''
-          ? c.banner_subtitle.trim()
-          : undefined;
-      slides.push({
-        key: `cat-${c.id}-${i++}`,
-        image: absolutizeStorageUrl(raw),
-        title,
-        subtitle,
-      });
-    }
+    const raw = firstCategoryBannerUrl(c);
+    if (!raw) continue;
+    const title =
+      typeof c.banner_title === 'string' && c.banner_title.trim() !== ''
+        ? c.banner_title.trim()
+        : c.name;
+    const subtitle =
+      typeof c.banner_subtitle === 'string' && c.banner_subtitle.trim() !== ''
+        ? c.banner_subtitle.trim()
+        : undefined;
+    slides.push({
+      key: `cat-${c.id}`,
+      image: absolutizeStorageUrl(raw),
+      title,
+      subtitle,
+    });
   }
   return slides;
 }
@@ -95,6 +105,19 @@ export default function HeroBanner() {
     let cancelled = false;
     (async () => {
       try {
+        const dto = await getHeroBannerSlides();
+        if (cancelled) return;
+        if (dto.length > 0) {
+          setSlides(
+            dto.map((s) => ({
+              key: s.key,
+              image: absolutizeStorageUrl(s.image),
+              title: s.title,
+              subtitle: typeof s.subtitle === 'string' && s.subtitle.trim() ? s.subtitle.trim() : undefined,
+            }))
+          );
+          return;
+        }
         const categories = await getCategories();
         if (cancelled) return;
         const built = slidesFromCategories(categories);
