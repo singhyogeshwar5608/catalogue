@@ -255,22 +255,14 @@ export default function HomePage() {
 
           if (isFullWidth) {
             return (
-<<<<<<< HEAD
               <div key={store.id} className="col-span-2 min-h-0 w-full">
-=======
-              <div key={store.id} className="col-span-2 h-full min-h-0">
->>>>>>> origin/main
-                <VerifiedSellerCard store={store} categoryBannerIndex={categoryBannerIndex} />
+                <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />
               </div>
             );
           }
 
           return (
-<<<<<<< HEAD
             <div key={store.id} className="col-span-1 min-h-0 min-w-0 w-full">
-=======
-            <div key={store.id} className="col-span-1 min-h-0 min-w-0 h-full">
->>>>>>> origin/main
               <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />
             </div>
           );
@@ -290,11 +282,7 @@ export default function HomePage() {
 
       <div className="hidden grid-cols-1 gap-6 sm:grid md:grid-cols-2 lg:grid-cols-3">
         {list.map((store) => (
-<<<<<<< HEAD
           <div key={store.id} className="min-h-0 w-full">
-=======
-          <div key={store.id} className="h-full min-h-0">
->>>>>>> origin/main
             <VerifiedSellerCard store={store} categoryBannerIndex={bannerIndexMap?.get(store.id) ?? 0} />
           </div>
         ))}
@@ -311,15 +299,9 @@ export default function HomePage() {
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(251,191,36,0.18),transparent_50%),radial-gradient(ellipse_80%_60%_at_100%_50%,rgba(45,212,191,0.12),transparent_45%),radial-gradient(ellipse_70%_50%_at_0%_80%,rgba(167,139,250,0.1),transparent_40%)]"
           aria-hidden
         />
-<<<<<<< HEAD
         <div className="pointer-events-none absolute -left-32 top-1/4 h-72 w-72 rounded-full bg-amber-200/30 blur-[100px]" aria-hidden />
         <div
           className="pointer-events-none absolute -right-24 bottom-0 h-64 w-64 rounded-full bg-teal-300/25 blur-[90px] opacity-90"
-=======
-        <div className="pointer-events-none absolute -left-32 top-1/4 h-72 w-72 rounded-full bg-amber-200/30 blur-[100px] motion-safe:animate-pulse motion-reduce:animate-none" aria-hidden />
-        <div
-          className="pointer-events-none absolute -right-24 bottom-0 h-64 w-64 rounded-full bg-teal-300/25 blur-[90px] opacity-90 motion-safe:animate-pulse motion-reduce:animate-none"
->>>>>>> origin/main
           style={{ animationDelay: '1.2s' }}
           aria-hidden
         />
@@ -370,11 +352,7 @@ export default function HomePage() {
           </motion.div>
 
           <motion.div
-<<<<<<< HEAD
             className="mt-10 hidden gap-4 sm:mt-12 sm:grid sm:grid-cols-3"
-=======
-            className="mt-10 grid gap-4 sm:mt-12 sm:grid-cols-3"
->>>>>>> origin/main
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, amount: 0.2 }}

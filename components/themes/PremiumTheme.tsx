@@ -43,13 +43,9 @@ export default function PremiumTheme({
               <img 
                 src={storeLogo} 
                 alt={storeName} 
-<<<<<<< HEAD
                 className="w-24 h-24 rounded-full mx-auto mb-6 border-4 border-white shadow-2xl ring-4 ring-white/20"
                 loading="lazy"
                 decoding="async"
-=======
-                className="w-24 h-24 rounded-full mx-auto mb-6 border-4 border-white shadow-2xl ring-4 ring-white/20" 
->>>>>>> origin/main
               />
             )}
             <h1 className="text-5xl font-bold text-white mb-4 drop-shadow-lg">{storeName}</h1>

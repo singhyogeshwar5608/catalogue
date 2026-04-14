@@ -8,13 +8,10 @@
   --background-end-rgb: 255, 255, 255;
 }
 
-<<<<<<< HEAD
 html {
   scroll-behavior: smooth;
 }
 
-=======
->>>>>>> origin/main
 body {
   color: rgb(var(--foreground-rgb));
   background: linear-gradient(
@@ -23,12 +20,9 @@ body {
       rgb(var(--background-end-rgb))
     )
     rgb(var(--background-start-rgb));
-<<<<<<< HEAD
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-=======
->>>>>>> origin/main
 }
 
 @layer utilities {
@@ -70,7 +64,6 @@ iframe.skiptranslate {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
-<<<<<<< HEAD
 
 /* Smooth touch scrolling for common scroll containers */
 .overflow-y-auto,
@@ -89,5 +82,3 @@ iframe.skiptranslate {
     animation: none !important;
   }
 }
-=======
->>>>>>> origin/main

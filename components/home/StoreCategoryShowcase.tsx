@@ -104,22 +104,14 @@ export default function StoreCategoryShowcase({ stores, categories, activeCatego
 
               if (isFullWidth) {
                 return (
-<<<<<<< HEAD
                   <div key={store.id} className="col-span-2 min-h-0 w-full">
-=======
-                  <div key={store.id} className="col-span-2 h-full min-h-0">
->>>>>>> origin/main
                     <VerifiedSellerCard store={store} categoryBannerIndex={storeCategoryIndex.get(store.id) ?? 0} />
                   </div>
                 );
               }
 
               return (
-<<<<<<< HEAD
                 <div key={store.id} className="col-span-1 min-h-0 min-w-0 w-full">
-=======
-                <div key={store.id} className="col-span-1 min-h-0 min-w-0 h-full">
->>>>>>> origin/main
                   <StoreCard store={store} isCompact categoryBannerIndex={storeCategoryIndex.get(store.id) ?? 0} />
                 </div>
               );
@@ -139,11 +131,7 @@ export default function StoreCategoryShowcase({ stores, categories, activeCatego
 
           <div className="hidden grid-cols-1 gap-6 sm:grid md:grid-cols-2 lg:grid-cols-3">
             {previewStores.map((store) => (
-<<<<<<< HEAD
               <div key={store.id} className="min-h-0 w-full">
-=======
-              <div key={store.id} className="h-full min-h-0">
->>>>>>> origin/main
                 <VerifiedSellerCard store={store} categoryBannerIndex={storeCategoryIndex.get(store.id) ?? 0} />
               </div>
             ))}

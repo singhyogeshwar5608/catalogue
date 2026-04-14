@@ -10,10 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-<<<<<<< HEAD
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
-=======
->>>>>>> origin/main
 
 /**
  * Buyer → seller product checkout. Online pay uses only that store's Razorpay keys from the database
@@ -33,13 +30,10 @@ class ProductCheckoutController extends Controller
             return self::emptyCheckoutPayload();
         }
 
-<<<<<<< HEAD
         if ($request instanceof Request && self::bearerTokenUserOwnsStore($request, $store)) {
             return self::emptyCheckoutPayload();
         }
 
-=======
->>>>>>> origin/main
         $store->loadMissing('activeSubscription.plan');
 
         if ($store->isPublicCatalogLocked() || ! self::storeHasPaidSubscriptionPeriod($store)) {
@@ -81,7 +75,6 @@ class ProductCheckoutController extends Controller
         ];
     }
 
-<<<<<<< HEAD
     /**
      * True when the request has a valid Bearer JWT for the user who owns $store.
      */
@@ -105,8 +98,6 @@ class ProductCheckoutController extends Controller
         }
     }
 
-=======
->>>>>>> origin/main
     private static function storeHasPaidSubscriptionPeriod(Store $store): bool
     {
         $sub = $store->activeSubscription;
@@ -155,13 +146,10 @@ class ProductCheckoutController extends Controller
             return $this->errorResponse('This product is not available for purchase.', 403);
         }
 
-<<<<<<< HEAD
         if (self::bearerTokenUserOwnsStore($request, $store)) {
             return $this->errorResponse('You cannot purchase products from your own store.', 403);
         }
 
-=======
->>>>>>> origin/main
         if (! self::storeHasPaidSubscriptionPeriod($store)) {
             return $this->errorResponse('Online payment is not available for this store.', 403);
         }
@@ -257,13 +245,10 @@ class ProductCheckoutController extends Controller
             return $this->errorResponse('Verification failed.', 403);
         }
 
-<<<<<<< HEAD
         if (self::bearerTokenUserOwnsStore($request, $store)) {
             return $this->errorResponse('You cannot verify payment for your own store.', 403);
         }
 
-=======
->>>>>>> origin/main
         $secret = $store->razorpay_key_secret;
         if (! is_string($secret) || $secret === '') {
             return $this->errorResponse('Verification failed.', 403);
