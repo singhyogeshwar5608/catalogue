@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StoreEngagementController;
 use App\Http\Controllers\Api\StorePaymentIntegrationController;
 use App\Http\Controllers\Api\StoreSubscriptionController;
+use App\Http\Controllers\Api\StoreOwnerNotificationController;
 use App\Http\Controllers\Api\StoreSubscriptionRazorpayController;
 use App\Http\Controllers\Api\SubscriptionPlanController;
 use App\Http\Controllers\Api\UtilityController;
@@ -34,6 +35,7 @@ Route::get('auth/google/callback', [AuthController::class, 'googleCallback']);
 Route::get('utils/geo', [UtilityController::class, 'geoLookup']);
 Route::get('utils/free-trial-days', [UtilityController::class, 'freeTrialDays']);
 Route::get('categories', [CategoryController::class, 'index']);
+Route::get('categories/hero-banners', [CategoryController::class, 'heroBanners']);
 Route::get('category/{slug}', [CategoryController::class, 'show']);
 Route::get('stores', [StoreController::class, 'listStores']);
 Route::get('stores/internal-links', [StoreController::class, 'publicStoreInternalLinks']);
@@ -113,6 +115,9 @@ Route::middleware('auth:api')->group(function () {
 
     Route::post('store', [StoreController::class, 'createStore']);
     Route::get('my/stores', [StoreController::class, 'myStores']);
+    Route::get('my/store-notifications', [StoreOwnerNotificationController::class, 'index']);
+    Route::post('my/store-notifications/{notification}/read', [StoreOwnerNotificationController::class, 'markRead']);
+    Route::delete('my/store-notifications/{notification}', [StoreOwnerNotificationController::class, 'destroy']);
     Route::put('store/{id}', [StoreController::class, 'updateStore']);
     Route::delete('store/{id}', [StoreController::class, 'deleteStore']);
 
