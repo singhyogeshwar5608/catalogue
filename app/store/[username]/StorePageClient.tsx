@@ -1,11 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import StoreView from '@/components/store/StoreView';
 import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
 import type { Store, Product, Review, Service, RatingSummary, ReviewPagination } from '@/types';
-import { getProductsByStore, getServicesByStore, getStoreBySlugFromApi, getStoreReviews, submitStoreReview, isApiError } from '@/src/lib/api';
+import {
+  getProductsByStore,
+  getServicesByStore,
+  getStoreBySlugFromApi,
+  getStoreReviews,
+  recordStoreView,
+  submitStoreReview,
+  toggleStoreFollow,
+  toggleStoreLike,
+  isApiError,
+} from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 
 type StorePageClientProps = {
@@ -38,8 +48,12 @@ export default function StorePageClient({
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewsError, setReviewsError] = useState<string | null>(null);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [likeBusy, setLikeBusy] = useState(false);
   const [loading, setLoading] = useState(initialStore === null);
   const [error, setError] = useState<string | null>(null);
+  const [seenSyncedForStore, setSeenSyncedForStore] = useState<string | null>(null);
+  const seenRequestInFlightRef = useRef<Set<string>>(new Set());
 
   const fetchStoreReviews = useCallback(
     async (storeId: string, page = 1, append = false) => {
@@ -97,6 +111,104 @@ export default function StorePageClient({
     [store]
   );
 
+  const handleToggleFollow = useCallback(async () => {
+    if (!store?.id || followBusy) return;
+    setFollowBusy(true);
+    try {
+      const response = await toggleStoreFollow(store.id);
+      const payload = response.data;
+      setStore((previous) =>
+        previous
+          ? {
+              ...previous,
+              followersCount: payload.followers_count,
+              likesCount: payload.likes_count,
+              viewerFollowing: Boolean(payload.viewer_following),
+              viewerLiked: Boolean(payload.viewer_liked),
+            }
+          : previous
+      );
+    } catch (err) {
+      console.warn('Unable to toggle follow', err);
+    } finally {
+      setFollowBusy(false);
+    }
+  }, [followBusy, store?.id]);
+
+  const handleToggleLike = useCallback(async () => {
+    if (!store?.id || likeBusy) return;
+    setLikeBusy(true);
+    try {
+      const response = await toggleStoreLike(store.id);
+      const payload = response.data;
+      setStore((previous) =>
+        previous
+          ? {
+              ...previous,
+              followersCount: payload.followers_count,
+              likesCount: payload.likes_count,
+              viewerFollowing: Boolean(payload.viewer_following),
+              viewerLiked: Boolean(payload.viewer_liked),
+            }
+          : previous
+      );
+    } catch (err) {
+      console.warn('Unable to toggle like', err);
+    } finally {
+      setLikeBusy(false);
+    }
+  }, [likeBusy, store?.id]);
+
+  useEffect(() => {
+    if (!store?.id) return;
+    if (seenSyncedForStore === store.id) return;
+    if (seenRequestInFlightRef.current.has(store.id)) return;
+    const dedupeWindowMs = 5000;
+    if (typeof window !== 'undefined') {
+      const w = window as Window & { __storeSeenLastSentAt?: Record<string, number> };
+      const now = Date.now();
+      const lastSentAt = w.__storeSeenLastSentAt?.[store.id] ?? 0;
+      if (now - lastSentAt < dedupeWindowMs) {
+        setSeenSyncedForStore(store.id);
+        return;
+      }
+    }
+
+    let cancelled = false;
+    const syncSeen = async () => {
+      try {
+        seenRequestInFlightRef.current.add(store.id);
+        const response = await recordStoreView(store.id);
+        if (cancelled) return;
+        if (typeof window !== 'undefined') {
+          const w = window as Window & { __storeSeenLastSentAt?: Record<string, number> };
+          w.__storeSeenLastSentAt = {
+            ...(w.__storeSeenLastSentAt ?? {}),
+            [store.id]: Date.now(),
+          };
+        }
+        setStore((previous) =>
+          previous
+            ? {
+                ...previous,
+                seenCount: response.data.seen_count,
+              }
+            : previous
+        );
+        setSeenSyncedForStore(store.id);
+      } catch (err) {
+        console.warn('Unable to record store view', err);
+      } finally {
+        seenRequestInFlightRef.current.delete(store.id);
+      }
+    };
+
+    void syncSeen();
+    return () => {
+      cancelled = true;
+    };
+  }, [seenSyncedForStore, store?.id]);
+
   useEffect(() => {
     let isMounted = true;
     const fetchStore = async () => {
@@ -115,6 +227,7 @@ export default function StorePageClient({
         }
         if (!isMounted) return;
         setStore(fetchedStore ?? null);
+        setSeenSyncedForStore(null);
         setProducts(fetchedProducts ?? []);
         setServices(fetchedServices ?? []);
         if (fetchedStore?.id) {
@@ -198,6 +311,10 @@ export default function StorePageClient({
         reviewsError={reviewsError}
         onLoadMoreReviews={handleLoadMoreReviews}
         onSubmitStoreReview={handleSubmitStoreReview}
+        onToggleFollow={handleToggleFollow}
+        onToggleLike={handleToggleLike}
+        followBusy={followBusy}
+        likeBusy={likeBusy}
       />
     </PublicStorefrontAccessGate>
   );

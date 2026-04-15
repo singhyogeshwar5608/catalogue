@@ -81,6 +81,10 @@ type StoreViewProps = {
   reviewsError?: string | null;
   onLoadMoreReviews?: () => void;
   onSubmitStoreReview?: (payload: { rating: number; comment: string }) => Promise<void>;
+  onToggleFollow?: () => Promise<void> | void;
+  onToggleLike?: () => Promise<void> | void;
+  followBusy?: boolean;
+  likeBusy?: boolean;
   isEditMode?: boolean;
   onEnterEdit?: () => void;
   onInlineLogoEdit?: () => void;
@@ -485,9 +489,27 @@ type HeroSectionProps = {
   products: Product[];
   services: Service[];
   isProPlan: boolean;
+  canEngage: boolean;
+  onToggleFollow?: () => Promise<void> | void;
+  onToggleLike?: () => Promise<void> | void;
+  followBusy?: boolean;
+  likeBusy?: boolean;
 };
 
-const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan }: HeroSectionProps) => {
+const HeroSection = ({
+  store,
+  heroProduct,
+  theme,
+  whatsappLink,
+  products,
+  services,
+  isProPlan,
+  canEngage,
+  onToggleFollow,
+  onToggleLike,
+  followBusy = false,
+  likeBusy = false,
+}: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
 
@@ -596,7 +618,6 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                     })}
                   </div>
                 )}
-
                 {(products.length > 0 || services.length > 0) && (
                   <div className="mt-4 w-full sm:hidden">
                     <ProductImageCarousel products={products} services={services} />
@@ -606,11 +627,16 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                 <div className="mt-2.5 grid w-full grid-cols-3 gap-2 sm:hidden">
                   <button
                     type="button"
+                    onClick={() => {
+                      if (!canEngage || followBusy || !onToggleFollow) return;
+                      void onToggleFollow();
+                    }}
+                    disabled={!canEngage || followBusy || !onToggleFollow}
                     className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-blue-800"
                   >
                     <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-blue-100">
-                      <UserPlus className="h-2.5 w-2.5 shrink-0 text-blue-200" />
-                      Followers
+                      {followBusy ? <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin text-blue-200" /> : <UserPlus className="h-2.5 w-2.5 shrink-0 text-blue-200" />}
+                      {store.viewerFollowing ? 'Following' : 'Followers'}
                     </span>
                     <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
                       {(store.followersCount ?? 0).toLocaleString('en-IN')}
@@ -618,11 +644,16 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      if (!canEngage || likeBusy || !onToggleLike) return;
+                      void onToggleLike();
+                    }}
+                    disabled={!canEngage || likeBusy || !onToggleLike}
                     className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-pink-800"
                   >
                     <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-rose-100">
-                      <Heart className="h-2.5 w-2.5 shrink-0 text-rose-200" />
-                      Likes
+                      {likeBusy ? <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin text-rose-200" /> : <Heart className="h-2.5 w-2.5 shrink-0 text-rose-200" />}
+                      {store.viewerLiked ? 'Liked' : 'Likes'}
                     </span>
                     <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
                       {(store.likesCount ?? 0).toLocaleString('en-IN')}
@@ -666,6 +697,51 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                   <span className="break-words">{store.whatsapp}</span>
                 </div>
               )}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canEngage || followBusy || !onToggleFollow) return;
+                  void onToggleFollow();
+                }}
+                disabled={!canEngage || followBusy || !onToggleFollow}
+                className="inline-flex min-h-[42px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2.5 py-1.5 text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-blue-100">
+                  {followBusy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-blue-200" /> : <UserPlus className="h-3 w-3 shrink-0 text-blue-200" />}
+                  {store.viewerFollowing ? 'Following' : 'Followers'}
+                </span>
+                <p className="ml-2 shrink-0 text-xs font-bold tabular-nums text-white">
+                  {(store.followersCount ?? 0).toLocaleString('en-IN')}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canEngage || likeBusy || !onToggleLike) return;
+                  void onToggleLike();
+                }}
+                disabled={!canEngage || likeBusy || !onToggleLike}
+                className="inline-flex min-h-[42px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2.5 py-1.5 text-white transition hover:bg-pink-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-rose-100">
+                  {likeBusy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-rose-200" /> : <Heart className="h-3 w-3 shrink-0 text-rose-200" />}
+                  {store.viewerLiked ? 'Liked' : 'Likes'}
+                </span>
+                <p className="ml-2 shrink-0 text-xs font-bold tabular-nums text-white">
+                  {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                </p>
+              </button>
+              <div className="inline-flex min-h-[42px] w-full items-center justify-between rounded-2xl border border-emerald-400/35 bg-emerald-900 px-2.5 py-1.5 text-white">
+                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-emerald-100">
+                  <Eye className="h-3 w-3 shrink-0 text-emerald-200" />
+                  Views
+                </span>
+                <p className="ml-2 shrink-0 text-xs font-bold tabular-nums text-white">
+                  {(store.seenCount ?? 0).toLocaleString('en-IN')}
+                </p>
+              </div>
             </div>
             <div className="mt-6 hidden sm:flex justify-center">
               <a
@@ -1842,6 +1918,10 @@ export default function StoreView({
   reviewsError,
   onLoadMoreReviews,
   onSubmitStoreReview,
+  onToggleFollow,
+  onToggleLike,
+  followBusy = false,
+  likeBusy = false,
 }: StoreViewProps) {
   const { isLoggedIn, user } = useAuth();
   const planIdentifier = store.activeSubscription?.plan?.slug?.toLowerCase()
@@ -1863,6 +1943,7 @@ export default function StoreView({
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())
   );
+  const canEngage = !viewerOwnsStore && Boolean(store.id);
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([]);
   const [cartNotice, setCartNotice] = useState<string | null>(null);
@@ -2076,6 +2157,11 @@ export default function StoreView({
           services={services}
           whatsappLink={whatsappLink}
           isProPlan={isProPlan}
+          canEngage={canEngage}
+          onToggleFollow={onToggleFollow}
+          onToggleLike={onToggleLike}
+          followBusy={followBusy}
+          likeBusy={likeBusy}
         />
 
         <ProductGrid
