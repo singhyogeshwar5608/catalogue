@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Store;
+use App\Support\ProductImageStorage;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 
 class SearchController extends Controller
 {
@@ -94,12 +94,14 @@ class SearchController extends Controller
     private function clampLimit(?int $value): int
     {
         $limit = $value ?? 6;
+
         return max(1, min($limit, 25));
     }
 
     private function normalizeRadius(mixed $value): float
     {
         $radius = is_numeric($value) ? (float) $value : 50.0;
+
         return max(1.0, min($radius, 200.0));
     }
 
@@ -132,7 +134,7 @@ class SearchController extends Controller
         if (is_numeric($latitude) && is_numeric($longitude)) {
             $lat = (float) $latitude;
             $lng = (float) $longitude;
-            $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
+            $haversine = '(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))';
 
             $query->whereNotNull('latitude')
                 ->whereNotNull('longitude')
@@ -157,7 +159,7 @@ class SearchController extends Controller
         if (is_numeric($latitude) && is_numeric($longitude)) {
             $lat = (float) $latitude;
             $lng = (float) $longitude;
-            $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
+            $haversine = '(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))';
 
             $query->select('*')
                 ->selectRaw("{$haversine} as distance_km", [$lat, $lng, $lat])
@@ -172,6 +174,7 @@ class SearchController extends Controller
     private function searchProducts(string $searchTerm, string $locationFilter, mixed $latitude, mixed $longitude, float $radius, int $limit)
     {
         $query = Product::query()
+            ->select(Product::LIST_COLUMNS)
             ->with(['store' => function ($storeQuery) {
                 $storeQuery->select('id', 'name', 'slug', 'location', 'business_type', 'is_verified', 'is_active', 'latitude', 'longitude');
             }])
@@ -198,7 +201,7 @@ class SearchController extends Controller
         if (is_numeric($latitude) && is_numeric($longitude)) {
             $lat = (float) $latitude;
             $lng = (float) $longitude;
-            $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
+            $haversine = '(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))';
 
             $query->whereHas('store', function ($storeQuery) use ($lat, $lng, $radius, $haversine) {
                 $storeQuery->whereNotNull('latitude')
@@ -207,7 +210,14 @@ class SearchController extends Controller
             });
         }
 
-        return $query->orderByDesc('rating')->orderByDesc('total_reviews')->take($limit)->get();
+        $rows = $query->orderByDesc('rating')->orderByDesc('total_reviews')->take($limit)->get();
+        foreach ($rows as $product) {
+            if ($product instanceof Product) {
+                ProductImageStorage::decorateProductForResponse($product);
+            }
+        }
+
+        return $rows;
     }
 
     private function searchServices(string $searchTerm, string $locationFilter, mixed $latitude, mixed $longitude, float $radius, int $limit)
@@ -238,7 +248,7 @@ class SearchController extends Controller
         if (is_numeric($latitude) && is_numeric($longitude)) {
             $lat = (float) $latitude;
             $lng = (float) $longitude;
-            $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
+            $haversine = '(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))';
 
             $query->whereHas('store', function ($storeQuery) use ($lat, $lng, $radius, $haversine) {
                 $storeQuery->whereNotNull('latitude')

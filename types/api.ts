@@ -55,6 +55,8 @@ export interface BackendStore {
   linkedin_url?: string | null;
   address?: string | null;
   location?: string | null;
+  state?: string | null;
+  district?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   distance_km?: number | string | null;

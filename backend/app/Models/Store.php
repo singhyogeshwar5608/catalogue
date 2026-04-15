@@ -51,6 +51,8 @@ class Store extends Model
         'linkedin_url',
         'address',
         'location',
+        'state',
+        'district',
         'latitude',
         'longitude',
         'description',

@@ -80,6 +80,10 @@ export interface Store {
   businessType: string;
   categoryName?: string;
   location: string;
+  /** Indian state (or region) for SEO — from Laravel `stores.state`. */
+  state?: string | null;
+  /** District / city area for SEO — from Laravel `stores.district`. */
+  district?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   distanceKm?: number | null;

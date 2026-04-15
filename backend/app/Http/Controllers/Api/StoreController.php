@@ -2,16 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\ProvisionDefaultFreeStoreSubscription;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\PlatformSetting;
-use App\Actions\ProvisionDefaultFreeStoreSubscription;
+use App\Models\Product;
 use App\Models\Store;
 use App\Support\NextCatalogCacheInvalidate;
+use App\Support\ProductImageStorage;
 use App\Support\StoreLogoUrl;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -81,6 +82,16 @@ class StoreController extends Controller
             $query->where('location', 'like', '%'.$locationFilter.'%');
         }
 
+        // SEO / location pages: filter by normalized state & district (case-insensitive).
+        if ($request->filled('state') && $hasCol('state')) {
+            $stateVal = Str::lower(trim((string) $request->input('state')));
+            $query->whereRaw('LOWER(TRIM(COALESCE(state, \'\'))) = ?', [$stateVal]);
+        }
+        if ($request->filled('district') && $hasCol('district')) {
+            $districtVal = Str::lower(trim((string) $request->input('district')));
+            $query->whereRaw('LOWER(TRIM(COALESCE(district, \'\'))) = ?', [$districtVal]);
+        }
+
         $hasCoordinatesFilter = $request->filled(['lat', 'lng']) && $hasCol('latitude') && $hasCol('longitude');
         if ($hasCoordinatesFilter) {
             $latitude = (float) $request->input('lat');
@@ -124,6 +135,22 @@ class StoreController extends Controller
                 $query->select($slim);
             } else {
                 $query->select('*');
+            }
+        }
+
+        // Location SEO listing: small payload, no relations (fast response for `/stores/{state}/{district}`).
+        $seoLocationPair =
+            ! $hasCoordinatesFilter
+            && $request->filled('state')
+            && $request->filled('district')
+            && $hasCol('state')
+            && $hasCol('district');
+        if ($seoLocationPair) {
+            $minimal = array_values(array_filter([
+                'id', 'name', 'slug', 'username', 'state', 'district', 'updated_at',
+            ], fn (string $c): bool => $hasCol($c)));
+            if (count($minimal) >= 2) {
+                $query->select($minimal);
             }
         }
 
@@ -196,6 +223,10 @@ class StoreController extends Controller
             $eager[] = 'activeSubscription.plan';
         }
 
+        if ($seoLocationPair ?? false) {
+            $eager = [];
+        }
+
         $countRelations = array_values(array_filter([
             $hasProductsTable ? 'products' : null,
             $hasServicesTable ? 'services' : null,
@@ -205,7 +236,7 @@ class StoreController extends Controller
         $deferCounts = $hasCoordinatesFilter && config('database.default') !== 'sqlite' && $countRelations !== [];
 
         $builder = $query->with($eager);
-        if ($countRelations !== [] && ! $deferCounts) {
+        if ($countRelations !== [] && ! $deferCounts && ! ($seoLocationPair ?? false)) {
             $builder->withCount($countRelations);
         }
 
@@ -240,6 +271,14 @@ class StoreController extends Controller
             $stores = $this->applyCategoryBannerData($stores);
         } catch (\Throwable $bannerEx) {
             Log::warning('applyCategoryBannerData skipped', ['message' => $bannerEx->getMessage()]);
+        }
+
+        foreach ($stores as $store) {
+            if ($store->relationLoaded('products')) {
+                foreach ($store->products as $product) {
+                    ProductImageStorage::decorateProductForResponse($product);
+                }
+            }
         }
 
         $this->trimHeavyPayloadForStoreListing($stores);
@@ -351,6 +390,8 @@ class StoreController extends Controller
             'seo_keywords' => 'nullable|string|max:4000',
             'keywords' => 'nullable|string|max:4000',
             'location' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:120',
+            'district' => 'nullable|string|max:120',
             'facebook_url' => 'nullable|url|max:255',
             'instagram_url' => 'nullable|url|max:255',
             'youtube_url' => 'nullable|url|max:255',
@@ -373,8 +414,31 @@ class StoreController extends Controller
             $data['location'] ?? null
         );
         unset($data['keywords']);
-        $data['slug'] = $this->generateUniqueSlug($data['slug'] ?? Str::slug($data['name']));
-        $data['username'] = Str::slug($data['name']).'-'.$user->id;
+
+        if (array_key_exists('state', $data) && is_string($data['state'])) {
+            $data['state'] = trim($data['state']) ?: null;
+        }
+        if (array_key_exists('district', $data) && is_string($data['district'])) {
+            $data['district'] = trim($data['district']) ?: null;
+        }
+
+        // Slug / username: include district for SEO when provided (e.g. rahul-fashion-kaithal).
+        $districtForSlug = $data['district'] ?? null;
+        if (empty($data['slug'] ?? null)) {
+            $baseSlug = Str::slug($data['name']);
+            if (is_string($districtForSlug) && $districtForSlug !== '') {
+                $baseSlug .= '-'.Str::slug($districtForSlug);
+            }
+            $data['slug'] = $this->generateUniqueSlug($baseSlug);
+        } else {
+            $data['slug'] = $this->generateUniqueSlug($data['slug']);
+        }
+
+        $userBase = Str::slug($data['name']);
+        if (is_string($districtForSlug) && $districtForSlug !== '') {
+            $userBase .= '-'.Str::slug($districtForSlug);
+        }
+        $data['username'] = $this->generateUniqueUsername($userBase.'-'.$user->id);
         $data['user_id'] = $user->id;
 
         if ((! isset($data['latitude']) || $data['latitude'] === null) && (! isset($data['longitude']) || $data['longitude'] === null)) {
@@ -449,6 +513,8 @@ class StoreController extends Controller
             'is_verified' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',
             'location' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:120',
+            'district' => 'nullable|string|max:120',
             'facebook_url' => 'nullable|url|max:255',
             'instagram_url' => 'nullable|url|max:255',
             'youtube_url' => 'nullable|url|max:255',
@@ -475,6 +541,13 @@ class StoreController extends Controller
                 $data['location'] ?? $store->location ?? null
             );
             unset($data['keywords']);
+        }
+
+        if (array_key_exists('state', $data) && is_string($data['state'])) {
+            $data['state'] = trim($data['state']) ?: null;
+        }
+        if (array_key_exists('district', $data) && is_string($data['district'])) {
+            $data['district'] = trim($data['district']) ?: null;
         }
 
         $hasLocationChange = array_key_exists('location', $data) || array_key_exists('address', $data);
@@ -531,7 +604,7 @@ class StoreController extends Controller
             $toLoad = [
                 'category' => $this->categoryRelationWithBanners(),
                 'products' => function ($query) {
-                    $query->orderByDesc('created_at');
+                    $query->select(Product::LIST_COLUMNS)->orderByDesc('created_at');
                 },
             ];
             if (Schema::hasTable('store_boosts') && Schema::hasTable('boost_plans')) {
@@ -556,6 +629,12 @@ class StoreController extends Controller
             }
 
             \Log::info('Returning store response');
+
+            if ($store->relationLoaded('products')) {
+                foreach ($store->products as $product) {
+                    ProductImageStorage::decorateProductForResponse($product);
+                }
+            }
 
             $payload = $store->toArray();
             if (Schema::hasColumn('stores', 'followers_count') && Schema::hasColumn('stores', 'likes_count')) {
@@ -612,6 +691,46 @@ class StoreController extends Controller
         return $this->successResponse('Store links retrieved successfully.', $query->limit(5000)->get());
     }
 
+    /**
+     * Distinct state + district pairs for sitemaps and internal linking (SEO).
+     */
+    public function publicLocationLinks()
+    {
+        $table = (new Store)->getTable();
+        if (! Schema::hasColumn($table, 'state') || ! Schema::hasColumn($table, 'district')) {
+            return $this->successResponse('Location links retrieved successfully.', []);
+        }
+
+        $q = Store::query()
+            ->whereNotNull('state')
+            ->whereNotNull('district')
+            ->where('state', '!=', '')
+            ->where('district', '!=', '');
+
+        if (Schema::hasColumn($table, 'is_active')) {
+            $q->where('is_active', true);
+        }
+
+        $rows = $q
+            ->selectRaw('state, district, COUNT(*) as store_count')
+            ->groupBy('state', 'district')
+            ->orderByDesc('store_count')
+            ->limit(500)
+            ->get();
+
+        $payload = $rows->map(static function ($r) {
+            return [
+                'state' => $r->state,
+                'district' => $r->district,
+                'store_count' => (int) $r->store_count,
+                'state_slug' => Str::slug((string) $r->state),
+                'district_slug' => Str::slug((string) $r->district),
+            ];
+        });
+
+        return $this->successResponse('Location links retrieved successfully.', $payload);
+    }
+
     private function generateUniqueSlug(string $baseSlug, ?int $ignoreId = null): string
     {
         $slug = Str::slug($baseSlug);
@@ -625,6 +744,24 @@ class StoreController extends Controller
         }
 
         return $slug;
+    }
+
+    private function generateUniqueUsername(string $baseUsername, ?int $ignoreId = null): string
+    {
+        $u = Str::slug($baseUsername);
+        if ($u === '') {
+            $u = 'store';
+        }
+        $original = $u;
+        $counter = 1;
+
+        while (Store::where('username', $u)
+            ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->exists()) {
+            $u = $original.'-'.$counter++;
+        }
+
+        return $u;
     }
 
     private function normalizeStoreKeywords(?string $rawKeywords, ?string $storeName, ?string $location): string

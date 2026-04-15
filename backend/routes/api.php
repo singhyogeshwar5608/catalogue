@@ -39,6 +39,7 @@ Route::get('categories/hero-banners', [CategoryController::class, 'heroBanners']
 Route::get('category/{slug}', [CategoryController::class, 'show']);
 Route::get('stores', [StoreController::class, 'listStores']);
 Route::get('stores/internal-links', [StoreController::class, 'publicStoreInternalLinks']);
+Route::get('stores/location-links', [StoreController::class, 'publicLocationLinks']);
 Route::get('search', [SearchController::class, 'search']);
 
 Route::get('product/{id}/reviews', [ReviewController::class, 'listProductReviews']);

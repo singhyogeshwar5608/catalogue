@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { fetchLocationLinksFromLaravel } from '@/lib/server/laravel-location-links';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://kaushalschoolfurniture.com/api/v1/v1';
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kaushalschoolfurniture.com';
@@ -28,7 +29,7 @@ async function fetchStoreLinks(): Promise<StoreLinkRow[]> {
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = SITE_URL.replace(/\/+$/, '');
-  const stores = await fetchStoreLinks();
+  const [stores, locations] = await Promise.all([fetchStoreLinks(), fetchLocationLinksFromLaravel()]);
   const urls: MetadataRoute.Sitemap = [
     {
       url: `${origin}/`,
@@ -45,6 +46,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: store.updated_at ? new Date(store.updated_at) : undefined,
       changeFrequency: 'daily',
       priority: 0.8,
+    });
+  }
+
+  for (const loc of locations) {
+    const ss = (loc.state_slug ?? '').trim();
+    const ds = (loc.district_slug ?? '').trim();
+    if (!ss || !ds) continue;
+    urls.push({
+      url: `${origin}/stores/${encodeURIComponent(ss)}/${encodeURIComponent(ds)}`,
+      changeFrequency: 'weekly',
+      priority: 0.65,
     });
   }
 

@@ -6,8 +6,9 @@ import { fetchStoresFromLaravel } from '@/lib/server/laravel-stores';
 const CACHE_TTL = null;
 
 /**
- * GET /api/stores?search=&category=&location=&only_verified=1&only_boosted=1&limit=&lat=&lng=&radius_km=&include_inactive=1
+ * GET /api/stores?search=&category=&location=&state=&district=&only_verified=1&only_boosted=1&limit=&lat=&lng=&radius_km=&include_inactive=1
  * Proxies Laravel `/stores` and caches in Redis as `stores:list:v5?<query>` (v5: listing includes per-store `banner`).
+ * `state` + `district` filter active stores for SEO location hubs (see `app/stores/[state]/[district]/page.tsx`).
  */
 export async function GET(request: Request) {
   try {

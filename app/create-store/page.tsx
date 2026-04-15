@@ -214,6 +214,8 @@ export default function CreateStorePage() {
         email: emailTrimmed,
         description: normalizedDescription,
         location: locationLabel || undefined,
+        state: formData.state.trim() || undefined,
+        district: formData.district.trim() || undefined,
       });
 
       if (user) {

@@ -190,6 +190,9 @@ export type CreateStorePayload = {
   show_phone?: boolean;
   description?: string;
   location?: string;
+  /** Persisted for SEO / location pages (optional). */
+  state?: string | null;
+  district?: string | null;
   facebook_url?: string | null;
   instagram_url?: string | null;
   youtube_url?: string | null;
@@ -1625,9 +1628,40 @@ export const cancelBoost = async (boostId: number | string): Promise<StoreBoost>
   return normalizeStoreBoost(response.data);
 };
 
+type LaravelProductPaginator = {
+  current_page: number;
+  data: BackendProduct[];
+  last_page: number;
+  per_page: number;
+  total: number;
+};
+
 export const getProductsByStore = async (storeId: number | string) => {
-  const response = await apiRequest<BackendProduct[]>(`/products/${storeId}`);
-  return response.data.map((product) =>
+  const perPage = 100;
+  let page = 1;
+  let lastPage = 1;
+  const rows: BackendProduct[] = [];
+
+  do {
+    const response = await apiRequest<LaravelProductPaginator | BackendProduct[]>(
+      `/products/${storeId}?page=${page}&per_page=${perPage}`,
+    );
+    const raw = response.data as unknown;
+    if (Array.isArray(raw)) {
+      rows.push(...raw);
+      break;
+    }
+    if (raw && typeof raw === 'object' && Array.isArray((raw as LaravelProductPaginator).data)) {
+      const p = raw as LaravelProductPaginator;
+      rows.push(...p.data);
+      lastPage = Math.max(1, p.last_page ?? 1);
+      page += 1;
+    } else {
+      break;
+    }
+  } while (page <= lastPage);
+
+  return rows.map((product) =>
     normalizeProduct(product, {
       id: Number(storeId),
       user_id: 0,
@@ -1636,7 +1670,7 @@ export const getProductsByStore = async (storeId: number | string) => {
       category: { id: 0, name: 'General', business_type: 'product' },
       is_active: true,
       is_verified: false,
-    } as BackendStore)
+    } as BackendStore),
   );
 };
 
