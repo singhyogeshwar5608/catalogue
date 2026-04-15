@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   createContext,
@@ -74,6 +75,10 @@ import {
 } from '@/src/lib/api';
 import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
 import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
+import { demoProducts } from '@/data/demoProducts';
+
+const FALLBACK_PRODUCT_IMAGE = '/fallback/product-placeholder.svg';
+const DEMO_PRODUCT_CTA_IMAGE = '/demo/upload-product-cta.png';
 
 type StoreViewProps = {
   store: Store;
@@ -199,7 +204,16 @@ function buildProductGallery(product: Product): string[] {
   return urls;
 }
 
-const ProductImageCarousel = ({ products, services }: { products: Product[]; services: Service[] }) => {
+const ProductImageCarousel = ({
+  products,
+  services,
+  isStoreOwner,
+}: {
+  products: Product[];
+  services: Service[];
+  isStoreOwner: boolean;
+}) => {
+  const router = useRouter();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [lightbox, setLightbox] = useState<{ images: string[]; title: string } | null>(null);
 
@@ -239,9 +253,13 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
     <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
       <div className="relative aspect-square md:aspect-[4/3]">
         {combinedItems.map((item, index) => {
+          const isDemoProduct =
+            item.type === 'product' && typeof (item.data as Product).id === 'string'
+              ? (item.data as Product).id.startsWith('demo')
+              : false;
           const itemTitle = item.type === 'product' ? (item.data as Product).name : (item.data as Service).title;
           const hasImage = Boolean((item.data as Product | Service).image);
-          const heroImage = (item.data as Product | Service).image;
+          const heroImage = isDemoProduct ? DEMO_PRODUCT_CTA_IMAGE : (item.data as Product | Service).image;
           const galleryImages =
             item.type === 'product'
               ? buildProductGallery(item.data as Product)
@@ -261,6 +279,25 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
               transition={{ duration: 0.6, ease: 'easeInOut' }}
             >
               {hasImage ? (
+                isDemoProduct && isStoreOwner ? (
+                  <button
+                    type="button"
+                    className="absolute inset-0 block cursor-pointer border-0 bg-transparent p-0 text-left"
+                    aria-label="Upload product"
+                    onClick={() => router.push('/dashboard/products')}
+                  >
+                    <Image
+                      src={heroImage}
+                      alt={itemTitle}
+                      fill
+                      className="rounded-[28px] bg-white object-contain"
+                      sizes="(max-width: 640px) 100vw, 512px"
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="rounded-md bg-black/50 px-3 py-1 text-sm font-semibold text-white">Upload Product</span>
+                    </div>
+                  </button>
+                ) : (
                 <button
                   type="button"
                   className="absolute inset-0 block cursor-pointer border-0 bg-transparent p-0 text-left"
@@ -279,6 +316,7 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
                     sizes="(max-width: 640px) 100vw, 512px"
                   />
                 </button>
+                )
               ) : (
                 <div className="absolute inset-0 flex h-full w-full items-center justify-center rounded-[28px] bg-gradient-to-br from-slate-800 to-slate-900 text-white/50">
                   <Layers className="h-12 w-12" aria-hidden />
@@ -488,9 +526,10 @@ type HeroSectionProps = {
   products: Product[];
   services: Service[];
   isProPlan: boolean;
+  isStoreOwner: boolean;
 };
 
-const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan }: HeroSectionProps) => {
+const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan, isStoreOwner }: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
 
@@ -602,7 +641,7 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
 
                 {(products.length > 0 || services.length > 0) && (
                   <div className="mt-4 w-full sm:hidden">
-                    <ProductImageCarousel products={products} services={services} />
+                    <ProductImageCarousel products={products} services={services} isStoreOwner={isStoreOwner} />
                   </div>
                 )}
 
@@ -1190,6 +1229,8 @@ type StoreCatalogProductCardProps = {
   whatsappLink: string;
   storeName: string;
   isStoreOwner: boolean;
+  showOwnerUploadButton?: boolean;
+  onUploadProduct?: () => void;
   cartQty: number;
   onAddToCart: () => void;
   onBuyNow: () => void;
@@ -1200,6 +1241,8 @@ function StoreCatalogProductCard({
   whatsappLink,
   storeName,
   isStoreOwner,
+  showOwnerUploadButton = false,
+  onUploadProduct,
   cartQty,
   onAddToCart,
   onBuyNow,
@@ -1207,11 +1250,24 @@ function StoreCatalogProductCard({
   const [activeIndex, setActiveIndex] = useState(0);
   const gallery = useMemo(() => buildProductGallery(product), [product]);
   const heroSrc = gallery[activeIndex] ?? product.image;
+  const isDemoProduct = product.id.startsWith('demo');
+  const [heroImageSrc, setHeroImageSrc] = useState(heroSrc || FALLBACK_PRODUCT_IMAGE);
+  const [demoImageSrc, setDemoImageSrc] = useState(DEMO_PRODUCT_CTA_IMAGE);
   const discount = getDiscountPercent(product.price, product.originalPrice);
   const badgeLabel = discount ? 'Best Seller' : 'Featured';
   const brandInitial = (storeName?.trim()?.charAt(0) || 'B').toUpperCase();
   const unitLabel = formatPriceUnitLabel(product);
   const cardClickable = product.inStock && !isStoreOwner;
+
+  useEffect(() => {
+    setHeroImageSrc(heroSrc || FALLBACK_PRODUCT_IMAGE);
+  }, [heroSrc]);
+
+  useEffect(() => {
+    if (isDemoProduct) {
+      setDemoImageSrc(DEMO_PRODUCT_CTA_IMAGE);
+    }
+  }, [isDemoProduct, product.id]);
 
   return (
     <article
@@ -1235,13 +1291,44 @@ function StoreCatalogProductCard({
     >
       <div className="relative overflow-hidden">
         <div className="relative block h-[45vw] max-h-[180px] w-full bg-slate-100 p-0 md:h-auto md:max-h-none md:aspect-[4/3]">
-          <Image
-            src={heroSrc}
-            alt={product.name}
-            fill
-            className="object-cover transition duration-300 group-hover:scale-[1.02]"
-            sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
-          />
+          {isDemoProduct && isStoreOwner ? (
+            <div
+              onClick={(event) => {
+                event.stopPropagation();
+                onUploadProduct?.();
+              }}
+              className="relative h-full w-full cursor-pointer"
+            >
+              <Image
+                src={demoImageSrc}
+                alt={product.name}
+                fill
+                className="object-cover transition duration-300 group-hover:scale-[1.02]"
+                sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
+                onError={() => {
+                  setDemoImageSrc(FALLBACK_PRODUCT_IMAGE);
+                }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="rounded-md bg-black/50 px-3 py-1 text-sm font-semibold text-white">Upload Product</span>
+              </div>
+            </div>
+          ) : (
+            <Image
+              src={isDemoProduct ? demoImageSrc : heroImageSrc}
+              alt={product.name}
+              fill
+              className="object-cover transition duration-300 group-hover:scale-[1.02]"
+              sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
+              onError={() => {
+                if (isDemoProduct) {
+                  setDemoImageSrc(FALLBACK_PRODUCT_IMAGE);
+                  return;
+                }
+                setHeroImageSrc(FALLBACK_PRODUCT_IMAGE);
+              }}
+            />
+          )}
           <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-800 shadow-sm md:left-3 md:top-3 md:px-2.5 md:py-1 md:text-[10px]">
             {badgeLabel}
           </span>
@@ -1315,6 +1402,7 @@ function StoreCatalogProductCard({
 
 type ProductGridProps = {
   products: Product[];
+  realProductsCount: number;
   services?: Service[];
   theme: Theme;
   visibleCount: number;
@@ -1439,6 +1527,7 @@ type PriceFilter = 'all' | 'under-1000' | '1000-5000' | 'above-5000';
 
 const ProductGrid = ({
   products,
+  realProductsCount,
   services,
   theme,
   visibleCount,
@@ -1451,6 +1540,7 @@ const ProductGrid = ({
   cartEntries,
   onAddToCart,
 }: ProductGridProps) => {
+  const router = useRouter();
   const [filterType, setFilterType] = useState<'all' | 'products' | 'services'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('featured');
@@ -1550,6 +1640,7 @@ const ProductGrid = ({
     () => combinedEntries.findIndex((entry) => entry.type === 'service'),
     [combinedEntries]
   );
+  const hasRealProducts = realProductsCount > 0;
 
   return (
     <section id="products" className="py-10">
@@ -1717,6 +1808,8 @@ const ProductGrid = ({
                         whatsappLink={whatsappLink}
                         storeName={storeName}
                         isStoreOwner={isStoreOwner}
+                        showOwnerUploadButton={!hasRealProducts && isStoreOwner}
+                        onUploadProduct={() => router.push('/dashboard/products')}
                         cartQty={cartQuantities[product.id] ?? 0}
                         onAddToCart={() => onAddToCart(product, 1)}
                         onBuyNow={() => {
@@ -1948,7 +2041,27 @@ export default function StoreView({
   const [guestReviewNotice, setGuestReviewNotice] = useState<string | null>(null);
 
   const theme = useMemo(() => getThemeForCategory(store.businessType), [store.businessType]);
-  const marqueeCategory = products[0]?.category || store.businessType || 'exclusive collections';
+  const normalizedDemoProducts = useMemo<Product[]>(
+    () =>
+      demoProducts.map((product) => ({
+        id: product.id,
+        storeId: store.id,
+        storeName: store.name,
+        storeSlug: store.username,
+        name: product.name,
+        description: `${product.name} preview item for your catalogue.`,
+        price: Number(String(product.price).replace(/[^\d.]/g, '')) || 0,
+        image: product.image,
+        images: [product.image],
+        category: store.businessType || 'General',
+        rating: store.rating || 4.5,
+        totalReviews: store.totalReviews || 0,
+        inStock: true,
+      })),
+    [store.id, store.name, store.username, store.businessType, store.rating, store.totalReviews]
+  );
+  const displayProducts = products.length > 0 ? products : normalizedDemoProducts;
+  const marqueeCategory = displayProducts[0]?.category || store.businessType || 'exclusive collections';
   const marqueeMessage = `Welcome to ${store.name} — Trusted in ${store.location || 'your city'} · Call ${
     store.whatsapp || 'N/A'
   } · Signature picks in ${marqueeCategory}`;
@@ -1984,7 +2097,7 @@ export default function StoreView({
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const loadMoreProducts = () => {
-    setVisibleCount((previous) => Math.min(previous + INITIAL_VISIBLE_COUNT, products.length));
+    setVisibleCount((previous) => Math.min(previous + INITIAL_VISIBLE_COUNT, displayProducts.length));
   };
 
   const resetVisibleProducts = () => {
@@ -2241,14 +2354,16 @@ export default function StoreView({
         <HeroSection
           store={store}
           theme={theme}
-          products={products}
+          products={displayProducts}
           services={services}
           whatsappLink={whatsappLink}
           isProPlan={isProPlan}
+          isStoreOwner={viewerOwnsStore}
         />
 
         <ProductGrid
-          products={products}
+          products={displayProducts}
+          realProductsCount={products.length}
           services={services}
           theme={theme}
           visibleCount={visibleCount}
@@ -2271,8 +2386,8 @@ export default function StoreView({
                   <div className="flex gap-2.5 max-sm:gap-2 sm:gap-4">
                     <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm max-sm:h-10 max-sm:w-10 sm:h-14 sm:w-14 sm:rounded-xl">
                       <Image
-                        src={products[0]?.image ?? store.logo}
-                        alt={products[0] ? `${products[0].name} preview` : `${store.name} logo`}
+                        src={store.logo}
+                        alt={`${store.name} logo`}
                         fill
                         className="object-cover"
                         sizes="(max-width:640px) 40px, 56px"
