@@ -244,7 +244,8 @@ export default function HomePage() {
   const renderResponsiveStoreGrid = (
     list: Store[],
     bannerIndexMap?: Map<number | string, number>,
-    showMobileAllStoresButton = false
+    showMobileAllStoresButton = false,
+    mobileFeaturedBanner = false
   ) => (
     <>
       <div className="grid grid-cols-2 gap-4 sm:hidden">
@@ -256,7 +257,11 @@ export default function HomePage() {
           if (isFullWidth) {
             return (
               <div key={store.id} className="col-span-2 min-h-0 w-full">
-                <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />
+                <VerifiedSellerCard
+                  store={store}
+                  categoryBannerIndex={categoryBannerIndex}
+                  isMobileFeatured={mobileFeaturedBanner}
+                />
               </div>
             );
           }
@@ -505,7 +510,7 @@ export default function HomePage() {
             </p>
           )}
           {!nearbyLoading && orderedNearbyStores.length > 0 && (
-            renderResponsiveStoreGrid(orderedNearbyStores, nearbyCatIdx, true)
+            renderResponsiveStoreGrid(orderedNearbyStores, nearbyCatIdx, true, true)
           )}
           {fallbackQueryUsed && (
             <p className="text-xs text-gray-400 text-center mt-4">
@@ -521,7 +526,7 @@ export default function HomePage() {
             title="Verified Sellers"
             subtitle="Trusted stores with verified badges"
           />
-          {renderResponsiveStoreGrid(verifiedStores, verifiedCatIdx, true)}
+          {renderResponsiveStoreGrid(verifiedStores, verifiedCatIdx, true, false)}
         </div>
       </section>
 
@@ -543,30 +548,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="py-16 px-4 bg-gradient-to-br from-primary to-primary-700 text-white">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Ready to grow your business?</h2>
-          <p className="text-lg mb-8 text-primary-50">
-            Join thousands of local sellers already thriving on our platform
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/create-store"
-              className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-primary rounded-lg hover:bg-gray-50 transition font-semibold"
-            >
-              <Shield className="w-5 h-5" />
-              Start Selling Today
-            </Link>
-            <Link
-              href="/all-stores"
-              className="inline-flex items-center justify-center gap-2 px-8 py-4 border-2 border-white text-white rounded-lg hover:bg-white/10 transition font-semibold"
-            >
-              <TrendingUp className="w-5 h-5" />
-              Browse Stores
-            </Link>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

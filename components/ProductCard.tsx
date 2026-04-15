@@ -48,7 +48,7 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
 
   const cardContent = (
     <div
-      className="flex h-auto min-w-0 flex-col overflow-hidden rounded-[18px] border border-slate-200 bg-white font-sans shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
+      className="flex h-auto min-w-0 flex-col overflow-hidden rounded-[18px] border border-slate-500 bg-white font-sans shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
       style={{ backgroundColor: CARD_BG }}
     >
       <div className="relative overflow-hidden">
