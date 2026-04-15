@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { QRCodeCanvas } from 'qrcode.react';
 import {
   createContext,
   useCallback,
@@ -533,6 +534,37 @@ type HeroSectionProps = {
 const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan, isStoreOwner }: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
+  const [showQrActions, setShowQrActions] = useState(false);
+  const qrAvatarRef = useRef<HTMLDivElement | null>(null);
+  const storeUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/store/${store.username}`;
+  }, [store.username]);
+
+  const downloadQR = useCallback(() => {
+    const canvas = qrAvatarRef.current?.querySelector('canvas');
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${store.username}-qr.png`;
+    link.click();
+  }, [store.username]);
+
+  const shareQR = useCallback(async () => {
+    if (!storeUrl) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: store.name,
+          text: 'Check out my store',
+          url: storeUrl,
+        });
+      }
+    } catch {
+      /* ignore share cancellation/errors */
+    }
+  }, [store.name, storeUrl]);
 
   return (
     <div className="pt-0">
@@ -561,17 +593,52 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
             >
               <span className="relative inline-flex items-center">
                 <span className="relative inline-flex h-[3.9rem] w-[3.9rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/40 bg-white/95 p-1.5 shadow-xl sm:h-[4.6rem] sm:w-[4.6rem]">
-                  {/* Native img: avoids Next image pipeline issues with proxied / cross-origin storage URLs */}
-                  <img
-                    src={store.logo}
-                    alt={`${store.name} logo`}
-                    width={74}
-                    height={74}
-                    className="h-full w-full object-cover"
-                    loading="eager"
-                    decoding="async"
-                    referrerPolicy="no-referrer"
-                  />
+                  {isStoreOwner ? (
+                    <div
+                      ref={qrAvatarRef}
+                      className="group relative h-full w-full overflow-hidden rounded-[0.75rem]"
+                      onClick={() => setShowQrActions((previous) => !previous)}
+                    >
+                      <QRCodeCanvas value={storeUrl || `${store.name}-${store.username}`} size={74} className="h-full w-full rounded-[0.75rem]" />
+                      <div
+                        className={`absolute inset-0 flex items-center justify-center gap-1 rounded-[0.75rem] bg-black/50 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 ${
+                          showQrActions ? 'opacity-100' : 'opacity-0'
+                        }`}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={downloadQR}
+                          className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-800"
+                        >
+                          Download
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void shareQR();
+                          }}
+                          className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-800"
+                        >
+                          Share
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Native img: avoids Next image pipeline issues with proxied / cross-origin storage URLs */}
+                      <img
+                        src={store.logo}
+                        alt={`${store.name} logo`}
+                        width={74}
+                        height={74}
+                        className="h-full w-full object-cover"
+                        loading="eager"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
+                      />
+                    </>
+                  )}
                 </span>
                 {(store.isVerified || isProPlan) && (
                   <span
@@ -646,43 +713,25 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                   </div>
                 )}
 
-                <div className="mt-2.5 grid w-full grid-cols-3 gap-2 sm:hidden">
-                  <button
-                    type="button"
-                    className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-blue-800"
-                  >
-                    <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-blue-100">
-                      <UserPlus className="h-2.5 w-2.5 shrink-0 text-blue-200" />
-                      Followers
-                    </span>
-                    <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
+                <div className="mt-2.5 grid w-full grid-cols-3 overflow-hidden rounded-xl border border-white/15 bg-white/90 text-slate-900 sm:hidden">
+                  <div className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
                       {(store.followersCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-pink-800"
-                  >
-                    <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-rose-100">
-                      <Heart className="h-2.5 w-2.5 shrink-0 text-rose-200" />
-                      Likes
-                    </span>
-                    <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
-                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-emerald-400/35 bg-emerald-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-emerald-800"
-                  >
-                    <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-emerald-100">
-                      <Eye className="h-2.5 w-2.5 shrink-0 text-emerald-200" />
-                      Views
-                    </span>
-                    <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
+                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Followers</p>
+                  </div>
+                  <div className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
                       {(store.seenCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                  </button>
+                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Views</p>
+                  </div>
+                  <div className="flex min-h-[48px] flex-col items-center justify-center px-1 py-1.5 text-center">
+                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
+                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                    </p>
+                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Likes</p>
+                  </div>
                 </div>
               </motion.div>
             </motion.div>
@@ -2040,9 +2089,10 @@ export default function StoreView({
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
   const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
-  /** Prefer store owner id — slug-only match can wrongly skip visit tracking if slugs collide or auth slug is stale. */
+  /** Robust owner detection (IDs may arrive as number/string across endpoints). */
   const viewerOwnsStore = Boolean(
-    (user?.id && store.userId && user.id === store.userId) ||
+    (user?.id && store.userId && String(user.id) === String(store.userId)) ||
+      (user?.storeId && store.id && String(user.storeId) === String(store.id)) ||
       (user?.storeSlug &&
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())

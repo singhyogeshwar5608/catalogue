@@ -16,18 +16,18 @@ export default function SubscriptionExpiryPopup({ planName, daysRemaining, onClo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className={`p-4 ${isExpired ? 'bg-red-50' : 'bg-orange-50'}`}>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl shadow-black/25">
+        <div className={`p-3.5 ${isExpired ? 'bg-red-50' : 'bg-emerald-50'}`}>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2.5">
-              <div className={`rounded-full p-2 ${isExpired ? 'bg-red-100' : 'bg-orange-100'}`}>
-                <AlertCircle className={`h-5 w-5 ${isExpired ? 'text-red-600' : 'text-orange-600'}`} />
+              <div className={`rounded-full p-1.5 ${isExpired ? 'bg-red-500/20' : 'bg-emerald-500/20'}`}>
+                <AlertCircle className={`h-4 w-4 ${isExpired ? 'text-red-400' : 'text-emerald-400'}`} />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-gray-900">
+                <h3 className="text-[15px] font-bold text-slate-900">
                   {isExpired ? 'Subscription Expired' : 'Subscription Expiring Soon'}
                 </h3>
-                <p className="mt-0.5 text-sm font-semibold text-red-600">
+                <p className="mt-0.5 text-[11px] font-semibold text-red-600">
                   {isExpired
                     ? 'Your subscription has expired'
                     : daysRemaining === 0
@@ -39,57 +39,59 @@ export default function SubscriptionExpiryPopup({ planName, daysRemaining, onClo
             <button
               type="button"
               onClick={onClose}
-              className="text-gray-400 transition hover:text-gray-600"
+              className="text-slate-400 transition hover:text-slate-600"
               aria-label="Close"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <div className="space-y-3 p-4">
-          <div className="rounded-lg bg-gray-50 p-3">
-            <p className="mb-1 text-[11px] text-gray-600">Current Plan</p>
-            <p className="text-[15px] font-bold text-gray-900">{planName}</p>
+        <div className="space-y-2.5 p-3.5">
+          <div className="rounded-lg border border-slate-900 bg-slate-900 p-2.5 shadow-md">
+            <p className="mb-1 text-[9px] text-slate-300">Current Plan</p>
+            <p className="text-[12px] font-bold text-white">{planName}</p>
           </div>
 
           <div className="space-y-2">
-            <p className="text-[13px] leading-snug text-gray-700">
+            <p className="text-[10px] leading-snug text-slate-700">
               {isExpired
                 ? 'Your subscription has expired. Upgrade now to continue enjoying premium features and keep your store active.'
                 : 'Your subscription is expiring soon. Upgrade or renew to avoid interruption of services.'}
             </p>
 
-            <ul className="space-y-1.5 text-[11px] leading-snug text-gray-600">
+            <ul className="space-y-1.5 text-[9px] leading-snug text-slate-600">
               <li className="flex items-start gap-2">
-                <span className="mt-0.5 text-red-500">•</span>
+                <span className={`mt-0.5 ${isExpired ? 'text-red-400' : 'text-emerald-400'}`}>•</span>
                 <span>Access to premium features will be restricted</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="mt-0.5 text-red-500">•</span>
+                <span className={`mt-0.5 ${isExpired ? 'text-red-400' : 'text-emerald-400'}`}>•</span>
                 <span>Your store visibility may be reduced</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="mt-0.5 text-red-500">•</span>
+                <span className={`mt-0.5 ${isExpired ? 'text-red-400' : 'text-emerald-400'}`}>•</span>
                 <span>Product limits will be enforced</span>
               </li>
             </ul>
           </div>
 
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 pt-1.5">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              className="flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
             >
               Later
             </button>
             <Link
               href="/dashboard/subscription"
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-white transition ${
+                isExpired ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'
+              }`}
             >
               Upgrade Now
-              <ArrowRight className="h-3.5 w-3.5" />
+              <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
         </div>

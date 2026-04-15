@@ -100,9 +100,21 @@ export default function Sidebar() {
         className="md:hidden fixed top-0 left-0 right-0 z-50 flex min-h-[3.75rem] items-center justify-between border-b border-gray-200 bg-white px-4 pb-3"
         style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
       >
-        <Link href="/" className="flex items-center gap-2">
-          <ShoppingBag className="w-6 h-6 text-primary" />
-          <span className="text-lg font-bold text-gray-900">Cateloge</span>
+        <Link href="/" className="flex min-w-0 items-center gap-2">
+          {myStore?.logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={myStore.logo}
+              alt={myStore.name || 'Store logo'}
+              className="h-8 w-8 rounded-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <ShoppingBag className="h-6 w-6 text-primary" />
+          )}
+          <span className="truncate text-lg font-bold text-gray-900">
+            {myStore?.name?.trim() ? myStore.name : 'Cateloge'}
+          </span>
         </Link>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
