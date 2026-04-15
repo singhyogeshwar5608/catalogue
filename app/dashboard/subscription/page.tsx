@@ -120,15 +120,14 @@ function AddonToggleRow({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/80 px-4 py-3.5 shadow-sm">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900/[0.06] text-slate-700">
-        <Icon className="h-5 w-5" />
+    <div className="flex items-center gap-2 px-0 py-1">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center text-slate-700">
+        <Icon className="h-4 w-4" />
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-slate-900">{title}</p>
-        <p className="text-xs text-slate-600 leading-snug mt-0.5">{hint}</p>
+      <div className="min-w-0 flex-1 pr-1">
+        <p className="truncate text-[12px] font-semibold leading-tight text-slate-900">{title}</p>
         {priceInr > 0 && (
-          <p className="text-xs font-semibold text-primary mt-1">+ ₹{formatInr(priceInr)}</p>
+          <p className="mt-0.5 text-[12px] font-semibold leading-tight text-primary">+ ₹{formatInr(priceInr)}</p>
         )}
       </div>
       <button
@@ -137,13 +136,13 @@ function AddonToggleRow({
         aria-checked={checked}
         disabled={disabled}
         onClick={onToggle}
-        className={`relative h-8 w-[3.25rem] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50 ${
+        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50 ${
           checked ? 'bg-primary' : 'bg-slate-300'
         }`}
       >
         <span
-          className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
-            checked ? 'translate-x-[1.35rem]' : 'translate-x-0'
+          className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
+            checked ? 'translate-x-4' : 'translate-x-0'
           }`}
         />
       </button>
@@ -172,7 +171,6 @@ export default function SubscriptionPage() {
   const [addonPgHelp, setAddonPgHelp] = useState(false);
   /** After live load of `subscription_addons` from API; toggles disabled until true to avoid races. */
   const [addonHydrated, setAddonHydrated] = useState(false);
-  const [checkoutOpenSeq, setCheckoutOpenSeq] = useState(0);
   /** Paid checkout: prompt to enable payment gateway if user skipped it on the card. */
   const [paymentGatewaySuggestOpen, setPaymentGatewaySuggestOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -188,26 +186,6 @@ export default function SubscriptionPage() {
   const closePlanModal = () => {
     setSelectedPlan(null);
   };
-
-  const openChoosePlanModal = (plan: SubscriptionPlan) => {
-    setSelectedPlan(null);
-    setSubscriptionNotice(null);
-    setActivationError(null);
-    setPaymentGatewaySuggestOpen(false);
-    setAddonHydrated(false);
-    setAddonPayGateway(false);
-    setAddonQr(false);
-    setAddonPgHelp(false);
-    setAddonPrices(null);
-    setCheckoutOpenSeq((n) => n + 1);
-    setCheckoutPlan(plan);
-  };
-
-  const closeChoosePlanModal = useCallback(() => {
-    setCheckoutPlan(null);
-    setAddonHydrated(false);
-    setPaymentGatewaySuggestOpen(false);
-  }, []);
 
   const handlePlanCardKeyDown = (e: KeyboardEvent, plan: SubscriptionPlan) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -243,12 +221,12 @@ export default function SubscriptionPage() {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (paymentGatewaySuggestOpen) setPaymentGatewaySuggestOpen(false);
-        else closeChoosePlanModal();
+        else setCheckoutPlan(null);
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [checkoutPlan, closeChoosePlanModal, paymentGatewaySuggestOpen]);
+  }, [checkoutPlan, paymentGatewaySuggestOpen]);
 
   useEffect(() => {
     if (!paymentGatewaySuggestOpen) return;
@@ -257,7 +235,6 @@ export default function SubscriptionPage() {
   }, [paymentGatewaySuggestOpen]);
 
   useEffect(() => {
-    if (!checkoutPlan) return;
     let cancelled = false;
     (async () => {
       setAddonPricesLoading(true);
@@ -279,10 +256,9 @@ export default function SubscriptionPage() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutPlan]);
+  }, []);
 
   useEffect(() => {
-    if (!checkoutPlan) return;
     let cancelled = false;
     const slug = getStoredUser()?.storeSlug;
     if (!slug) {
@@ -311,7 +287,7 @@ export default function SubscriptionPage() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutPlan, checkoutOpenSeq]);
+  }, [storeId]);
 
   /** Save add-ons as soon as toggles change (after hydrate); Payment settings nav still requires an active paid period. */
   const checkoutPlanId = checkoutPlan?.id;
@@ -425,11 +401,11 @@ export default function SubscriptionPage() {
     }
   };
 
-  const proceedPaidPlanCheckout = async () => {
-    if (!checkoutPlan || !storeId) return;
+  const proceedPaidPlanCheckout = async (planOverride?: SubscriptionPlan) => {
+    const plan = planOverride ?? checkoutPlan;
+    if (!plan || !storeId) return;
     if (subscriptionCheckoutLockRef.current) return;
     subscriptionCheckoutLockRef.current = true;
-    const plan = checkoutPlan;
     const addons = checkoutAddonPayload();
     setActivatingPlanId(plan.id);
     setActivationError(null);
@@ -527,11 +503,11 @@ export default function SubscriptionPage() {
   };
 
   /** Same end state as successful Razorpay verify; for local/testing when mock is enabled on the API. */
-  const proceedMockPaidPlanCheckout = async () => {
-    if (!checkoutPlan || !storeId) return;
+  const proceedMockPaidPlanCheckout = async (planOverride?: SubscriptionPlan) => {
+    const plan = planOverride ?? checkoutPlan;
+    if (!plan || !storeId) return;
     if (subscriptionCheckoutLockRef.current) return;
     subscriptionCheckoutLockRef.current = true;
-    const plan = checkoutPlan;
     const addons = checkoutAddonPayload();
     setActivatingPlanId(plan.id);
     setActivationError(null);
@@ -559,23 +535,6 @@ export default function SubscriptionPage() {
       setActivatingPlanId(null);
       subscriptionCheckoutLockRef.current = false;
     }
-  };
-
-  const handleConfirmCheckout = async () => {
-    if (!checkoutPlan || !storeId) return;
-    const plan = checkoutPlan;
-    const addons = checkoutAddonPayload();
-
-    if (Number(plan.price) > 0) {
-      if (!addons.paymentGateway) {
-        setPaymentGatewaySuggestOpen(true);
-        return;
-      }
-      await proceedPaidPlanCheckout();
-      return;
-    }
-
-    await handleActivatePlan(plan, addons);
   };
 
   const addonSum =
@@ -617,7 +576,6 @@ export default function SubscriptionPage() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">Subscription</h1>
-        <p className="text-sm md:text-base text-gray-600">Manage your subscription plan</p>
       </div>
 
       {successMessage && (
@@ -657,23 +615,23 @@ export default function SubscriptionPage() {
 
       {activeSubscription && (
         <div className="bg-gradient-to-r from-purple-50 to-primary-50 border border-purple-200 rounded-xl p-4 md:p-6 mb-6" id="current-subscription">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 mb-4">
-            <div className="flex items-start gap-3 min-w-0">
+          <div className="relative mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="flex min-w-0 items-start gap-3 pr-16 sm:pr-0">
               <div className="w-10 h-10 md:w-12 md:h-12 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
                 <Crown className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-base md:text-xl font-semibold text-gray-900 capitalize">
+                <h2 className="text-[11px] font-semibold capitalize text-gray-900 sm:text-base md:text-xl">
                   Current Plan: {activeSubscription.plan.name}
                 </h2>
-                <div className="mt-1 flex items-center gap-2 text-sm md:text-base text-gray-600">
+                <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-600 sm:mt-1 sm:gap-2 sm:text-sm md:text-base">
                   <Calendar className="w-4 h-4 flex-shrink-0" />
                   <span>Active until {new Date(activeSubscription.endsAt).toLocaleDateString()}</span>
                 </div>
               </div>
             </div>
             <span
-              className={`self-start sm:self-center inline-flex px-3 py-1 rounded-full text-sm font-semibold ${
+              className={`absolute right-0 top-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold sm:static sm:self-center sm:px-3 sm:py-1 sm:text-sm ${
                 activeSubscription.status === 'active'
                   ? 'bg-green-100 text-green-800'
                   : activeSubscription.status === 'expired'
@@ -685,72 +643,39 @@ export default function SubscriptionPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 pt-4 border-t border-purple-200/80">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-0.5">Plan name</p>
-              <p className="text-base font-semibold text-gray-900 capitalize">{activeSubscription.plan.name}</p>
-              <p className="text-xs text-gray-500 mt-1">Ref: {activeSubscription.plan.slug}</p>
+          <div className="grid grid-cols-1 gap-1.5 border-t border-purple-200/80 pt-3 sm:grid-cols-2 sm:gap-3 md:gap-4">
+            <div className="flex items-start justify-between gap-2 sm:block">
+              <p className="mb-0.5 text-[9px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">Plan name</p>
+              <div className="text-right sm:text-left">
+                <p className="text-[11px] font-semibold capitalize text-gray-900 sm:text-base">{activeSubscription.plan.name}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-0.5">Billing cycle</p>
-              <p className="text-base font-semibold text-gray-900 capitalize">
+            <div className="flex items-center justify-between gap-2 sm:block">
+              <p className="mb-0.5 text-[9px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">Billing cycle</p>
+              <p className="text-right text-[11px] font-semibold capitalize text-gray-900 sm:text-left sm:text-base">
                 {formatPlanDuration(activeSubscription.plan.durationDays, activeSubscription.plan.billingCycle)}
               </p>
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-0.5">Started on</p>
-              <p className="text-base font-semibold text-gray-900">
+            <div className="flex items-center justify-between gap-2 sm:block">
+              <p className="mb-0.5 text-[9px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">Started on</p>
+              <p className="text-right text-[11px] font-semibold text-gray-900 sm:text-left sm:text-base">
                 {new Date(activeSubscription.startsAt).toLocaleDateString()}
               </p>
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-0.5">Expires on</p>
-              <p className="text-base font-semibold text-gray-900">
+            <div className="flex items-center justify-between gap-2 sm:block">
+              <p className="mb-0.5 text-[9px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">Expires on</p>
+              <p className="text-right text-[11px] font-semibold text-gray-900 sm:text-left sm:text-base">
                 {new Date(activeSubscription.endsAt).toLocaleDateString()}
               </p>
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-0.5">Remaining days</p>
-              <p className={`text-base font-semibold ${remainingDaysClass(activeSubscription.endsAt)}`}>
+            <div className="flex items-center justify-between gap-2 sm:block">
+              <p className="mb-0.5 text-[9px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">Remaining days</p>
+              <p className={`text-right text-[11px] font-semibold sm:text-left sm:text-base ${remainingDaysClass(activeSubscription.endsAt)}`}>
                 {remainingDaysText(activeSubscription.endsAt)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-0.5">Price & limit</p>
-              <p className="text-base font-semibold text-gray-900">
-                ₹{activeSubscription.price} /{' '}
-                {formatPlanDuration(activeSubscription.plan.durationDays, activeSubscription.plan.billingCycle)}
-              </p>
-              <p className="text-sm text-gray-600 mt-0.5">
-                Max products:{' '}
-                {activeSubscription.plan.maxProducts >= 999999 ? 'Unlimited' : activeSubscription.plan.maxProducts}
               </p>
             </div>
           </div>
 
-          {(() => {
-            const displayFeatures =
-              planChangeLockedByPaidPeriod
-                ? featuresWithoutTrialHints(activeSubscription.plan.features)
-                : activeSubscription.plan.features;
-            if (displayFeatures.length === 0) return null;
-            return (
-            <div className="mt-5 pt-5 border-t border-purple-200/80">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Features included with your plan</p>
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
-                {displayFeatures.map((feature, index) => (
-                  <li
-                    key={index}
-                    className="flex items-start gap-2 rounded-lg bg-white/60 border border-purple-100/80 px-3 py-2 text-sm text-gray-800"
-                  >
-                    <Check className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            );
-          })()}
         </div>
       )}
 
@@ -767,7 +692,7 @@ export default function SubscriptionPage() {
           className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:p-6"
           aria-labelledby="subscription-plan-catalog-heading"
         >
-          <div className="mb-5 min-w-0 border-b border-gray-100 pb-4">
+          <div className="mb-5 hidden min-w-0 border-b border-gray-100 pb-4 md:block">
             <h2
               id="subscription-plan-catalog-heading"
               className="text-lg font-semibold text-gray-900 md:text-xl"
@@ -798,8 +723,9 @@ export default function SubscriptionPage() {
           const isCurrentPlan = activeSubscription?.plan.id === plan.id;
           const isActivating = activatingPlanId === plan.id;
           const isModalPlan = selectedPlan?.id === plan.id;
-          const canOpenDetailsModal = !isCurrentPlan;
-          const checkoutOpenHere = checkoutPlan?.id === plan.id;
+          const canOpenDetailsModal = false;
+          const showInlineAddons = !isCurrentPlan && plan.isActive;
+          const displayPrice = formatInr(Number(plan.price) + addonSum);
 
           return (
             <div
@@ -814,27 +740,25 @@ export default function SubscriptionPage() {
                   : `${plan.name} — your current plan (details above)`
               }
               onClick={() => {
-                if (checkoutOpenHere) return;
                 if (canOpenDetailsModal) openPlanModal(plan);
               }}
               onKeyDown={(e) => {
-                if (checkoutOpenHere) return;
                 if (canOpenDetailsModal) handlePlanCardKeyDown(e, plan);
               }}
-              className={`bg-white rounded-xl shadow-md transition overflow-hidden text-left ${
+              className={`overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition md:rounded-xl md:shadow-md ${
                 canOpenDetailsModal
                   ? 'cursor-pointer hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
                   : 'cursor-default ring-2 ring-purple-200/80'
               } ${plan.isPopular && !isCurrentPlan ? 'ring-2 ring-primary' : ''} ${
                 isModalPlan ? 'ring-2 ring-primary ring-offset-2' : ''
-              } ${checkoutOpenHere ? 'ring-2 ring-indigo-400 ring-offset-2 shadow-lg' : ''}`}
+              }`}
             >
               {plan.isPopular && (
-                <div className="bg-primary text-white text-center py-2 text-xs md:text-sm font-semibold">
+                <div className="bg-gradient-to-r from-primary to-indigo-600 py-2 text-center text-[10px] font-semibold tracking-wide text-white md:text-sm">
                   MOST POPULAR
                 </div>
               )}
-              <div className="p-4 md:p-6">
+              <div className="p-3 md:p-6">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   {!plan.isActive ? (
                     <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 ring-1 ring-gray-200/80">
@@ -847,43 +771,105 @@ export default function SubscriptionPage() {
                     </span>
                   ) : null}
                 </div>
-                <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2 capitalize">{plan.name}</h3>
-                <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl md:text-4xl font-bold text-gray-900">₹{plan.price}</span>
-                  <span className="text-sm md:text-base text-gray-600">/{formatPlanDuration(plan.durationDays, plan.billingCycle)}</span>
+                <h3 className="mb-1 text-base font-bold capitalize tracking-tight text-slate-900 md:text-xl">{plan.name}</h3>
+                <div className="mb-3 flex items-end gap-1.5 md:mb-4">
+                  <span className="text-3xl font-bold leading-none text-slate-900 md:text-4xl">₹{displayPrice}</span>
+                  <span className="pb-0.5 text-[11px] text-slate-600 md:text-base">/{formatPlanDuration(plan.durationDays, plan.billingCycle)}</span>
                 </div>
+                {showInlineAddons ? (
+                  <p className="mb-3 text-[10px] font-medium text-slate-500 md:text-xs">
+                    Base: ₹{formatInr(Number(plan.price))} + Add-ons: ₹{formatInr(addonSum)}
+                  </p>
+                ) : null}
 
-                <ul className="space-y-2 md:space-y-3 mb-4 md:mb-6">
+                <ul className="mb-4 space-y-1.5 p-0 md:mb-6 md:space-y-3">
                   {plan.features.map((feature, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 md:w-5 md:h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-xs md:text-sm text-gray-700">{feature}</span>
+                    <li key={index} className="flex items-start gap-1.5 px-0 py-0.5 md:gap-2 md:py-0">
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500 md:h-5 md:w-5" />
+                      <span className="text-[10px] font-semibold leading-snug text-slate-700 md:text-sm md:font-normal">{feature}</span>
                     </li>
                   ))}
                 </ul>
 
+                {showInlineAddons ? (
+                  <div
+                    className="mb-4 p-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Optional add-ons</p>
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                        {addonPricesLoading && (
+                          <span className="inline-flex items-center gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Loading…
+                          </span>
+                        )}
+                        {!addonHydrated && !addonPricesLoading && (
+                          <span className="inline-flex items-center gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Syncing…
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <AddonToggleRow
+                        icon={CreditCard}
+                        title="Payment gateway integration"
+                        hint="We help connect a payment gateway to your store."
+                        priceInr={addonPrices?.payment_gateway_integration_inr ?? 0}
+                        checked={addonPayGateway}
+                        onToggle={() => setAddonPayGateway((v) => !v)}
+                        disabled={addonPricesLoading || !addonHydrated}
+                      />
+                      <AddonToggleRow
+                        icon={QrCode}
+                        title="QR code"
+                        hint="QR-based payment display for your storefront."
+                        priceInr={addonPrices?.qr_code_inr ?? 0}
+                        checked={addonQr}
+                        onToggle={() => setAddonQr((v) => !v)}
+                        disabled={addonPricesLoading || !addonHydrated}
+                      />
+                      <AddonToggleRow
+                        icon={Building2}
+                        title="Payment gateway — company help"
+                        hint="Our team handles gateway setup on your behalf."
+                        priceInr={addonPrices?.payment_gateway_help_inr ?? 0}
+                        checked={addonPgHelp}
+                        onToggle={() => setAddonPgHelp((v) => !v)}
+                        disabled={addonPricesLoading || !addonHydrated}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
                 <button
                   type="button"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
                     if (planChangeLockedByPaidPeriod && !isCurrentPlan) return;
-                    if (checkoutOpenHere) {
-                      closeChoosePlanModal();
-                      return;
+                    setCheckoutPlan(plan);
+                    setSubscriptionNotice(null);
+                    setActivationError(null);
+                    setSuccessMessage(null);
+                    if (Number(plan.price) > 0) {
+                      await proceedPaidPlanCheckout(plan);
+                    } else {
+                      await handleActivatePlan(plan, checkoutAddonPayload());
                     }
-                    openChoosePlanModal(plan);
                   }}
                   disabled={isCurrentPlan || isActivating || !plan.isActive || (planChangeLockedByPaidPeriod && !isCurrentPlan)}
-                  className={`w-full py-2.5 md:py-3 rounded-lg transition font-semibold text-sm md:text-base flex items-center justify-center gap-2 ${
+                  className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[15px] font-semibold transition md:rounded-lg md:py-3 md:text-base ${
                     isCurrentPlan
                       ? 'bg-gray-200 text-gray-700 cursor-not-allowed'
                       : !plan.isActive
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : planChangeLockedByPaidPeriod && !isCurrentPlan
                           ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                          : checkoutOpenHere
-                            ? 'border-2 border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
-                            : 'bg-primary text-white hover:bg-primary-700'
+                          : 'bg-primary text-white hover:bg-primary-700'
                   }`}
                 >
                   {isActivating ? (
@@ -897,201 +883,10 @@ export default function SubscriptionPage() {
                     'Unavailable'
                   ) : planChangeLockedByPaidPeriod ? (
                     'Locked until renewal'
-                  ) : checkoutOpenHere ? (
-                    'Hide checkout'
                   ) : (
-                    'Choose Plan'
+                    `Choose Plan • ₹${displayPrice}`
                   )}
                 </button>
-
-                {checkoutOpenHere && checkoutPlan && (
-                  <div
-                    role="region"
-                    aria-label={`Checkout for ${checkoutPlan.name}`}
-                    className="mt-4 cursor-default rounded-xl border border-slate-200 bg-slate-50/80 text-left shadow-inner"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-primary px-4 pb-6 pt-4 text-white">
-                      <div className="pointer-events-none absolute -right-8 top-0 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
-                      <div className="relative flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">Checkout</p>
-                          <h2 className="mt-0.5 text-xl font-bold capitalize tracking-tight">{checkoutPlan.name}</h2>
-                          <p className="mt-1 text-xs leading-snug text-white/85">
-                            Review your plan, optional add-ons from admin pricing, and total before confirming.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            closeChoosePlanModal();
-                          }}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white ring-1 ring-white/25 transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                          aria-label="Close checkout"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <div className="relative mt-3 flex flex-wrap items-end gap-2">
-                        <span className="text-3xl font-bold tracking-tight">₹{formatInr(Number(checkoutPlan.price))}</span>
-                        <span className="pb-0.5 text-xs text-white/85">
-                          base / {formatPlanDuration(checkoutPlan.durationDays, checkoutPlan.billingCycle)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-200 bg-white px-3 py-3 sm:px-4">
-                      {checkoutPlan.description ? (
-                        <p className="text-xs leading-relaxed text-slate-600">{checkoutPlan.description}</p>
-                      ) : null}
-
-                      <div className="mt-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Plan features</p>
-                        <ul className="mt-1.5 grid max-h-36 grid-cols-1 gap-1.5 overflow-y-auto sm:max-h-40">
-                          {checkoutPlan.features.map((feature, index) => (
-                            <li
-                              key={index}
-                              className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-700"
-                            >
-                              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                              <span>{feature}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Optional add-ons</p>
-                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                            {addonPricesLoading && (
-                              <span className="inline-flex items-center gap-1">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Loading prices…
-                              </span>
-                            )}
-                            {!addonHydrated && !addonPricesLoading && (
-                              <span className="inline-flex items-center gap-1">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Syncing…
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <AddonToggleRow
-                            icon={CreditCard}
-                            title="Payment gateway integration"
-                            hint="We help connect a payment gateway to your store."
-                            priceInr={addonPrices?.payment_gateway_integration_inr ?? 0}
-                            checked={addonPayGateway}
-                            onToggle={() => setAddonPayGateway((v) => !v)}
-                            disabled={addonPricesLoading || !addonHydrated}
-                          />
-                          <AddonToggleRow
-                            icon={QrCode}
-                            title="QR code"
-                            hint="QR-based payment display for your storefront."
-                            priceInr={addonPrices?.qr_code_inr ?? 0}
-                            checked={addonQr}
-                            onToggle={() => setAddonQr((v) => !v)}
-                            disabled={addonPricesLoading || !addonHydrated}
-                          />
-                          <AddonToggleRow
-                            icon={Building2}
-                            title="Payment gateway — company help"
-                            hint="Our team handles gateway setup on your behalf."
-                            priceInr={addonPrices?.payment_gateway_help_inr ?? 0}
-                            checked={addonPgHelp}
-                            onToggle={() => setAddonPgHelp((v) => !v)}
-                            disabled={addonPricesLoading || !addonHydrated}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
-                      <div className="space-y-1.5 text-xs sm:text-sm">
-                        <div className="flex justify-between text-slate-600">
-                          <span>Plan</span>
-                          <span className="font-medium text-slate-900">₹{formatInr(checkoutBase)}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-600">
-                          <span>Add-ons (selected)</span>
-                          <span className="font-medium text-slate-900">₹{formatInr(addonSum)}</span>
-                        </div>
-                        <div className="flex justify-between border-t border-slate-200/80 pt-1.5 text-sm font-bold text-slate-900 sm:text-base">
-                          <span>Estimated total</span>
-                          <span>₹{formatInr(checkoutTotal)}</span>
-                        </div>
-                      </div>
-                      <p className="mt-2 text-[10px] leading-snug text-slate-500">
-                        {Number(checkoutPlan.price) > 0
-                          ? 'Final amount will be confirmed at payment. Your subscription does not change until checkout succeeds.'
-                          : 'Free plan: add-ons are shown for future billing; only the plan is activated today.'}
-                      </p>
-                      <div className="relative z-10 mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            closeChoosePlanModal();
-                          }}
-                          className="w-full rounded-lg border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto sm:px-4 sm:text-sm"
-                        >
-                          Cancel
-                        </button>
-                        {SUBSCRIPTION_MOCK_PAYMENT_UI && Number(checkoutPlan.price) > 0 ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void proceedMockPaidPlanCheckout();
-                            }}
-                            disabled={activatingPlanId === checkoutPlan.id || !storeId}
-                            className="relative z-[1] w-full rounded-lg border border-amber-300 bg-amber-50 py-2.5 text-xs font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:opacity-60 sm:w-auto sm:px-4 sm:text-sm"
-                            title="Skips Razorpay; same DB activation when the API allows mock (local Laravel or SUBSCRIPTION_MOCK_PAYMENT)."
-                          >
-                            {activatingPlanId === checkoutPlan.id ? (
-                              <span className="inline-flex items-center justify-center gap-2">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Working…
-                              </span>
-                            ) : (
-                              'Mock payment (test)'
-                            )}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void handleConfirmCheckout();
-                          }}
-                          disabled={activatingPlanId === checkoutPlan.id || !storeId}
-                          className="relative z-[1] w-full rounded-lg bg-gradient-to-r from-indigo-600 to-primary py-2.5 text-xs font-semibold text-white shadow-md transition hover:opacity-95 disabled:opacity-60 sm:w-auto sm:px-5 sm:text-sm"
-                        >
-                          {activatingPlanId === checkoutPlan.id ? (
-                            <span className="inline-flex items-center justify-center gap-2">
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              Working…
-                            </span>
-                          ) : Number(checkoutPlan.price) > 0 ? (
-                            'Continue to payment'
-                          ) : (
-                            'Confirm & activate'
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           );
@@ -1223,7 +1018,17 @@ export default function SubscriptionPage() {
                     !planChangeLockedByPaidPeriod && (
                     <button
                       type="button"
-                      onClick={() => openChoosePlanModal(selectedPlan)}
+                      onClick={async () => {
+                        setCheckoutPlan(selectedPlan);
+                        setSubscriptionNotice(null);
+                        setActivationError(null);
+                        setSuccessMessage(null);
+                        if (Number(selectedPlan.price) > 0) {
+                          await proceedPaidPlanCheckout(selectedPlan);
+                        } else {
+                          await handleActivatePlan(selectedPlan, checkoutAddonPayload());
+                        }
+                      }}
                       className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-primary-700 sm:w-auto sm:px-6"
                     >
                       Choose this plan

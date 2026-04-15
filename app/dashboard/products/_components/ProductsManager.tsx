@@ -673,7 +673,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                       <div className="relative">
                         {imagePreview ? (
                           <>
-                            <img src={imagePreview} alt="Preview" className="h-20 w-20 rounded-[20px] border border-white object-cover sm:h-24 sm:w-24" />
+                            <img src={imagePreview} alt="Preview" className="h-20 w-20 rounded-[14px] border border-slate-200 bg-white object-contain p-1 sm:h-24 sm:w-24" />
                             <button
                               type="button"
                               onClick={handleRemoveImage}
@@ -893,39 +893,52 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       {showAddServiceForm && (
         <div className="add-product-form-shell rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <form onSubmit={handleAddService} className="add-product-form space-y-5">
-            <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)]">
-              <div className="space-y-2">
-                <label className="block text-[13px] font-semibold text-slate-700" htmlFor="service-image-input">
-                  Service cover
-                </label>
-                <label
-                  htmlFor="service-image-input"
-                  className="relative flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-[24px] border border-dashed border-primary/30 bg-primary/5 px-4 py-4 text-center transition hover:border-primary hover:bg-primary/10"
-                >
-                  <div className="relative">
-                    {serviceImagePreview ? (
-                      <>
-                        <img src={serviceImagePreview} alt="Preview" className="h-24 w-24 rounded-[22px] border border-white object-cover shadow-md sm:h-28 sm:w-28" />
-                        <button
-                          type="button"
-                          onClick={handleRemoveServiceImage}
-                          className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white text-slate-600 shadow-md transition hover:bg-red-500 hover:text-white"
-                          aria-label="Remove image"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-primary shadow-sm sm:h-16 sm:w-16">
-                        <ImageIcon className="h-6 w-6 sm:h-7 sm:w-7" />
+            <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="md:justify-self-start">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                  <div className="space-y-1 text-left">
+                    <label className="block text-left text-[13px] font-semibold text-slate-700" htmlFor="service-image-input">
+                      Service cover
+                    </label>
+                    <label
+                      htmlFor="service-image-input"
+                      className={`relative inline-flex min-h-[128px] w-[112px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-slate-300 bg-white text-center shadow-[0_6px_18px_rgba(15,23,42,0.12)] ${serviceImagePreview ? 'px-2 py-2' : 'px-2 py-2'}`}
+                    >
+                      <div className="relative">
+                        {serviceImagePreview ? (
+                          <>
+                            <img src={serviceImagePreview} alt="Preview" className="h-20 w-20 rounded-[14px] border border-slate-200 bg-white object-contain p-1 sm:h-24 sm:w-24" />
+                            <button
+                              type="button"
+                              onClick={handleRemoveServiceImage}
+                              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white text-slate-600 transition hover:bg-red-500 hover:text-white"
+                              aria-label="Remove image"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary sm:h-14 sm:w-14">
+                            <ImageIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </label>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold text-slate-900">Upload service image</p>
-                    <p className="text-[11px] leading-4 text-slate-500">Square JPG or PNG under 3.5MB.</p>
+
+                  <div style={{ marginTop: '50px' }}>
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Service name *</label>
+                    <input
+                      type="text"
+                      value={serviceFormState.title}
+                      onChange={(event) => setServiceFormState({ ...serviceFormState, title: event.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                      placeholder="e.g., Bridal Makeup Session"
+                      required
+                    />
                   </div>
-                </label>
+                </div>
+
                 <input
                   id="service-image-input"
                   ref={serviceImageInputRef}
@@ -939,17 +952,6 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
 
               <div className="space-y-4">
                 <div className="space-y-4">
-                  <div>
-                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Service name *</label>
-                    <input
-                      type="text"
-                      value={serviceFormState.title}
-                      onChange={(event) => setServiceFormState({ ...serviceFormState, title: event.target.value })}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                      placeholder="e.g., Bridal Makeup Session"
-                      required
-                    />
-                  </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
