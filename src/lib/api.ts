@@ -85,6 +85,13 @@ export type Category = {
   banner_pattern?: 'waves' | 'diagonal' | 'circles' | null;
 };
 
+export type HeroBannerSlideDto = {
+  key: string;
+  image: string;
+  title: string;
+  subtitle?: string | null;
+};
+
 export type CreateCategoryPayload = {
   name: string;
   slug: string;
@@ -190,6 +197,8 @@ export type CreateStorePayload = {
   show_phone?: boolean;
   description?: string;
   location?: string;
+  state?: string;
+  district?: string;
   facebook_url?: string | null;
   instagram_url?: string | null;
   youtube_url?: string | null;
@@ -1037,6 +1046,19 @@ export const getCategories = async (options?: { auth?: boolean }): Promise<Categ
     requiresAuth: options?.auth ?? false,
   });
   return response.data;
+};
+
+export const getHeroBannerSlides = async (): Promise<HeroBannerSlideDto[]> => {
+  const response = await apiRequest<HeroBannerSlideDto[]>('/categories/hero-banners');
+  const rows = Array.isArray(response.data) ? response.data : [];
+  return rows
+    .map((row) => ({
+      key: typeof row?.key === 'string' && row.key.trim() ? row.key.trim() : `slide-${Math.random().toString(36).slice(2)}`,
+      image: typeof row?.image === 'string' ? row.image.trim() : '',
+      title: typeof row?.title === 'string' ? row.title.trim() : '',
+      subtitle: typeof row?.subtitle === 'string' ? row.subtitle.trim() : undefined,
+    }))
+    .filter((row) => row.image !== '');
 };
 
 export const createCategory = async (payload: CreateCategoryPayload): Promise<Category> => {

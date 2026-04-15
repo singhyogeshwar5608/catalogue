@@ -86,6 +86,10 @@ type StoreViewProps = {
   reviewsError?: string | null;
   onLoadMoreReviews?: () => void;
   onSubmitStoreReview?: (payload: { rating: number; comment: string }) => Promise<void>;
+  onToggleFollow?: () => Promise<void> | void;
+  onToggleLike?: () => Promise<void> | void;
+  followBusy?: boolean;
+  likeBusy?: boolean;
   isEditMode?: boolean;
   onEnterEdit?: () => void;
   onInlineLogoEdit?: () => void;
@@ -488,9 +492,27 @@ type HeroSectionProps = {
   products: Product[];
   services: Service[];
   isProPlan: boolean;
+  canEngage: boolean;
+  onToggleFollow?: () => Promise<void> | void;
+  onToggleLike?: () => Promise<void> | void;
+  followBusy?: boolean;
+  likeBusy?: boolean;
 };
 
-const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan }: HeroSectionProps) => {
+const HeroSection = ({
+  store,
+  heroProduct,
+  theme,
+  whatsappLink,
+  products,
+  services,
+  isProPlan,
+  canEngage,
+  onToggleFollow,
+  onToggleLike,
+  followBusy = false,
+  likeBusy = false,
+}: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
 
@@ -609,26 +631,36 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                 <div className="mt-2.5 grid w-full grid-cols-3 gap-2 sm:hidden">
                   <button
                     type="button"
+                    onClick={() => {
+                      if (!canEngage || followBusy || !onToggleFollow) return;
+                      void onToggleFollow();
+                    }}
+                    disabled={!canEngage || followBusy || !onToggleFollow}
                     className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-blue-800"
                   >
                     <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-blue-100">
                       <UserPlus className="h-2.5 w-2.5 shrink-0 text-blue-200" />
-                      Followers
+                      {store.viewerFollowing ? 'Following' : 'Follow'}
                     </span>
                     <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
-                      {(store.followersCount ?? 0).toLocaleString('en-IN')}
+                      {followBusy ? '...' : (store.followersCount ?? 0).toLocaleString('en-IN')}
                     </p>
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      if (!canEngage || likeBusy || !onToggleLike) return;
+                      void onToggleLike();
+                    }}
+                    disabled={!canEngage || likeBusy || !onToggleLike}
                     className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-pink-800"
                   >
                     <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-rose-100">
                       <Heart className="h-2.5 w-2.5 shrink-0 text-rose-200" />
-                      Likes
+                      {store.viewerLiked ? 'Liked' : 'Like'}
                     </span>
                     <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
-                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                      {likeBusy ? '...' : (store.likesCount ?? 0).toLocaleString('en-IN')}
                     </p>
                   </button>
                   <button
@@ -669,6 +701,51 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                   <span className="break-words">{store.whatsapp}</span>
                 </div>
               )}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canEngage || followBusy || !onToggleFollow) return;
+                  void onToggleFollow();
+                }}
+                disabled={!canEngage || followBusy || !onToggleFollow}
+                className="inline-flex min-h-[40px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-blue-100">
+                  <UserPlus className="h-3 w-3 shrink-0 text-blue-200" />
+                  {store.viewerFollowing ? 'Following' : 'Follow'}
+                </span>
+                <p className="ml-2 shrink-0 text-[11px] font-bold tabular-nums text-white">
+                  {followBusy ? '...' : (store.followersCount ?? 0).toLocaleString('en-IN')}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canEngage || likeBusy || !onToggleLike) return;
+                  void onToggleLike();
+                }}
+                disabled={!canEngage || likeBusy || !onToggleLike}
+                className="inline-flex min-h-[40px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-pink-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-rose-100">
+                  <Heart className="h-3 w-3 shrink-0 text-rose-200" />
+                  {store.viewerLiked ? 'Liked' : 'Like'}
+                </span>
+                <p className="ml-2 shrink-0 text-[11px] font-bold tabular-nums text-white">
+                  {likeBusy ? '...' : (store.likesCount ?? 0).toLocaleString('en-IN')}
+                </p>
+              </button>
+              <div className="inline-flex min-h-[40px] w-full items-center justify-between rounded-2xl border border-emerald-400/35 bg-emerald-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)]">
+                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-emerald-100">
+                  <Eye className="h-3 w-3 shrink-0 text-emerald-200" />
+                  Seen
+                </span>
+                <p className="ml-2 shrink-0 text-[11px] font-bold tabular-nums text-white">
+                  {(store.seenCount ?? 0).toLocaleString('en-IN')}
+                </p>
+              </div>
             </div>
             <div className="mt-6 hidden sm:flex justify-center">
               <a
@@ -1092,7 +1169,7 @@ function BuyNowProductModal({
             </p>
             <p className="inline-flex items-center gap-1">
               <Star className="h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400" aria-hidden />
-              <span className="font-medium text-slate-800">{product.rating.toFixed(1)}</span>
+              <span className="font-medium text-slate-800">{Number(product.rating ?? 0).toFixed(1)}</span>
             </p>
             <p>
               Reviews: <span className="font-semibold text-slate-800">{product.totalReviews}</span>
@@ -1775,16 +1852,17 @@ function StoreRatingSummaryCard({
   /** Optional line under the count (e.g. device-only guest reviews). */
   countCaption?: string;
 }) {
+  const safeAggregateRating = Number.isFinite(Number(aggregateRating)) ? Number(aggregateRating) : 0;
   return (
     <div className="rounded-2xl border border-slate-100 bg-slate-50/90 p-3 shadow-inner max-sm:p-3 sm:p-5">
       <div className="flex flex-col gap-4 max-sm:gap-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
         <div className="flex flex-col items-start sm:min-w-[9rem]">
           <p className="text-3xl font-bold tabular-nums text-slate-900 max-sm:text-[1.75rem] sm:text-5xl">
-            {aggregateRating.toFixed(1)}
+            {safeAggregateRating.toFixed(1)}
           </p>
-          <RatingStars rating={aggregateRating} size="sm" className="mt-0.5 max-sm:scale-90 max-sm:origin-left sm:mt-1" />
+          <RatingStars rating={safeAggregateRating} size="sm" className="mt-0.5 max-sm:scale-90 max-sm:origin-left sm:mt-1" />
           <p className="mt-1 text-xs font-medium text-slate-600 max-sm:mt-0.5 max-sm:text-[0.65rem] sm:mt-1.5 sm:text-sm">
-            {aggregateRating.toFixed(1)} out of 5
+            {safeAggregateRating.toFixed(1)} out of 5
           </p>
           <p className="mt-0.5 text-[0.65rem] text-slate-400 max-sm:text-[0.6rem] sm:text-xs">
             Based on {totalRecordedReviews.toLocaleString()} review{totalRecordedReviews === 1 ? '' : 's'}
@@ -1921,6 +1999,10 @@ export default function StoreView({
   reviewsError,
   onLoadMoreReviews,
   onSubmitStoreReview,
+  onToggleFollow,
+  onToggleLike,
+  followBusy = false,
+  likeBusy = false,
 }: StoreViewProps) {
   const { isLoggedIn, user } = useAuth();
   const planIdentifier = store.activeSubscription?.plan?.slug?.toLowerCase()
@@ -1930,7 +2012,11 @@ export default function StoreView({
   const INITIAL_VISIBLE_COUNT = 8;
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
-  const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
+  const whatsappLink = useMemo(() => {
+    const rawWhatsapp = typeof store.whatsapp === 'string' ? store.whatsapp : '';
+    const digits = rawWhatsapp.replace(/[^0-9]/g, '');
+    return `https://wa.me/${digits}`;
+  }, [store.whatsapp]);
   /** Prefer store owner id — slug-only match can wrongly skip visit tracking if slugs collide or auth slug is stale. */
   const viewerOwnsStore = Boolean(
     (user?.id && store.userId && user.id === store.userId) ||
@@ -1938,6 +2024,7 @@ export default function StoreView({
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())
   );
+  const canEngage = !viewerOwnsStore && Boolean(store.id);
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
   const guestReviewsStorageKey = useMemo(() => `storeGuestReviews:${store.id}`, [store.id]);
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([]);
@@ -1954,7 +2041,11 @@ export default function StoreView({
   } · Signature picks in ${marqueeCategory}`;
   const approvedReviews = useMemo(() => reviews.filter((review) => review.isApproved !== false), [reviews]);
   const totalRecordedReviews = Math.max(reviewSummary?.totalReviews ?? 0, store.totalReviews ?? 0, approvedReviews.length);
-  const aggregateRating = reviewSummary?.rating ?? store.rating;
+  const aggregateRating = useMemo(() => {
+    const raw = reviewSummary?.rating ?? store.rating;
+    const numeric = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }, [reviewSummary?.rating, store.rating]);
   const reviewsMergedForStats = useMemo(
     () => [...guestReviews, ...approvedReviews],
     [guestReviews, approvedReviews]
@@ -1967,7 +2058,8 @@ export default function StoreView({
   const cardDisplayRating = useMemo(() => {
     if (reviewsMergedForStats.length === 0) return aggregateRating;
     const sum = reviewsMergedForStats.reduce((s, r) => s + (Number(r.rating) || 0), 0);
-    return sum / reviewsMergedForStats.length;
+    const avg = sum / reviewsMergedForStats.length;
+    return Number.isFinite(avg) ? avg : aggregateRating;
   }, [reviewsMergedForStats, aggregateRating]);
   const cardDisplayCount = reviewsMergedForStats.length > 0 ? reviewsMergedForStats.length : totalRecordedReviews;
   const ratingBreakdown = useMemo(
@@ -2245,6 +2337,11 @@ export default function StoreView({
           services={services}
           whatsappLink={whatsappLink}
           isProPlan={isProPlan}
+          canEngage={canEngage}
+          onToggleFollow={onToggleFollow}
+          onToggleLike={onToggleLike}
+          followBusy={followBusy}
+          likeBusy={likeBusy}
         />
 
         <ProductGrid
@@ -2270,13 +2367,26 @@ export default function StoreView({
                 <div className="border-b border-slate-100 p-3.5 max-sm:p-3 sm:p-8 sm:pb-6">
                   <div className="flex gap-2.5 max-sm:gap-2 sm:gap-4">
                     <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm max-sm:h-10 max-sm:w-10 sm:h-14 sm:w-14 sm:rounded-xl">
-                      <Image
-                        src={products[0]?.image ?? store.logo}
-                        alt={products[0] ? `${products[0].name} preview` : `${store.name} logo`}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width:640px) 40px, 56px"
-                      />
+                      {(() => {
+                        const candidate = products[0]?.image ?? store.logo ?? '';
+                        const previewSrc = typeof candidate === 'string' ? candidate.trim() : '';
+                        if (!previewSrc) {
+                          return (
+                            <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+                              <Layers className="h-4 w-4 sm:h-5 sm:w-5" />
+                            </div>
+                          );
+                        }
+                        return (
+                          <Image
+                            src={previewSrc}
+                            alt={products[0] ? `${products[0].name} preview` : `${store.name} logo`}
+                            fill
+                            className="object-cover"
+                            sizes="(max-width:640px) 40px, 56px"
+                          />
+                        );
+                      })()}
                     </div>
                     <div className="min-w-0 flex-1 space-y-0.5 max-sm:space-y-0 sm:space-y-1">
                       <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 max-sm:leading-tight sm:text-[11px] sm:tracking-[0.2em]">
