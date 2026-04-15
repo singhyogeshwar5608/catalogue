@@ -1367,7 +1367,7 @@ export const getMyStoreNotifications = async (params?: { limit?: number }) => {
   const qs = new URLSearchParams();
   if (typeof params?.limit === 'number') qs.set('limit', String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
-  const response = await apiRequest<StoreOwnerNotificationsPayload>(`/store-owner/notifications${suffix}`, {
+  const response = await apiRequest<StoreOwnerNotificationsPayload>(`/my/store-notifications${suffix}`, {
     method: 'GET',
     requiresAuth: true,
   });
@@ -1376,9 +1376,9 @@ export const getMyStoreNotifications = async (params?: { limit?: number }) => {
 
 export const markStoreNotificationRead = async (notificationId: number | string) => {
   const response = await apiRequest<{ id: number; read_at: string | null }>(
-    `/store-owner/notifications/${encodeURIComponent(notificationId)}/read`,
+    `/my/store-notifications/${encodeURIComponent(notificationId)}/read`,
     {
-      method: 'PATCH',
+      method: 'POST',
       requiresAuth: true,
     }
   );
@@ -1387,7 +1387,7 @@ export const markStoreNotificationRead = async (notificationId: number | string)
 
 export const deleteStoreNotification = async (notificationId: number | string) => {
   const response = await apiRequest<{ id: number }>(
-    `/store-owner/notifications/${encodeURIComponent(notificationId)}`,
+    `/my/store-notifications/${encodeURIComponent(notificationId)}`,
     {
       method: 'DELETE',
       requiresAuth: true,
@@ -1635,16 +1635,42 @@ export const cancelBoost = async (boostId: number | string): Promise<StoreBoost>
   return normalizeStoreBoost(response.data);
 };
 
+type LaravelProductPaginator = {
+  current_page?: number;
+  data?: BackendProduct[];
+  last_page?: number;
+  per_page?: number;
+  total?: number;
+};
+
 export const getProductsByStore = async (storeId: number | string) => {
-  const response = await apiRequest<BackendProduct[]>(`/products/${storeId}`);
-  const data = response.data as unknown;
-  const productRows = Array.isArray(data)
-    ? data
-    : Array.isArray((data as { items?: unknown[] } | null)?.items)
-      ? ((data as { items: unknown[] }).items as BackendProduct[])
-      : Array.isArray((data as { products?: unknown[] } | null)?.products)
-        ? ((data as { products: unknown[] }).products as BackendProduct[])
-        : [];
+  const perPage = 100;
+  let page = 1;
+  let lastPage = 1;
+  const productRows: BackendProduct[] = [];
+
+  do {
+    const response = await apiRequest<BackendProduct[] | LaravelProductPaginator>(`/products/${storeId}?page=${page}&per_page=${perPage}`);
+    const data = response.data as unknown;
+    const pageRows = Array.isArray(data)
+      ? data
+      : Array.isArray((data as { data?: unknown[] } | null)?.data)
+        ? ((data as { data: unknown[] }).data as BackendProduct[])
+        : Array.isArray((data as { items?: unknown[] } | null)?.items)
+          ? ((data as { items: unknown[] }).items as BackendProduct[])
+          : Array.isArray((data as { products?: unknown[] } | null)?.products)
+            ? ((data as { products: unknown[] }).products as BackendProduct[])
+            : [];
+
+    productRows.push(...pageRows);
+    if (data && typeof data === 'object' && typeof (data as { last_page?: unknown }).last_page === 'number') {
+      lastPage = Math.max(1, Number((data as { last_page?: number }).last_page ?? 1));
+      page += 1;
+    } else {
+      break;
+    }
+  } while (page <= lastPage);
+
   return productRows.map((product) =>
     normalizeProduct(product, {
       id: Number(storeId),
