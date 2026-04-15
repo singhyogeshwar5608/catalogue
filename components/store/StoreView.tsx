@@ -1851,7 +1851,11 @@ export default function StoreView({
   const INITIAL_VISIBLE_COUNT = 8;
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
-  const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
+  const whatsappLink = useMemo(() => {
+    const rawWhatsapp = typeof store.whatsapp === 'string' ? store.whatsapp : '';
+    const digits = rawWhatsapp.replace(/[^0-9]/g, '');
+    return `https://wa.me/${digits}`;
+  }, [store.whatsapp]);
   /** Prefer store owner id — slug-only match can wrongly skip visit tracking if slugs collide or auth slug is stale. */
   const viewerOwnsStore = Boolean(
     (user?.id && store.userId && user.id === store.userId) ||
@@ -1873,7 +1877,11 @@ export default function StoreView({
   } · Signature picks in ${marqueeCategory}`;
   const approvedReviews = useMemo(() => reviews.filter((review) => review.isApproved !== false), [reviews]);
   const totalRecordedReviews = Math.max(reviewSummary?.totalReviews ?? 0, store.totalReviews ?? 0, approvedReviews.length);
-  const aggregateRating = reviewSummary?.rating ?? store.rating;
+  const aggregateRating = useMemo(() => {
+    const raw = reviewSummary?.rating ?? store.rating;
+    const numeric = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }, [reviewSummary?.rating, store.rating]);
   const [reviewForm, setReviewForm] = useState<{ rating: number; comment: string }>({ rating: 0, comment: '' });
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);

@@ -10,14 +10,39 @@ use App\Support\ProductImageStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 class ProductController extends Controller
 {
+    public function publicProductImage(Product $product)
+    {
+        $rawImage = $product->getRawOriginal('image');
+        $relative = ProductImageStorage::relativeManagedPath(is_string($rawImage) ? $rawImage : null);
+        if (! is_string($relative) || $relative === '') {
+            return response()->json(['message' => 'Product image not found.'], 404);
+        }
+
+        if (! Storage::disk(ProductImageStorage::DISK)->exists($relative)) {
+            return response()->json(['message' => 'Product image file missing.'], 404);
+        }
+
+        $absolute = Storage::disk(ProductImageStorage::DISK)->path($relative);
+        $mime = Storage::disk(ProductImageStorage::DISK)->mimeType($relative) ?: 'application/octet-stream';
+
+        return response()->file($absolute, [
+            'Content-Type' => $mime,
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
+
     public function addProduct(Request $request)
     {
         $user = $request->user();
-        $store = $user->stores()->first();
+        $requestedStoreId = $request->input('store_id');
+        $store = $user->stores()
+            ->when(is_numeric($requestedStoreId), fn ($query) => $query->whereKey((int) $requestedStoreId))
+            ->first();
 
         if (! $store) {
             return $this->errorResponse('You must create a store before adding products.', 409);
@@ -31,6 +56,7 @@ class ProductController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
+            'store_id' => 'nullable|integer|exists:stores,id',
             'title' => 'required|string|max:255',
             'price' => 'required|numeric|min:0',
             'original_price' => 'nullable|numeric|min:0',
@@ -238,11 +264,13 @@ class ProductController extends Controller
         $perPage = max(1, min(100, $perPage));
 
         $version = 0;
-        if (Schema::hasColumn('stores', 'product_list_cache_version')) {
+        $storeCacheRow = Store::query()->select(['id', 'updated_at'])->whereKey($storeId)->first();
+        if (Schema::hasColumn('stores', 'product_list_cache_version') && $storeCacheRow) {
             $version = (int) (Store::query()->whereKey($storeId)->value('product_list_cache_version') ?? 0);
         }
+        $updatedToken = $storeCacheRow?->updated_at?->timestamp ?? 0;
 
-        $cacheKey = "products:store:{$storeId}:v{$version}:page:{$page}:per:{$perPage}";
+        $cacheKey = "products:store:{$storeId}:v{$version}:u{$updatedToken}:page:{$page}:per:{$perPage}";
 
         $paginator = Cache::remember($cacheKey, 60, function () use ($storeId, $page, $perPage) {
             $p = Product::query()
@@ -289,6 +317,10 @@ class ProductController extends Controller
 
     private function bumpStoreProductListCache(int $storeId): void
     {
+        // Always touch store updated_at so cache keys invalidate even on environments
+        // where `product_list_cache_version` migration is not deployed yet.
+        Store::query()->whereKey($storeId)->update(['updated_at' => now()]);
+
         if (! Schema::hasColumn('stores', 'product_list_cache_version')) {
             return;
         }

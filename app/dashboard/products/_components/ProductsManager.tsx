@@ -373,6 +373,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     try {
       const unitQuantityValue = Number(formState.unitQuantity);
       const payload = {
+        store_id: storeId ?? undefined,
         title: formState.name.trim(),
         price: Number(formState.price),
         original_price: formState.originalPrice ? Number(formState.originalPrice) : undefined,

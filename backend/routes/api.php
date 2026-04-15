@@ -151,6 +151,7 @@ Route::middleware('throttle:120,1')->group(function () {
 });
 Route::get('products/{storeId}', [ProductController::class, 'getProductsByStore']);
 Route::get('product/{id}', [ProductController::class, 'getProductById']);
+Route::get('product/{product}/image', [ProductController::class, 'publicProductImage']);
 
 Route::middleware('throttle:60,1')->group(function () {
     Route::post('product/{product}/checkout/razorpay-order', [ProductCheckoutController::class, 'createRazorpayOrder']);

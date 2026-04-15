@@ -49,8 +49,21 @@ export function absolutizeStorageUrl(url: string): string {
   if (!t) return t;
   if (t.startsWith('data:')) return t;
   if (t.startsWith('http://') || t.startsWith('https://')) return t;
+  // DB often stores short relative product paths: "products/uuid.jpg"
+  // Convert them to Laravel public storage path.
+  if (t.startsWith('products/')) {
+    return `/storage/${t}`;
+  }
 
   if (t.startsWith('/storage/')) {
+    if (typeof window !== 'undefined') {
+      const h = window.location.hostname;
+      const isLocalHost = h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+      if (isLocalHost) {
+        // In local dev, keep same-origin and let Next rewrite proxy to Laravel.
+        return t;
+      }
+    }
     const base = API_BASE_URL.replace(/\/+$/, '');
     try {
       const origin = new URL(base.includes('://') ? base : `https://${base}`).origin;

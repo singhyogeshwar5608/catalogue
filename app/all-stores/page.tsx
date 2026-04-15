@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { MapPin, Search, X } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { MapPin } from 'lucide-react';
 import VerifiedSellerCard from '@/components/VerifiedSellerCard';
 import StoreCard from '@/components/StoreCard';
 import { getAllStores } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
 import { useLocationContext } from '@/src/context/LocationContext';
+import { useSearch } from '@/src/context/SearchContext';
 import { extractCityTokens } from '@/src/lib/location';
 import { prioritizeCurrentUserStore } from '@/src/lib/prioritize-user-store';
 import type { Store } from '@/types';
@@ -19,13 +21,14 @@ export default function AllStoresPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
   const [nearbyStores, setNearbyStores] = useState<Store[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [fallbackQueryUsed, setFallbackQueryUsed] = useState<string | null>(null);
+  const searchParams = useSearchParams();
   const { location, isLoading: locationDetecting } = useLocationContext();
   const { user } = useAuth();
+  const { searchQuery, setSearchQuery } = useSearch();
 
   useEffect(() => {
     const loadStores = async () => {
@@ -42,6 +45,20 @@ export default function AllStoresPage() {
 
     loadStores();
   }, []);
+
+  useEffect(() => {
+    const q = searchParams.get('q')?.trim() ?? '';
+    if (!q) return;
+    if (q !== searchQuery) {
+      setSearchQuery(q);
+    }
+  }, [searchParams, searchQuery, setSearchQuery]);
+
+  useEffect(() => {
+    if (searchQuery.trim() !== '' && activeCategory !== 'all') {
+      setActiveCategory('all');
+    }
+  }, [activeCategory, searchQuery]);
 
   useEffect(() => {
     let isMounted = true;
@@ -136,6 +153,23 @@ export default function AllStoresPage() {
     return [{ id: 'all', label: 'All stores' }, ...labels.map((label) => ({ id: createSlug(label), label }))];
   }, [orderedStores]);
 
+  const storeMatchesQuery = (store: Store, query: string) => {
+    if (!query) return true;
+    const categoryLabel = store.categoryName ?? store.businessType;
+    return [
+      store.name,
+      store.description,
+      store.shortDescription,
+      store.location,
+      store.username,
+      store.state,
+      store.district,
+      categoryLabel,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  };
+
   const filteredStores = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
@@ -143,14 +177,14 @@ export default function AllStoresPage() {
       const categoryLabel = store.categoryName ?? store.businessType;
       const matchesCategory = activeCategory === 'all' || createSlug(categoryLabel) === activeCategory;
       if (!matchesCategory) return false;
-
-      if (!query) return true;
-
-      return [store.name, store.description, store.shortDescription, store.location, categoryLabel]
-        .filter(Boolean)
-        .some((value) => value.toLowerCase().includes(query));
+      return storeMatchesQuery(store, query);
     });
   }, [activeCategory, searchQuery, orderedStores]);
+
+  const filteredNearbyStores = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return orderedNearbyStores.filter((store) => storeMatchesQuery(store, query));
+  }, [orderedNearbyStores, searchQuery]);
 
   const featuredStores = useMemo(
     () => filteredStores.filter((store) => store.isVerified || store.activeSubscription || store.isBoosted).slice(0, 3),
@@ -370,13 +404,15 @@ export default function AllStoresPage() {
           <div className="rounded-[28px] border border-red-200 bg-white px-4 py-20 text-center shadow-sm">
             <p className="text-sm text-red-600">{nearbyError}</p>
           </div>
-        ) : orderedNearbyStores.length > 0 ? (
-          renderResponsiveStoreGrid(orderedNearbyStores, nearbyCatIdx)
+        ) : filteredNearbyStores.length > 0 ? (
+          renderResponsiveStoreGrid(filteredNearbyStores, nearbyCatIdx)
         ) : (
           <div className="rounded-[28px] border border-dashed border-slate-300 bg-white px-4 py-20 text-center shadow-sm">
             <p className="text-slate-500">
-              {location
-                ? 'No nearby stores found within 50 km right now.'
+              {searchQuery.trim()
+                ? 'No nearby stores match your search in this area.'
+                : location
+                  ? 'No nearby stores found within 50 km right now.'
                 : 'Use the location selector in the header to see nearby stores here.'}
             </p>
           </div>

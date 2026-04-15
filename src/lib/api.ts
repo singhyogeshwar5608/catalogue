@@ -221,6 +221,7 @@ export type UpdateStorePayload = {
 };
 
 export type AddProductPayload = {
+  store_id?: number | string;
   title: string;
   price: number;
   original_price?: number;
@@ -573,7 +574,6 @@ const normalizeUser = (user: any): ApiUser => {
 
 const fallbackLogo = 'https://images.unsplash.com/photo-1503602642458-232111445657?w=200&h=200&fit=crop';
 const fallbackBanner = 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=1200&h=400&fit=crop';
-const fallbackImage = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop';
 
 const PRODUCT_UNIT_TYPE_VALUES: readonly ProductUnitType[] = [
   'piece',
@@ -879,7 +879,10 @@ const normalizeProduct = (product: BackendProduct, store: BackendStore): Product
     ? baseImages
     : product.image
       ? [product.image]
-      : [fallbackImage];
+      : [];
+  const resolvedImages = images
+    .map((url) => absolutizeStorageUrl(typeof url === 'string' ? url : String(url)))
+    .filter((url) => typeof url === 'string' && url.trim() !== '');
 
   const unitQuantityValue = product.unit_quantity != null ? Number(product.unit_quantity) : null;
   const wholesalePriceValue = product.wholesale_price != null ? Number(product.wholesale_price) : null;
@@ -928,8 +931,8 @@ const normalizeProduct = (product: BackendProduct, store: BackendStore): Product
     description: product.description ?? '',
     price: Number(product.price ?? 0),
     originalPrice: product.original_price != null ? Number(product.original_price) : undefined,
-    image: images[0] ?? fallbackImage,
-    images,
+    image: resolvedImages[0] ?? '',
+    images: resolvedImages,
     category: product.category ?? store.category?.name ?? 'General',
     rating: ratingValue > 0 ? Number(ratingValue.toFixed(1)) : 0,
     totalReviews,
@@ -971,7 +974,7 @@ const normalizeService = (service: BackendService, store: BackendStore): Service
     title: service.title,
     description: service.description ?? '',
     price: service.price != null ? Number(service.price) : null,
-    image: service.image ?? fallbackImage,
+    image: service.image ? absolutizeStorageUrl(service.image) : '',
     isActive: Boolean(service.is_active),
     billingUnit: isValidServiceBillingUnit(service.billing_unit) ? (service.billing_unit as ServiceBillingUnit) : undefined,
     customBillingUnit: service.custom_billing_unit ?? null,

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Product;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -79,9 +80,10 @@ final class ProductImageStorage
         if (str_starts_with($stored, 'http://') || str_starts_with($stored, 'https://')) {
             return $stored;
         }
-        // Still base64 in DB (pre-migration): avoid sending huge payloads — frontend can show placeholder
+        // Legacy base64 rows: return as-is so existing products remain visible
+        // even if automatic migration couldn't convert a malformed entry.
         if (str_starts_with($stored, 'data:image')) {
-            return null;
+            return $stored;
         }
         if (str_starts_with($stored, '/storage/')) {
             return asset(ltrim($stored, '/'));
@@ -121,11 +123,48 @@ final class ProductImageStorage
      */
     public static function decorateProductForResponse(\App\Models\Product $product): void
     {
-        $product->setAttribute('image', self::toPublicUrl($product->getAttribute('image')));
+        self::migrateLegacyBase64OnModel($product);
+        $product->setAttribute('image', self::publicDisplayUrlForProduct($product));
         $imgs = $product->getAttribute('images');
         if (is_array($imgs)) {
             $product->setAttribute('images', self::toPublicUrlArray($imgs) ?? []);
         }
+    }
+
+    public static function publicDisplayUrlForProduct(Product $product): ?string
+    {
+        $stored = $product->getAttribute('image');
+        if (! is_string($stored) || trim($stored) === '') {
+            return null;
+        }
+        $trimmed = trim($stored);
+        if (str_starts_with($trimmed, 'data:image')) {
+            return $trimmed;
+        }
+        if (self::relativeManagedPath($trimmed) !== null) {
+            return url('/api/v1/v1/product/'.$product->getKey().'/image');
+        }
+
+        return self::toPublicUrl($trimmed);
+    }
+
+    public static function relativeManagedPath(?string $stored): ?string
+    {
+        if ($stored === null) {
+            return null;
+        }
+        $trimmed = trim($stored);
+        if ($trimmed === '') {
+            return null;
+        }
+        if (str_starts_with($trimmed, self::DIR.'/')) {
+            return $trimmed;
+        }
+        if (str_starts_with($trimmed, '/storage/'.self::DIR.'/')) {
+            return substr($trimmed, strlen('/storage/'));
+        }
+
+        return null;
     }
 
     /**
@@ -181,5 +220,49 @@ final class ProductImageStorage
     private static function deleteStoredIfReplaced(?string $previous): void
     {
         self::deleteStoredIfManaged($previous);
+    }
+
+    /**
+     * Transparently migrates legacy base64 rows to file paths when product is fetched.
+     * This keeps old data visible without requiring manual command execution first.
+     */
+    private static function migrateLegacyBase64OnModel(Product $product): void
+    {
+        $dirty = false;
+
+        $image = $product->getAttribute('image');
+        if (is_string($image) && str_starts_with(trim($image), 'data:image')) {
+            $saved = self::persistIncomingImage($image, null);
+            if (is_string($saved) && $saved !== '') {
+                $product->setAttribute('image', $saved);
+                $dirty = true;
+            }
+        }
+
+        $images = $product->getAttribute('images');
+        if (is_array($images) && $images !== []) {
+            $next = [];
+            foreach ($images as $entry) {
+                if (! is_string($entry) || trim($entry) === '') {
+                    continue;
+                }
+                if (str_starts_with(trim($entry), 'data:image')) {
+                    $saved = self::persistIncomingImage($entry, null);
+                    if (is_string($saved) && $saved !== '') {
+                        $next[] = $saved;
+                    }
+                } else {
+                    $next[] = $entry;
+                }
+            }
+            if ($next !== $images) {
+                $product->setAttribute('images', array_values($next));
+                $dirty = true;
+            }
+        }
+
+        if ($dirty && $product->exists) {
+            $product->saveQuietly();
+        }
     }
 }
