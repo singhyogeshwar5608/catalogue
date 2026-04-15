@@ -293,8 +293,9 @@ const ProductImageCarousel = ({
                       className="rounded-[28px] bg-white object-contain"
                       sizes="(max-width: 640px) 100vw, 512px"
                     />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="rounded-md bg-black/50 px-3 py-1 text-sm font-semibold text-white">Upload Product</span>
+                    <div className="pointer-events-none absolute inset-0 bg-white/50" />
+                    <div className="absolute inset-0 z-10 flex items-center justify-center">
+                      <span className="relative z-10 rounded-md bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow-sm">Upload Product</span>
                     </div>
                   </button>
                 ) : (
@@ -723,7 +724,7 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
           </motion.div>
         </section>
       </div>
-      <motion.div variants={fadeInVariants} className="mt-12 flex justify-center px-4 sm:hidden">
+      <motion.div variants={fadeInVariants} className="relative z-20 mt-16 mb-20 flex justify-center px-4 sm:hidden">
         <a
           href={`${whatsappLink}?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
           target="_blank"
@@ -1309,8 +1310,9 @@ function StoreCatalogProductCard({
                   setDemoImageSrc(FALLBACK_PRODUCT_IMAGE);
                 }}
               />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="rounded-md bg-black/50 px-3 py-1 text-sm font-semibold text-white">Upload Product</span>
+              <div className="pointer-events-none absolute inset-0 bg-white/50" />
+              <div className="absolute inset-0 z-10 flex items-center justify-center">
+                <span className="relative z-10 rounded-md bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow-sm">Upload Product</span>
               </div>
             </div>
           ) : (
@@ -1329,6 +1331,7 @@ function StoreCatalogProductCard({
               }}
             />
           )}
+          {isDemoProduct && !isStoreOwner ? <div className="pointer-events-none absolute inset-0 bg-white/50" /> : null}
           <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-800 shadow-sm md:left-3 md:top-3 md:px-2.5 md:py-1 md:text-[10px]">
             {badgeLabel}
           </span>
@@ -1766,6 +1769,7 @@ const ProductGrid = ({
                     : 'No products or services match these filters. Try adjusting your search.'}
               </p>
             ) : (
+              <>
               <motion.div
                 key={filterType + searchQuery}
                 className="mt-6 grid grid-cols-2 gap-2 min-w-0 sm:mt-10 sm:gap-3 md:gap-4 lg:grid-cols-3 xl:grid-cols-4"
@@ -1821,6 +1825,18 @@ const ProductGrid = ({
                   );
                 })}
               </motion.div>
+              {filterType !== 'services' ? (
+                <div className="mt-3 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/dashboard/products')}
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
+                  >
+                    Upload more products
+                  </button>
+                </div>
+              ) : null}
+              </>
             )}
 
         {filterType !== 'services' && canLoadMore && (

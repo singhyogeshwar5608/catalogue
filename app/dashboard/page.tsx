@@ -44,7 +44,6 @@ import type { Product, Store, StoreSubscription, SubscriptionPlan } from '@/type
 import SubscriptionExpiryPopup from '@/components/SubscriptionExpiryPopup';
 import ProductLimitPopup from '@/components/ProductLimitPopup';
 import BoostExpiryPopup from '@/components/BoostExpiryPopup';
-import TrialCountdownBanner from '@/components/TrialCountdownBanner';
 
 function formatDate(value?: string | null) {
   if (!value) return 'Not available';
@@ -109,12 +108,12 @@ function DashboardStatCard({ item }: { item: DashboardStatItem }) {
   const s = DASHBOARD_STAT_STYLES[item.variant];
   const Icon = item.icon;
   return (
-    <div className={`rounded-2xl border p-4 shadow-sm transition hover:shadow-md sm:p-5 ${s.card}`}>
-      <div className={`mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl ${s.iconWrap}`}>
+    <div className={`dashboard-stat-card rounded-2xl border p-4 shadow-sm transition hover:shadow-md sm:p-5 ${s.card}`}>
+      <div className={`dashboard-stat-icon mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl ${s.iconWrap}`}>
         <Icon className="h-5 w-5" strokeWidth={2.2} />
       </div>
-      <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${s.label}`}>{item.label}</p>
-      <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">{item.value}</p>
+      <p className={`dashboard-stat-label text-[11px] font-bold uppercase tracking-[0.14em] ${s.label}`}>{item.label}</p>
+      <p className="dashboard-stat-value mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">{item.value}</p>
     </div>
   );
 }
@@ -502,15 +501,8 @@ export default function DashboardPage() {
   const boostDaysRemaining = daysUntil(myStore?.activeBoost?.endsAt);
 
   return (
-    <div className="mx-auto min-w-0 max-w-6xl space-y-4 sm:space-y-6">
-      <TrialCountdownBanner
-        trialEndsAt={myStore.trialEndsAt}
-        createdAt={myStore.createdAt}
-        apiBaseUrl={getApiRequestBaseUrl()}
-        hasActiveSubscription={hasActivePaidSubscription}
-      />
-
-      <section className="relative overflow-hidden rounded-[22px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-50 p-4 shadow-sm sm:rounded-[28px] sm:p-6">
+    <div className="dashboard-mobile mx-auto min-w-0 max-w-6xl space-y-4 sm:space-y-6">
+      <section className="dashboard-hero-card relative overflow-hidden rounded-[22px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-50 p-4 shadow-sm sm:rounded-[28px] sm:p-6">
         <div className="flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 space-y-2">
@@ -566,36 +558,36 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-2 sm:gap-3">
+          <div className="dashboard-quick-links flex flex-wrap gap-2 sm:gap-3 max-md:grid max-md:grid-cols-3 max-md:gap-1">
             <Link
               href="/"
-              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-5 sm:py-2.5 sm:text-sm"
+              className="dashboard-quick-link inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-5 sm:py-2.5 sm:text-sm max-md:w-full max-md:min-w-0 max-md:gap-1 max-md:rounded-xl max-md:px-1.5 max-md:py-1 max-md:text-[9px] max-md:leading-none max-md:whitespace-nowrap max-md:overflow-hidden max-md:text-ellipsis"
             >
-              <Home className="h-4 w-4" />
+              <Home className="h-4 w-4 max-md:h-3 max-md:w-3" />
               Home Page
             </Link>
             <Link
               href={`/store/${myStore.username}`}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-slate-800 sm:px-5 sm:py-2.5 sm:text-sm"
+              className="dashboard-quick-link inline-flex items-center justify-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-slate-800 sm:px-5 sm:py-2.5 sm:text-sm max-md:w-full max-md:min-w-0 max-md:gap-1 max-md:rounded-xl max-md:px-1.5 max-md:py-1 max-md:text-[9px] max-md:leading-none max-md:whitespace-nowrap max-md:overflow-hidden max-md:text-ellipsis"
             >
               View Store
-              <ExternalLink className="h-4 w-4" />
+              <ExternalLink className="h-4 w-4 max-md:h-3 max-md:w-3" />
             </Link>
             <button
               type="button"
               onClick={() => setShowQRModal(true)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-5 sm:py-2.5 sm:text-sm"
+              className="dashboard-quick-link inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-5 sm:py-2.5 sm:text-sm max-md:w-full max-md:min-w-0 max-md:gap-1 max-md:rounded-xl max-md:px-1.5 max-md:py-1 max-md:text-[9px] max-md:leading-none max-md:whitespace-nowrap max-md:overflow-hidden max-md:text-ellipsis"
             >
-              <QrCode className="h-4 w-4" />
+              <QrCode className="h-4 w-4 max-md:h-3 max-md:w-3" />
               QR Code
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-2 sm:hidden">
+          <div className="dashboard-primary-cta-row flex flex-wrap gap-2 sm:hidden">
             {(myStore.businessType === 'product' || myStore.businessType === 'hybrid') && (
               <Link
                 href="/dashboard/products"
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
+                className="dashboard-primary-cta inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
               >
                 <Plus className="h-4 w-4" />
                 Add Product
@@ -604,7 +596,7 @@ export default function DashboardPage() {
             {(myStore.businessType === 'service' || myStore.businessType === 'hybrid') && (
               <Link
                 href="/dashboard/products?tab=services"
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="dashboard-secondary-cta inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
                 <Briefcase className="h-4 w-4" />
                 Add Service
@@ -615,7 +607,7 @@ export default function DashboardPage() {
       </section>
 
       <section className="space-y-5">
-        <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm sm:rounded-[26px]">
+        <div className="audience-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm sm:rounded-[26px]">
           <div className="border-b border-slate-100 bg-gradient-to-r from-rose-50/50 via-white to-indigo-50/40 px-5 py-4 sm:px-6">
             <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-600">
               <Heart className="h-3.5 w-3.5 text-rose-500" aria-hidden />
@@ -626,14 +618,14 @@ export default function DashboardPage() {
               Engagement from your public store page. Each visitor can add at most ten to your Seen total.
             </p>
           </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
+          <div className="audience-grid grid gap-3 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
             {audienceDashboardStats.map((item) => (
               <DashboardStatCard key={item.label} item={item} />
             ))}
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm sm:rounded-[26px]">
+        <div className="activity-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm sm:rounded-[26px]">
           <div className="border-b border-slate-100 bg-gradient-to-r from-violet-50/50 via-white to-sky-50/40 px-5 py-4 sm:px-6">
             <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
               <BarChart3 className="h-3.5 w-3.5 text-violet-600" aria-hidden />
@@ -642,7 +634,7 @@ export default function DashboardPage() {
             <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Catalog & reviews</h2>
             <p className="mt-1 max-w-xl text-sm text-slate-500">Listings, reviews, and how buyers rate your store.</p>
           </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
+          <div className="activity-grid grid gap-3 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
             {catalogDashboardStats.map((item) => (
               <DashboardStatCard key={item.label} item={item} />
             ))}
@@ -662,9 +654,9 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-4">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <section className="dashboard-lower-grid grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="dashboard-lower-stack space-y-4">
+          <div className="social-links-card rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Social links</p>
               <div>
@@ -710,7 +702,7 @@ export default function DashboardPage() {
           </div>
 
           {!hasProducts && (
-            <div className="rounded-[28px] border border-dashed border-slate-300 bg-white p-5 text-center shadow-sm">
+            <div className="empty-state-card rounded-[28px] border border-dashed border-slate-300 bg-white p-5 text-center shadow-sm">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-700">
                 <Plus className="h-6 w-6" />
               </div>
@@ -811,6 +803,144 @@ export default function DashboardPage() {
           onClose={() => setShowBoostExpiry(false)}
         />
       )}
+      <style jsx>{`
+        @media (max-width: 768px) {
+          .dashboard-mobile {
+            gap: 0.75rem;
+          }
+
+          .dashboard-hero-card {
+            padding: 0.75rem;
+          }
+
+          .dashboard-hero-card h1 {
+            font-size: 1.2rem;
+          }
+
+          .dashboard-hero-card p {
+            font-size: 0.8rem;
+          }
+
+          .dashboard-primary-cta-row {
+            margin-top: 0.25rem;
+          }
+
+          .dashboard-quick-links {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.4rem;
+          }
+
+          .dashboard-quick-link {
+            width: 100%;
+            min-width: 0;
+            padding: 0.3rem 0.2rem;
+            font-size: 0.58rem;
+            gap: 0.15rem;
+            border-radius: 0.8rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.1;
+          }
+
+          .dashboard-quick-link :global(svg) {
+            height: 0.68rem;
+            width: 0.68rem;
+            flex-shrink: 0;
+          }
+
+          .dashboard-primary-cta {
+            flex: 1 1 100%;
+            min-height: 2.5rem;
+          }
+
+          .dashboard-secondary-cta {
+            min-height: 2.5rem;
+          }
+
+          .audience-card,
+          .activity-card {
+            border-radius: 1rem;
+          }
+
+          .audience-card > div:first-child,
+          .activity-card > div:first-child {
+            padding: 0.75rem 0.875rem;
+          }
+
+          .audience-card > div:first-child {
+            display: none;
+          }
+
+          .audience-card h2,
+          .activity-card h2 {
+            font-size: 1rem;
+          }
+
+          .audience-card p,
+          .activity-card p {
+            font-size: 0.75rem;
+          }
+
+          .audience-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.35rem;
+            padding: 0.45rem;
+          }
+
+          .activity-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+            padding: 0.625rem;
+          }
+
+          .dashboard-stat-card {
+            padding: 0.35rem;
+            border-radius: 0.7rem;
+            box-shadow: none;
+            min-height: auto;
+          }
+
+          .dashboard-stat-icon {
+            height: 1.3rem;
+            width: 1.3rem;
+            margin-bottom: 0.2rem;
+            border-radius: 0.45rem;
+          }
+
+          .dashboard-stat-label {
+            font-size: 0.46rem;
+            letter-spacing: 0.07em;
+          }
+
+          .dashboard-stat-value {
+            margin-top: 0.1rem;
+            font-size: 0.7rem;
+            line-height: 1.2;
+          }
+
+          .dashboard-lower-grid {
+            margin-top: 0.25rem;
+          }
+
+          .dashboard-lower-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.625rem;
+          }
+
+          .social-links-card,
+          .empty-state-card {
+            padding: 0.875rem;
+            border-radius: 1rem;
+          }
+
+          .empty-state-card {
+            order: -1;
+          }
+        }
+      `}</style>
     </div>
   );
 }

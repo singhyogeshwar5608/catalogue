@@ -16,5 +16,11 @@ export const demoProducts = [
     name: "Sample Product 3",
     price: "₹999",
     image: "/demo/demo3.jpg"
+  },
+  {
+    id: "demo-4",
+    name: "Sample Product 4",
+    price: "₹1299",
+    image: "/demo/demo4.jpg"
   }
 ];

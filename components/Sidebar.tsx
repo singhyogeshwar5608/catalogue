@@ -18,7 +18,7 @@ import {
   Plug2,
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { getStoreBySlugFromApi } from '@/src/lib/api';
+import { getStoreBySlug, getStoreBySlugFromApi, isApiError } from '@/src/lib/api';
 import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
 
@@ -30,15 +30,27 @@ export default function Sidebar() {
   const [myStore, setMyStore] = useState<Store | null>(null);
 
   const loadStore = useCallback(async () => {
-    if (!user?.storeSlug) {
+    const slug = user?.storeSlug?.trim();
+    if (!slug) {
       setMyStore(null);
       return;
     }
     try {
-      const store = await getStoreBySlugFromApi(user.storeSlug);
+      const store = await getStoreBySlugFromApi(slug);
       setMyStore(store);
     } catch (error) {
-      console.error('Failed to load store:', error);
+      // Laravel `/store/:slug` may intermittently fail (500); gracefully fallback to cached `/api/stores/:slug`.
+      if (isApiError(error) && error.status >= 500) {
+        try {
+          const fallbackStore = await getStoreBySlug(slug);
+          setMyStore(fallbackStore);
+          return;
+        } catch (fallbackError) {
+          console.error('Failed to load store via both endpoints:', fallbackError);
+        }
+      } else {
+        console.error('Failed to load store:', error);
+      }
       setMyStore(null);
     }
   }, [user?.storeSlug]);
