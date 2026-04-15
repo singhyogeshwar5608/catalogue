@@ -44,7 +44,7 @@ export default function RootLayout({
     ? ''
     : isAllStoresPage
       ? 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+0.375rem)] md:pb-0'
-      : 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+1rem)] md:pb-0';
+      : 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+0.8rem)] md:pb-0';
   const mainPaddingClass = `${mainBottomPaddingClass} ${mainTopPadding}`.trim();
 
   const bodyClassName = `${inter.className} ${isAuthPage ? 'h-screen overflow-hidden' : ''}`;

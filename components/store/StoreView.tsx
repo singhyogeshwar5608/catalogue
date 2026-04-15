@@ -46,6 +46,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  Smile,
+  Zap,
+  ThumbsUp,
+  Tag,
 } from 'lucide-react';
 import type {
   Store,
@@ -61,7 +65,7 @@ import type {
 import RatingStars from '@/components/RatingStars';
 import ReviewCard from '@/components/ReviewCard';
 import { useAuth } from '@/src/context/AuthContext';
-import { buildReviewColors, getThemeForCategory, type ReviewTheme } from '@/src/lib/reviewTheme';
+import { getThemeForCategory, type ReviewTheme } from '@/src/lib/reviewTheme';
 import {
   getProductById,
   createProductCheckoutRazorpayOrder,
@@ -69,6 +73,7 @@ import {
   isApiError,
 } from '@/src/lib/api';
 import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
+import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
 
 type StoreViewProps = {
   store: Store;
@@ -81,10 +86,6 @@ type StoreViewProps = {
   reviewsError?: string | null;
   onLoadMoreReviews?: () => void;
   onSubmitStoreReview?: (payload: { rating: number; comment: string }) => Promise<void>;
-  onToggleFollow?: () => Promise<void> | void;
-  onToggleLike?: () => Promise<void> | void;
-  followBusy?: boolean;
-  likeBusy?: boolean;
   isEditMode?: boolean;
   onEnterEdit?: () => void;
   onInlineLogoEdit?: () => void;
@@ -479,8 +480,6 @@ const staggerContainer = {
   },
 };
 
-const baseNavLinks = [{ label: 'Home', href: '#home' }, { label: 'Reviews', href: '#reviews' }, { label: 'Contact', href: '#contact' }];
-
 type HeroSectionProps = {
   store: Store;
   heroProduct?: Product;
@@ -489,27 +488,9 @@ type HeroSectionProps = {
   products: Product[];
   services: Service[];
   isProPlan: boolean;
-  canEngage: boolean;
-  onToggleFollow?: () => Promise<void> | void;
-  onToggleLike?: () => Promise<void> | void;
-  followBusy?: boolean;
-  likeBusy?: boolean;
 };
 
-const HeroSection = ({
-  store,
-  heroProduct,
-  theme,
-  whatsappLink,
-  products,
-  services,
-  isProPlan,
-  canEngage,
-  onToggleFollow,
-  onToggleLike,
-  followBusy = false,
-  likeBusy = false,
-}: HeroSectionProps) => {
+const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan }: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
 
@@ -618,6 +599,7 @@ const HeroSection = ({
                     })}
                   </div>
                 )}
+
                 {(products.length > 0 || services.length > 0) && (
                   <div className="mt-4 w-full sm:hidden">
                     <ProductImageCarousel products={products} services={services} />
@@ -627,16 +609,11 @@ const HeroSection = ({
                 <div className="mt-2.5 grid w-full grid-cols-3 gap-2 sm:hidden">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!canEngage || followBusy || !onToggleFollow) return;
-                      void onToggleFollow();
-                    }}
-                    disabled={!canEngage || followBusy || !onToggleFollow}
                     className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-blue-800"
                   >
                     <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-blue-100">
-                      {followBusy ? <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin text-blue-200" /> : <UserPlus className="h-2.5 w-2.5 shrink-0 text-blue-200" />}
-                      {store.viewerFollowing ? 'Following' : 'Followers'}
+                      <UserPlus className="h-2.5 w-2.5 shrink-0 text-blue-200" />
+                      Followers
                     </span>
                     <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
                       {(store.followersCount ?? 0).toLocaleString('en-IN')}
@@ -644,16 +621,11 @@ const HeroSection = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!canEngage || likeBusy || !onToggleLike) return;
-                      void onToggleLike();
-                    }}
-                    disabled={!canEngage || likeBusy || !onToggleLike}
                     className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-pink-800"
                   >
                     <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-rose-100">
-                      {likeBusy ? <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin text-rose-200" /> : <Heart className="h-2.5 w-2.5 shrink-0 text-rose-200" />}
-                      {store.viewerLiked ? 'Liked' : 'Likes'}
+                      <Heart className="h-2.5 w-2.5 shrink-0 text-rose-200" />
+                      Likes
                     </span>
                     <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
                       {(store.likesCount ?? 0).toLocaleString('en-IN')}
@@ -697,51 +669,6 @@ const HeroSection = ({
                   <span className="break-words">{store.whatsapp}</span>
                 </div>
               )}
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEngage || followBusy || !onToggleFollow) return;
-                  void onToggleFollow();
-                }}
-                disabled={!canEngage || followBusy || !onToggleFollow}
-                className="inline-flex min-h-[42px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2.5 py-1.5 text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-blue-100">
-                  {followBusy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-blue-200" /> : <UserPlus className="h-3 w-3 shrink-0 text-blue-200" />}
-                  {store.viewerFollowing ? 'Following' : 'Followers'}
-                </span>
-                <p className="ml-2 shrink-0 text-xs font-bold tabular-nums text-white">
-                  {(store.followersCount ?? 0).toLocaleString('en-IN')}
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEngage || likeBusy || !onToggleLike) return;
-                  void onToggleLike();
-                }}
-                disabled={!canEngage || likeBusy || !onToggleLike}
-                className="inline-flex min-h-[42px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2.5 py-1.5 text-white transition hover:bg-pink-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-rose-100">
-                  {likeBusy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-rose-200" /> : <Heart className="h-3 w-3 shrink-0 text-rose-200" />}
-                  {store.viewerLiked ? 'Liked' : 'Likes'}
-                </span>
-                <p className="ml-2 shrink-0 text-xs font-bold tabular-nums text-white">
-                  {(store.likesCount ?? 0).toLocaleString('en-IN')}
-                </p>
-              </button>
-              <div className="inline-flex min-h-[42px] w-full items-center justify-between rounded-2xl border border-emerald-400/35 bg-emerald-900 px-2.5 py-1.5 text-white">
-                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-emerald-100">
-                  <Eye className="h-3 w-3 shrink-0 text-emerald-200" />
-                  Views
-                </span>
-                <p className="ml-2 shrink-0 text-xs font-bold tabular-nums text-white">
-                  {(store.seenCount ?? 0).toLocaleString('en-IN')}
-                </p>
-              </div>
             </div>
             <div className="mt-6 hidden sm:flex justify-center">
               <a
@@ -1832,78 +1759,154 @@ const ProductGrid = ({
   );
 };
 
-const StoreFooter = ({ store, theme, navLinks }: { store: Store; theme: Theme; navLinks: { label: string; href: string }[] }) => (
-  <footer id="contact" className="bg-slate-900 py-16 text-white">
+type StoreRatingBreakdown = Record<1 | 2 | 3 | 4 | 5, number>;
+
+function StoreRatingSummaryCard({
+  aggregateRating,
+  totalRecordedReviews,
+  ratingBreakdown,
+  ratingBreakdownTotal,
+  countCaption,
+}: {
+  aggregateRating: number;
+  totalRecordedReviews: number;
+  ratingBreakdown: StoreRatingBreakdown;
+  ratingBreakdownTotal: number;
+  /** Optional line under the count (e.g. device-only guest reviews). */
+  countCaption?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/90 p-3 shadow-inner max-sm:p-3 sm:p-5">
+      <div className="flex flex-col gap-4 max-sm:gap-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+        <div className="flex flex-col items-start sm:min-w-[9rem]">
+          <p className="text-3xl font-bold tabular-nums text-slate-900 max-sm:text-[1.75rem] sm:text-5xl">
+            {aggregateRating.toFixed(1)}
+          </p>
+          <RatingStars rating={aggregateRating} size="sm" className="mt-0.5 max-sm:scale-90 max-sm:origin-left sm:mt-1" />
+          <p className="mt-1 text-xs font-medium text-slate-600 max-sm:mt-0.5 max-sm:text-[0.65rem] sm:mt-1.5 sm:text-sm">
+            {aggregateRating.toFixed(1)} out of 5
+          </p>
+          <p className="mt-0.5 text-[0.65rem] text-slate-400 max-sm:text-[0.6rem] sm:text-xs">
+            Based on {totalRecordedReviews.toLocaleString()} review{totalRecordedReviews === 1 ? '' : 's'}
+          </p>
+          {countCaption ? (
+            <p className="mt-1 max-w-[14rem] text-[0.6rem] leading-snug text-slate-400 max-sm:text-[0.55rem] sm:max-w-none sm:text-[0.65rem]">
+              {countCaption}
+            </p>
+          ) : null}
+        </div>
+        <div className="min-w-0 flex-1 space-y-1.5 max-sm:space-y-1 sm:space-y-2">
+          {([5, 4, 3, 2, 1] as const).map((star) => {
+            const pct =
+              ratingBreakdownTotal > 0 ? Math.round((ratingBreakdown[star] / ratingBreakdownTotal) * 100) : 0;
+            const fillGradient =
+              star >= 3
+                ? 'bg-gradient-to-r from-emerald-400 to-emerald-600'
+                : 'bg-gradient-to-r from-amber-300 to-amber-500';
+            return (
+              <div key={star} className="flex items-center gap-1.5 max-sm:gap-1 sm:gap-3">
+                <span className="w-2.5 text-right text-[0.6rem] font-medium tabular-nums text-slate-500 max-sm:w-2 sm:w-3 sm:text-[11px]">
+                  {star}
+                </span>
+                <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200/90 max-sm:h-1.5 sm:h-2.5">
+                  <div className={`h-full rounded-full transition-all ${fillGradient}`} style={{ width: `${pct}%` }} />
+                </div>
+                <span className="w-7 shrink-0 text-right text-[0.6rem] font-semibold tabular-nums text-slate-600 max-sm:w-6 sm:w-9 sm:text-[11px]">
+                  {ratingBreakdownTotal ? `${pct}%` : '—'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {totalRecordedReviews > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-slate-200/80 pt-3 max-sm:mt-2.5 max-sm:gap-1 max-sm:pt-2.5 sm:mt-5 sm:gap-2 sm:pt-4">
+          <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[0.6rem] font-semibold text-sky-700 max-sm:px-2 max-sm:text-[0.55rem] sm:gap-1.5 sm:px-3 sm:py-1 sm:text-[11px]">
+            <ThumbsUp className="h-3 w-3 max-sm:h-2.5 max-sm:w-2.5" strokeWidth={2.25} />
+            Loved it
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[0.6rem] font-semibold text-emerald-700 max-sm:px-2 max-sm:text-[0.55rem] sm:gap-1.5 sm:px-3 sm:py-1 sm:text-[11px]">
+            <Check className="h-3 w-3 max-sm:h-2.5 max-sm:w-2.5" strokeWidth={2.25} />
+            Good service
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[0.6rem] font-semibold text-rose-700 max-sm:px-2 max-sm:text-[0.55rem] sm:gap-1.5 sm:px-3 sm:py-1 sm:text-[11px]">
+            <Zap className="h-3 w-3 max-sm:h-2.5 max-sm:w-2.5" strokeWidth={2.25} />
+            Fast delivery
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const StoreFooter = ({ store }: { store: Store }) => (
+  <footer id="contact" className="mt-[20px] mb-0 bg-slate-900 py-0 text-white">
     <motion.div
-      className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-3 lg:px-8"
+      className="mx-auto grid max-w-6xl grid-cols-3 gap-2 min-w-0 items-start px-2.5 py-2.5 sm:gap-8 sm:px-6 sm:py-4 lg:gap-10 lg:px-8"
       variants={staggerContainer}
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, amount: 0.3 }}
     >
-      <motion.div variants={fadeInVariants} className="space-y-5">
-        <div className="rounded-3xl border border-white/20 bg-slate-950/60 p-5 shadow-[0_25px_60px_rgba(2,6,23,0.55)]">
-          <div className="flex items-center gap-4">
-            <span className="relative block h-12 w-12 overflow-hidden rounded-full border border-white/20">
-              <img
-                src={store.logo}
-                alt={store.name}
-                width={48}
-                height={48}
-                className="h-full w-full object-cover"
-                loading="lazy"
-                decoding="async"
-                referrerPolicy="no-referrer"
-              />
-            </span>
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-white/60">{store.businessType}</p>
-              <p className="text-xl font-semibold leading-tight">{store.name}</p>
-            </div>
-          </div>
-          {(store.shortDescription || store.description) && (
-            <p className="mt-4 text-sm text-white/70">
-              {store.shortDescription || store.description}
-            </p>
-          )}
+      <motion.div variants={fadeInVariants} className="min-w-0 space-y-1.5 sm:space-y-5">
+        <div className="min-w-0">
+          <p className="truncate text-[0.72rem] font-semibold leading-tight sm:text-xl">{store.name}</p>
         </div>
-        <p className="text-sm text-white/60">
-          Serving {store.location || 'your city'} with curated {store.businessType?.toLowerCase() || 'collections'} and concierge support.
+        <p className="text-[0.5rem] leading-snug text-white/60 sm:text-sm">
+          Serving {store.location || 'your city'} with curated {store.businessType?.toLowerCase() || 'collections'} and
+          concierge support.
         </p>
       </motion.div>
 
-      <motion.div variants={fadeInVariants}>
-        <h4 className="text-sm uppercase tracking-[0.4em] text-white/60">Quick Links</h4>
-        <ul className="mt-4 space-y-2 text-sm text-white/80">
-          {navLinks.map((link) => (
-            <li key={link.href}>
-              <a href={link.href} className="transition hover:text-white">
-                {link.label}
-              </a>
+      <motion.div variants={fadeInVariants} className="min-w-0">
+        <h4 className="text-[0.45rem] uppercase tracking-[0.12em] text-white/60 sm:text-sm sm:tracking-[0.4em]">
+          Contact
+        </h4>
+        <ul className="mt-1.5 space-y-1 text-[0.52rem] leading-snug text-white/80 sm:mt-4 sm:space-y-3 sm:text-sm">
+          {store.showPhone !== false && (
+            <li className="flex items-start gap-1 sm:gap-2">
+              <Phone className="mt-0.5 h-2.5 w-2.5 shrink-0 sm:mt-0 sm:h-4 sm:w-4" />
+              <span className="min-w-0 break-all">{store.whatsapp}</span>
             </li>
-          ))}
+          )}
+          <li className="flex items-start gap-1 sm:gap-2">
+            <MapPin className="mt-0.5 h-2.5 w-2.5 shrink-0 sm:mt-0 sm:h-4 sm:w-4" />
+            <span className="min-w-0">{store.location}</span>
+          </li>
+          <li className="flex items-center gap-1 sm:gap-2">
+            <MessageCircle className="h-2.5 w-2.5 shrink-0 sm:h-4 sm:w-4" /> Support 24/7
+          </li>
         </ul>
       </motion.div>
 
-      <motion.div variants={fadeInVariants}>
-        <h4 className="text-sm uppercase tracking-[0.4em] text-white/60">Contact</h4>
-        <ul className="mt-4 space-y-3 text-sm text-white/80">
-          {store.showPhone !== false && (
-            <li className="flex items-center gap-2">
-              <Phone className="h-4 w-4" /> {store.whatsapp}
-            </li>
-          )}
-          <li className="flex items-center gap-2">
-            <MapPin className="h-4 w-4" /> {store.location}
-          </li>
-          <li className="flex items-center gap-2">
-            <MessageCircle className="h-4 w-4" /> Support 24/7
-          </li>
-        </ul>
+      <motion.div variants={fadeInVariants} className="min-w-0">
+        <h4 className="text-[0.45rem] uppercase tracking-[0.12em] text-white/60 sm:text-sm sm:tracking-[0.4em]">
+          Location Map
+        </h4>
+        <div className="mt-1.5 overflow-hidden rounded-xl border border-white/15 bg-slate-950/40 sm:mt-4">
+          <iframe
+            title={`${store.name} location map`}
+            src={`https://www.google.com/maps?q=${encodeURIComponent(store.location || store.name)}&z=14&output=embed`}
+            className="h-20 w-full sm:h-32"
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.location || store.name)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block px-2 py-1 text-[0.48rem] font-medium text-white/75 transition hover:text-white sm:px-3 sm:py-2 sm:text-xs"
+          >
+            Open in Google Maps
+          </a>
+        </div>
       </motion.div>
     </motion.div>
 
-    <p className="mt-12 text-center text-xs text-white/50"> 2025 {store.name}. All rights reserved.</p>
+    <p className="mt-0 text-center text-[0.5rem] text-white/50 sm:text-xs">
+      {new Date().getFullYear()} {store.name}. All rights reserved.
+    </p>
   </footer>
 );
 
@@ -1918,10 +1921,6 @@ export default function StoreView({
   reviewsError,
   onLoadMoreReviews,
   onSubmitStoreReview,
-  onToggleFollow,
-  onToggleLike,
-  followBusy = false,
-  likeBusy = false,
 }: StoreViewProps) {
   const { isLoggedIn, user } = useAuth();
   const planIdentifier = store.activeSubscription?.plan?.slug?.toLowerCase()
@@ -1931,11 +1930,7 @@ export default function StoreView({
   const INITIAL_VISIBLE_COUNT = 8;
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
-  const whatsappLink = useMemo(() => {
-    const rawWhatsapp = typeof store.whatsapp === 'string' ? store.whatsapp : '';
-    const digits = rawWhatsapp.replace(/[^0-9]/g, '');
-    return `https://wa.me/${digits}`;
-  }, [store.whatsapp]);
+  const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
   /** Prefer store owner id — slug-only match can wrongly skip visit tracking if slugs collide or auth slug is stale. */
   const viewerOwnsStore = Boolean(
     (user?.id && store.userId && user.id === store.userId) ||
@@ -1943,30 +1938,51 @@ export default function StoreView({
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())
   );
-  const canEngage = !viewerOwnsStore && Boolean(store.id);
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
+  const guestReviewsStorageKey = useMemo(() => `storeGuestReviews:${store.id}`, [store.id]);
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([]);
   const [cartNotice, setCartNotice] = useState<string | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isSharingCart, setIsSharingCart] = useState(false);
+  const [guestReviews, setGuestReviews] = useState<Review[]>([]);
+  const [guestReviewNotice, setGuestReviewNotice] = useState<string | null>(null);
 
   const theme = useMemo(() => getThemeForCategory(store.businessType), [store.businessType]);
-  const reviewColors = useMemo(() => buildReviewColors(theme), [theme]);
   const marqueeCategory = products[0]?.category || store.businessType || 'exclusive collections';
   const marqueeMessage = `Welcome to ${store.name} — Trusted in ${store.location || 'your city'} · Call ${
     store.whatsapp || 'N/A'
   } · Signature picks in ${marqueeCategory}`;
   const approvedReviews = useMemo(() => reviews.filter((review) => review.isApproved !== false), [reviews]);
   const totalRecordedReviews = Math.max(reviewSummary?.totalReviews ?? 0, store.totalReviews ?? 0, approvedReviews.length);
-  const aggregateRating = useMemo(() => {
-    const raw = reviewSummary?.rating ?? store.rating;
-    const numeric = typeof raw === 'number' ? raw : Number(raw);
-    return Number.isFinite(numeric) ? numeric : 0;
-  }, [reviewSummary?.rating, store.rating]);
+  const aggregateRating = reviewSummary?.rating ?? store.rating;
+  const reviewsMergedForStats = useMemo(
+    () => [...guestReviews, ...approvedReviews],
+    [guestReviews, approvedReviews]
+  );
+  const reviewsForList = useMemo(() => {
+    const merged = [...guestReviews, ...approvedReviews];
+    merged.sort((a, b) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime());
+    return merged;
+  }, [guestReviews, approvedReviews]);
+  const cardDisplayRating = useMemo(() => {
+    if (reviewsMergedForStats.length === 0) return aggregateRating;
+    const sum = reviewsMergedForStats.reduce((s, r) => s + (Number(r.rating) || 0), 0);
+    return sum / reviewsMergedForStats.length;
+  }, [reviewsMergedForStats, aggregateRating]);
+  const cardDisplayCount = reviewsMergedForStats.length > 0 ? reviewsMergedForStats.length : totalRecordedReviews;
+  const ratingBreakdown = useMemo(
+    () => ratingBreakdownFromSummaryOrReviews(reviewSummary, reviewsMergedForStats),
+    [reviewSummary, reviewsMergedForStats]
+  );
+  const ratingBreakdownTotal = useMemo(
+    () => (Object.values(ratingBreakdown) as number[]).reduce((a, b) => a + b, 0),
+    [ratingBreakdown]
+  );
   const [reviewForm, setReviewForm] = useState<{ rating: number; comment: string }>({ rating: 0, comment: '' });
+  const [selectedQuickTags, setSelectedQuickTags] = useState<string[]>([]);
+  const [reviewStarsResetKey, setReviewStarsResetKey] = useState(0);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const [isReviewFormOpen, setIsReviewFormOpen] = useState(false);
   const loadMoreProducts = () => {
     setVisibleCount((previous) => Math.min(previous + INITIAL_VISIBLE_COUNT, products.length));
   };
@@ -1975,14 +1991,6 @@ export default function StoreView({
     setVisibleCount(INITIAL_VISIBLE_COUNT);
   };
 
-  const hasProducts = products.length > 0;
-  const hasServices = services.length > 0;
-  const navLinks = useMemo(() => {
-    const links = [...baseNavLinks];
-    if (hasProducts) links.splice(1, 0, { label: 'Products', href: '#products' });
-    if (hasServices) links.splice(hasProducts ? 2 : 1, 0, { label: 'Services', href: '#services' });
-    return links;
-  }, [hasProducts, hasServices]);
   const pageStyle = useMemo(() => ({ '--primary-color': theme.primary } as CSSProperties), [theme.primary]);
 
   const cartItemsCount = useMemo(() => {
@@ -2016,6 +2024,57 @@ export default function StoreView({
       console.error('Failed to save cart to localStorage', error);
     }
   }, [cartEntries, cartStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !store.id) return;
+    try {
+      const raw = localStorage.getItem(guestReviewsStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      const restored: Review[] = parsed
+        .filter((x): x is { id?: string; rating: number; comment: string; reviewedAt?: string } => {
+          return Boolean(x && typeof x === 'object' && typeof (x as { rating?: unknown }).rating === 'number');
+        })
+        .map((x, i) => ({
+          id: x.id ?? `guest-${store.id}-${i}`,
+          storeId: store.id,
+          userName: 'Guest (this device)',
+          rating: x.rating,
+          comment: typeof x.comment === 'string' ? x.comment : '',
+          reviewedAt: x.reviewedAt ?? new Date().toISOString(),
+          isApproved: true,
+        }));
+      setGuestReviews(restored);
+    } catch {
+      /* ignore */
+    }
+  }, [guestReviewsStorageKey, store.id]);
+
+  const persistGuestReviews = useCallback(
+    (updater: Review[] | ((previous: Review[]) => Review[])) => {
+      setGuestReviews((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        try {
+          localStorage.setItem(
+            guestReviewsStorageKey,
+            JSON.stringify(
+              next.map((r) => ({
+                id: r.id,
+                rating: r.rating,
+                comment: r.comment,
+                reviewedAt: r.reviewedAt,
+              }))
+            )
+          );
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [guestReviewsStorageKey]
+  );
 
   const handleAddToCart = useCallback(
     (product: Product, quantity: number) => {
@@ -2105,32 +2164,61 @@ export default function StoreView({
 
   const handleSubmitStoreReview = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isLoggedIn) {
-      setReviewError('Please log in to share your experience.');
-      return;
-    }
-    if (!onSubmitStoreReview) return;
     const trimmedComment = reviewForm.comment.trim();
-    if (!reviewForm.rating || !trimmedComment) {
-      setReviewError('Please provide a rating and comment.');
+    const quickLine = selectedQuickTags.length ? selectedQuickTags.join(' · ') : '';
+    const mergedComment = [quickLine, trimmedComment].filter(Boolean).join('\n\n').trim();
+    if (!reviewForm.rating) {
+      setReviewError('Please tap a star to rate this store.');
       return;
     }
-    if (trimmedComment.length < 5) {
-      setReviewError('Comment must be at least 5 characters.');
+    if (!mergedComment) {
+      setReviewError('Add a quick tag or a short note about your experience.');
+      return;
+    }
+    if (mergedComment.length < 5) {
+      setReviewError('Your review should be at least 5 characters.');
       return;
     }
 
-    setIsSubmittingReview(true);
     setReviewError(null);
-    try {
-      await onSubmitStoreReview({ rating: reviewForm.rating, comment: trimmedComment });
-      setReviewForm({ rating: 0, comment: '' });
-      setIsReviewFormOpen(false);
-    } catch (err) {
-      setReviewError(err instanceof Error ? err.message : 'Unable to submit review');
-    } finally {
-      setIsSubmittingReview(false);
+
+    if (isLoggedIn && onSubmitStoreReview) {
+      setIsSubmittingReview(true);
+      try {
+        await onSubmitStoreReview({ rating: reviewForm.rating, comment: mergedComment });
+        setReviewForm({ rating: 0, comment: '' });
+        setSelectedQuickTags([]);
+        setReviewStarsResetKey((k) => k + 1);
+        setGuestReviewNotice(null);
+      } catch (err) {
+        setReviewError(err instanceof Error ? err.message : 'Unable to submit review');
+      } finally {
+        setIsSubmittingReview(false);
+      }
+      return;
     }
+
+    const newReview: Review = {
+      id: `guest-${Date.now()}`,
+      storeId: store.id,
+      userName: 'Guest (this device)',
+      rating: reviewForm.rating,
+      comment: mergedComment,
+      reviewedAt: new Date().toISOString(),
+      isApproved: true,
+    };
+    persistGuestReviews((prev) => [newReview, ...prev]);
+    setReviewForm({ rating: 0, comment: '' });
+    setSelectedQuickTags([]);
+    setReviewStarsResetKey((k) => k + 1);
+    setGuestReviewNotice('Thanks! Saved on this device only. Sign in to share with the store.');
+    window.setTimeout(() => setGuestReviewNotice(null), 6000);
+  };
+
+  const toggleQuickTag = (label: string) => {
+    setSelectedQuickTags((prev) =>
+      prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]
+    );
   };
 
   return (
@@ -2157,11 +2245,6 @@ export default function StoreView({
           services={services}
           whatsappLink={whatsappLink}
           isProPlan={isProPlan}
-          canEngage={canEngage}
-          onToggleFollow={onToggleFollow}
-          onToggleLike={onToggleLike}
-          followBusy={followBusy}
-          likeBusy={likeBusy}
         />
 
         <ProductGrid
@@ -2179,87 +2262,173 @@ export default function StoreView({
           onAddToCart={handleAddToCart}
         />
 
-        {/* Reviews */}
-        <section
-          id="reviews"
-          className="relative z-10 bg-slate-50 py-10 text-slate-900 sm:py-12"
-        >
-          <div className="mx-auto max-w-4xl px-4 sm:px-6">
-            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-xl font-semibold text-slate-900 sm:text-2xl">Store reviews</h2>
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                <RatingStars rating={aggregateRating} size="sm" />
-                <span className="text-sm font-semibold text-slate-900">{aggregateRating.toFixed(1)}</span>
-                <span className="text-xs text-slate-500">({totalRecordedReviews} reviews)</span>
-              </div>
-            </div>
+        {/* Reviews — friendly rate + summary card (compact on mobile; guest ratings = device-only, no API) */}
+        <section id="reviews" className="relative z-10 bg-[#f3f4f8] py-0 text-slate-900">
+          <div className="mx-auto max-w-3xl px-3 max-sm:px-3 sm:px-6">
+            <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_22px_55px_-18px_rgba(15,23,42,0.18)] max-sm:rounded-[1.35rem] sm:rounded-[1.75rem]">
+              <form onSubmit={handleSubmitStoreReview} className="text-left">
+                <div className="border-b border-slate-100 p-3.5 max-sm:p-3 sm:p-8 sm:pb-6">
+                  <div className="flex gap-2.5 max-sm:gap-2 sm:gap-4">
+                    <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm max-sm:h-10 max-sm:w-10 sm:h-14 sm:w-14 sm:rounded-xl">
+                      <Image
+                        src={products[0]?.image ?? store.logo}
+                        alt={products[0] ? `${products[0].name} preview` : `${store.name} logo`}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width:640px) 40px, 56px"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-0.5 max-sm:space-y-0 sm:space-y-1">
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 max-sm:leading-tight sm:text-[11px] sm:tracking-[0.2em]">
+                        Verified buyer feedback
+                      </p>
+                      <h2 className="text-[13px] font-semibold leading-snug text-[#0f172a] max-sm:leading-tight sm:text-lg">
+                        Rate and review the store
+                      </h2>
+                      {!isLoggedIn ? (
+                        <p className="text-[0.65rem] leading-snug text-slate-500 max-sm:text-[0.6rem] sm:text-xs">
+                          No sign-in required — saved on this device only.{' '}
+                          <Link href="/login" className="font-semibold text-sky-600 underline-offset-2 hover:underline">
+                            Sign in
+                          </Link>{' '}
+                          to publish to the store.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
 
-            <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              {isLoggedIn && onSubmitStoreReview ? (
-                <button
-                  type="button"
-                  onClick={() => setIsReviewFormOpen((previous) => !previous)}
-                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-black/10 ring-1 ring-black/5 transition hover:brightness-110"
-                  style={{ backgroundColor: reviewColors.primary }}
-                >
-                  {isReviewFormOpen ? 'Close form' : 'Write a review'}
-                </button>
-              ) : (
-                <span className="text-sm text-slate-600">Sign in to rate this store.</span>
-              )}
-              <span className="text-xs text-slate-500">Verified buyer feedback</span>
-            </div>
+                  {guestReviewNotice ? (
+                    <p className="mt-2.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[0.6rem] text-emerald-900 max-sm:mt-2 max-sm:px-2 max-sm:py-1 max-sm:text-[0.55rem] sm:mt-3 sm:rounded-xl sm:px-3 sm:py-2 sm:text-xs">
+                      {guestReviewNotice}
+                    </p>
+                  ) : null}
 
-            {isReviewFormOpen && onSubmitStoreReview && isLoggedIn && (
-              <form
-                onSubmit={handleSubmitStoreReview}
-                className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="text-sm font-semibold text-slate-800">Your rating</label>
-                  <RatingStars
-                    interactive
-                    rating={reviewForm.rating}
-                    size="lg"
-                    onChange={(value) => handleReviewFormChange({ rating: value })}
-                  />
-                </div>
-                <div className="mt-4">
-                  <label className="text-sm font-semibold text-slate-800" htmlFor="store_review_comment">
-                    Share more about your visit
+                  <div className="mt-3 max-sm:mt-2.5 sm:mt-5">
+                    <div className="inline-block max-sm:scale-[0.88] max-sm:origin-left sm:scale-100">
+                      <RatingStars
+                        key={reviewStarsResetKey}
+                        interactive
+                        rating={reviewForm.rating}
+                        size="lg"
+                        className="gap-1 max-sm:gap-0.5 sm:gap-2"
+                        onChange={(value) => handleReviewFormChange({ rating: value })}
+                      />
+                    </div>
+                    <p className="mt-1 text-[0.65rem] text-slate-400 max-sm:mt-0.5 max-sm:text-[0.6rem] sm:text-xs">
+                      Tap a star to rate
+                    </p>
+                  </div>
+
+                  <label htmlFor="store_review_comment" className="sr-only">
+                    Your experience
                   </label>
-                  <textarea
+                  <input
                     id="store_review_comment"
-                    rows={4}
+                    type="text"
                     value={reviewForm.comment}
                     onChange={(event) => handleReviewFormChange({ comment: event.target.value })}
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200"
-                    placeholder="Talk about the service quality, delivery, and support…"
-                    required
+                    placeholder="Share your experience…"
+                    autoComplete="off"
+                    className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-900 shadow-inner placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-100 max-sm:mt-2.5 max-sm:py-1.5 max-sm:text-[0.7rem] sm:mt-5 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm"
+                  />
+
+                  <div className="mt-2.5 flex flex-wrap gap-1 max-sm:mt-2 max-sm:gap-1 sm:mt-4 sm:gap-2">
+                    {(
+                      [
+                        {
+                          label: 'Loved it',
+                          Icon: Smile,
+                          className: 'border-sky-200/90 bg-sky-50 text-sky-900 hover:bg-sky-100/90',
+                        },
+                        {
+                          label: 'Good service',
+                          Icon: Check,
+                          className: 'border-emerald-200/90 bg-emerald-50 text-emerald-900 hover:bg-emerald-100/90',
+                        },
+                        {
+                          label: 'Fast delivery',
+                          Icon: Zap,
+                          className: 'border-amber-200/90 bg-amber-50 text-amber-900 hover:bg-amber-100/90',
+                        },
+                        {
+                          label: 'Friendly',
+                          Icon: Heart,
+                          className: 'border-orange-200/90 bg-orange-50 text-orange-900 hover:bg-orange-100/90',
+                        },
+                        {
+                          label: 'Great price',
+                          Icon: Tag,
+                          className: 'border-violet-200/90 bg-violet-50 text-violet-900 hover:bg-violet-100/90',
+                        },
+                      ] as const
+                    ).map(({ label, Icon, className }) => {
+                      const on = selectedQuickTags.includes(label);
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => toggleQuickTag(label)}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold transition max-sm:px-1.5 max-sm:py-[0.1rem] max-sm:text-[0.6rem] sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs ${className} ${
+                            on ? 'ring-2 ring-slate-900/10 ring-offset-1 ring-offset-white max-sm:ring-1 max-sm:ring-offset-0' : ''
+                          }`}
+                        >
+                          <Icon
+                            className="h-2.5 w-2.5 shrink-0 opacity-90 max-sm:h-2 max-sm:w-2 sm:h-3.5 sm:w-3.5"
+                            strokeWidth={2.25}
+                          />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="px-3.5 pb-3.5 max-sm:px-3 max-sm:pb-3 sm:px-8 sm:pb-6">
+                  <StoreRatingSummaryCard
+                    aggregateRating={cardDisplayRating}
+                    totalRecordedReviews={cardDisplayCount}
+                    ratingBreakdown={ratingBreakdown}
+                    ratingBreakdownTotal={ratingBreakdownTotal}
+                    countCaption={
+                      guestReviews.length > 0
+                        ? 'Includes ratings saved on this device only (not sent to the server).'
+                        : undefined
+                    }
                   />
                 </div>
-                {reviewError && <p className="mt-3 text-sm text-rose-600">{reviewError}</p>}
-                <div className="mt-4 flex justify-end">
+
+                {reviewError ? (
+                  <p className="px-3.5 pb-1.5 text-[0.7rem] text-rose-600 max-sm:px-3 max-sm:text-[0.65rem] sm:px-8 sm:pb-2 sm:text-sm">
+                    {reviewError}
+                  </p>
+                ) : null}
+
+                <div className="px-3.5 pb-4 max-sm:px-3 max-sm:pb-3.5 sm:px-8 sm:pb-8">
                   <button
                     type="submit"
                     disabled={isSubmittingReview}
-                    className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md disabled:opacity-60"
+                    className="w-full rounded-full bg-gradient-to-r from-sky-500 via-sky-400 to-cyan-400 py-2.5 text-xs font-semibold text-white shadow-[0_14px_32px_-8px_rgba(14,165,233,0.55)] transition hover:brightness-[1.03] disabled:opacity-60 max-sm:py-2 max-sm:text-[0.7rem] sm:py-3.5 sm:text-sm"
                   >
-                    {isSubmittingReview ? 'Submitting…' : 'Submit review'}
+                    {isSubmittingReview ? (
+                      <span className="inline-flex items-center justify-center gap-1.5 max-sm:gap-1">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin max-sm:h-3 max-sm:w-3 sm:h-4 sm:w-4" />
+                        Submitting…
+                      </span>
+                    ) : (
+                      'Submit'
+                    )}
                   </button>
                 </div>
               </form>
-            )}
+            </div>
 
-            <div className="mt-10 space-y-4">
-              {reviewsLoading && approvedReviews.length === 0 ? (
-                <p className="text-sm text-slate-500">Loading reviews…</p>
-              ) : approvedReviews.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
-                  This store hasn&apos;t received reviews yet.
-                </div>
+            <div className="mt-6 space-y-3 max-sm:mt-5 sm:mt-10 sm:space-y-4">
+              {reviewsLoading && approvedReviews.length === 0 && guestReviews.length === 0 ? (
+                <p className="text-xs text-slate-500 max-sm:text-[0.7rem] sm:text-sm">Loading reviews…</p>
+              ) : reviewsForList.length === 0 ? (
+                null
               ) : (
-                approvedReviews.map((review) => <ReviewCard key={review.id} review={review} elevated />)
+                reviewsForList.map((review) => <ReviewCard key={review.id} review={review} elevated />)
               )}
             </div>
 
@@ -2396,7 +2565,7 @@ export default function StoreView({
             </div>
           </div>
         )}
-        <StoreFooter store={store} theme={theme} navLinks={navLinks} />
+        <StoreFooter store={store} />
       </main>
     </div>
   );

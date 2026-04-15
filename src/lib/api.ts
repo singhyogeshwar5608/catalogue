@@ -190,9 +190,6 @@ export type CreateStorePayload = {
   show_phone?: boolean;
   description?: string;
   location?: string;
-  /** Persisted for SEO / location pages (optional). */
-  state?: string | null;
-  district?: string | null;
   facebook_url?: string | null;
   instagram_url?: string | null;
   youtube_url?: string | null;
@@ -221,7 +218,6 @@ export type UpdateStorePayload = {
 };
 
 export type AddProductPayload = {
-  store_id?: number | string;
   title: string;
   price: number;
   original_price?: number;
@@ -574,6 +570,7 @@ const normalizeUser = (user: any): ApiUser => {
 
 const fallbackLogo = 'https://images.unsplash.com/photo-1503602642458-232111445657?w=200&h=200&fit=crop';
 const fallbackBanner = 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=1200&h=400&fit=crop';
+const fallbackImage = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop';
 
 const PRODUCT_UNIT_TYPE_VALUES: readonly ProductUnitType[] = [
   'piece',
@@ -879,10 +876,7 @@ const normalizeProduct = (product: BackendProduct, store: BackendStore): Product
     ? baseImages
     : product.image
       ? [product.image]
-      : [];
-  const resolvedImages = images
-    .map((url) => absolutizeStorageUrl(typeof url === 'string' ? url : String(url)))
-    .filter((url) => typeof url === 'string' && url.trim() !== '');
+      : [fallbackImage];
 
   const unitQuantityValue = product.unit_quantity != null ? Number(product.unit_quantity) : null;
   const wholesalePriceValue = product.wholesale_price != null ? Number(product.wholesale_price) : null;
@@ -931,8 +925,8 @@ const normalizeProduct = (product: BackendProduct, store: BackendStore): Product
     description: product.description ?? '',
     price: Number(product.price ?? 0),
     originalPrice: product.original_price != null ? Number(product.original_price) : undefined,
-    image: resolvedImages[0] ?? '',
-    images: resolvedImages,
+    image: images[0] ?? fallbackImage,
+    images,
     category: product.category ?? store.category?.name ?? 'General',
     rating: ratingValue > 0 ? Number(ratingValue.toFixed(1)) : 0,
     totalReviews,
@@ -974,7 +968,7 @@ const normalizeService = (service: BackendService, store: BackendStore): Service
     title: service.title,
     description: service.description ?? '',
     price: service.price != null ? Number(service.price) : null,
-    image: service.image ? absolutizeStorageUrl(service.image) : '',
+    image: service.image ?? fallbackImage,
     isActive: Boolean(service.is_active),
     billingUnit: isValidServiceBillingUnit(service.billing_unit) ? (service.billing_unit as ServiceBillingUnit) : undefined,
     customBillingUnit: service.custom_billing_unit ?? null,
@@ -1045,21 +1039,6 @@ export const getCategories = async (options?: { auth?: boolean }): Promise<Categ
   return response.data;
 };
 
-/** One home-hero slide per category; server uses each category's first `banner_images` entry (or `banner_image`). */
-export type HeroBannerSlideDto = {
-  key: string;
-  image: string;
-  title: string;
-  subtitle?: string | null;
-};
-
-export const getHeroBannerSlides = async (): Promise<HeroBannerSlideDto[]> => {
-  const response = await apiRequest<HeroBannerSlideDto[]>('/categories/hero-banners', {
-    requiresAuth: false,
-  });
-  return Array.isArray(response.data) ? response.data : [];
-};
-
 export const createCategory = async (payload: CreateCategoryPayload): Promise<Category> => {
   const response = await apiRequest<Category>('/categories', {
     method: 'POST',
@@ -1085,57 +1064,6 @@ export const updateCategoryBanner = async (
 
 export const deleteCategory = async (categoryId: number | string): Promise<void> => {
   await apiRequest(`/categories/${categoryId}`, {
-    method: 'DELETE',
-    requiresAuth: true,
-  });
-};
-
-export type StoreOwnerNotificationType = 'follow' | 'like' | 'seen' | 'subscription' | string;
-
-export type StoreOwnerNotification = {
-  id: number;
-  store_id: number;
-  store_name?: string | null;
-  type: StoreOwnerNotificationType;
-  title: string;
-  body?: string | null;
-  meta?: Record<string, unknown> | null;
-  read_at?: string | null;
-  created_at?: string | null;
-};
-
-export type StoreOwnerNotificationsResponse = {
-  notifications: StoreOwnerNotification[];
-  unread_count: number;
-};
-
-export const getMyStoreNotifications = async (options?: {
-  limit?: number;
-}): Promise<StoreOwnerNotificationsResponse> => {
-  const limit = options?.limit ?? 50;
-  const response = await apiRequest<StoreOwnerNotificationsResponse>(`/my/store-notifications?limit=${limit}`, {
-    requiresAuth: true,
-  });
-  const raw = response.data as unknown;
-  if (!raw || typeof raw !== 'object') {
-    return { notifications: [], unread_count: 0 };
-  }
-  const d = raw as Record<string, unknown>;
-  return {
-    notifications: Array.isArray(d.notifications) ? (d.notifications as StoreOwnerNotification[]) : [],
-    unread_count: typeof d.unread_count === 'number' ? d.unread_count : Number(d.unread_count) || 0,
-  };
-};
-
-export const markStoreNotificationRead = async (notificationId: number | string): Promise<void> => {
-  await apiRequest(`/my/store-notifications/${notificationId}/read`, {
-    method: 'POST',
-    requiresAuth: true,
-  });
-};
-
-export const deleteStoreNotification = async (notificationId: number | string): Promise<void> => {
-  await apiRequest(`/my/store-notifications/${notificationId}`, {
     method: 'DELETE',
     requiresAuth: true,
   });
@@ -1382,6 +1310,23 @@ export type StoreSeenRecordPayload = {
   capped: boolean;
 };
 
+export type StoreOwnerNotification = {
+  id: number;
+  store_id: number;
+  store_name?: string | null;
+  type: 'follow' | 'like' | 'seen' | 'subscription' | string;
+  title?: string | null;
+  body?: string | null;
+  meta?: Record<string, unknown> | null;
+  read_at?: string | null;
+  created_at?: string | null;
+};
+
+export type StoreOwnerNotificationsPayload = {
+  notifications: StoreOwnerNotification[];
+  unread_count: number;
+};
+
 /** Record a store page visit (max 10 counted contributions per visitor per store on the server). */
 export const recordStoreView = async (storeId: string) => {
   const guest = getOrCreateStoreEngagementGuestToken();
@@ -1390,6 +1335,43 @@ export const recordStoreView = async (storeId: string) => {
     body: guest ? { guest_token: guest } : {},
     sendAuthIfAvailable: true,
   });
+};
+
+/**
+ * Store-owner dashboard notifications.
+ * NOTE: endpoint path follows backend notification controller route group.
+ */
+export const getMyStoreNotifications = async (params?: { limit?: number }) => {
+  const qs = new URLSearchParams();
+  if (typeof params?.limit === 'number') qs.set('limit', String(params.limit));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const response = await apiRequest<StoreOwnerNotificationsPayload>(`/store-owner/notifications${suffix}`, {
+    method: 'GET',
+    requiresAuth: true,
+  });
+  return response.data;
+};
+
+export const markStoreNotificationRead = async (notificationId: number | string) => {
+  const response = await apiRequest<{ id: number; read_at: string | null }>(
+    `/store-owner/notifications/${encodeURIComponent(notificationId)}/read`,
+    {
+      method: 'PATCH',
+      requiresAuth: true,
+    }
+  );
+  return response.data;
+};
+
+export const deleteStoreNotification = async (notificationId: number | string) => {
+  const response = await apiRequest<{ id: number }>(
+    `/store-owner/notifications/${encodeURIComponent(notificationId)}`,
+    {
+      method: 'DELETE',
+      requiresAuth: true,
+    }
+  );
+  return response.data;
 };
 
 export const searchAll = async (params: SearchAllParams) => {
@@ -1631,40 +1613,17 @@ export const cancelBoost = async (boostId: number | string): Promise<StoreBoost>
   return normalizeStoreBoost(response.data);
 };
 
-type LaravelProductPaginator = {
-  current_page: number;
-  data: BackendProduct[];
-  last_page: number;
-  per_page: number;
-  total: number;
-};
-
 export const getProductsByStore = async (storeId: number | string) => {
-  const perPage = 100;
-  let page = 1;
-  let lastPage = 1;
-  const rows: BackendProduct[] = [];
-
-  do {
-    const response = await apiRequest<LaravelProductPaginator | BackendProduct[]>(
-      `/products/${storeId}?page=${page}&per_page=${perPage}`,
-    );
-    const raw = response.data as unknown;
-    if (Array.isArray(raw)) {
-      rows.push(...raw);
-      break;
-    }
-    if (raw && typeof raw === 'object' && Array.isArray((raw as LaravelProductPaginator).data)) {
-      const p = raw as LaravelProductPaginator;
-      rows.push(...p.data);
-      lastPage = Math.max(1, p.last_page ?? 1);
-      page += 1;
-    } else {
-      break;
-    }
-  } while (page <= lastPage);
-
-  return rows.map((product) =>
+  const response = await apiRequest<BackendProduct[]>(`/products/${storeId}`);
+  const data = response.data as unknown;
+  const productRows = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { items?: unknown[] } | null)?.items)
+      ? ((data as { items: unknown[] }).items as BackendProduct[])
+      : Array.isArray((data as { products?: unknown[] } | null)?.products)
+        ? ((data as { products: unknown[] }).products as BackendProduct[])
+        : [];
+  return productRows.map((product) =>
     normalizeProduct(product, {
       id: Number(storeId),
       user_id: 0,
@@ -1673,13 +1632,21 @@ export const getProductsByStore = async (storeId: number | string) => {
       category: { id: 0, name: 'General', business_type: 'product' },
       is_active: true,
       is_verified: false,
-    } as BackendStore),
+    } as BackendStore)
   );
 };
 
 export const getServicesByStore = async (storeId: number | string) => {
   const response = await apiRequest<BackendService[]>(`/services/${storeId}`);
-  return response.data.map((service) =>
+  const data = response.data as unknown;
+  const serviceRows = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { items?: unknown[] } | null)?.items)
+      ? ((data as { items: unknown[] }).items as BackendService[])
+      : Array.isArray((data as { services?: unknown[] } | null)?.services)
+        ? ((data as { services: unknown[] }).services as BackendService[])
+        : [];
+  return serviceRows.map((service) =>
     normalizeService(service, {
       id: Number(storeId),
       user_id: 0,
