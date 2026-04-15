@@ -1,9 +1,9 @@
-import { Fragment, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Store } from '@/types';
 import { MapPin, Phone, Star, Check } from 'lucide-react';
 import { getStoreBannerImage } from '@/utils/storeBanner';
-import { StoreBannerPreviewModal } from '@/components/StoreBannerPreviewModal';
 
 interface StoreCardProps {
   store: Store;
@@ -12,7 +12,7 @@ interface StoreCardProps {
 }
 
 export default function StoreCard({ store, isCompact = false, categoryBannerIndex }: StoreCardProps) {
-  const [bannerPreviewOpen, setBannerPreviewOpen] = useState(false);
+  const router = useRouter();
   const initials = useMemo(
     () =>
       store.name
@@ -67,21 +67,20 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
     });
 
   return (
-    <Fragment>
-    <div className={`flex min-h-0 max-w-full flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] ${isCompact ? 'w-full' : 'mx-auto w-[90%]'}`}>
-      <div
-        className="relative z-10 h-[96px] w-full shrink-0 cursor-zoom-in overflow-visible md:h-[160px]"
-        role="button"
-        tabIndex={0}
-        onClick={() => setBannerPreviewOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setBannerPreviewOpen(true);
-          }
-        }}
-        aria-label={`View ${store.name} banner larger`}
-      >
+    <div
+      className={`flex min-h-0 max-w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-slate-500 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] ${isCompact ? 'w-full' : 'mx-auto w-[90%]'}`}
+      role="link"
+      tabIndex={0}
+      aria-label={`Open ${store.name} store page`}
+      onClick={() => router.push(`/store/${store.username}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          router.push(`/store/${store.username}`);
+        }
+      }}
+    >
+      <div className="relative z-10 h-[96px] w-full shrink-0 overflow-visible md:h-[160px]">
         {heroBannerImage ? (
           <img
             src={heroBannerImage}
@@ -165,13 +164,5 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
 
       </div>
     </div>
-    <StoreBannerPreviewModal
-      open={bannerPreviewOpen}
-      onClose={() => setBannerPreviewOpen(false)}
-      imageSrc={heroBannerImage ?? undefined}
-      fallbackStyle={heroBannerImage ? undefined : { ...fallbackGradientStyle }}
-      storeName={store.name}
-    />
-    </Fragment>
   );
 }

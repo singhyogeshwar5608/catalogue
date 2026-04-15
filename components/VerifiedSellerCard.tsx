@@ -1,16 +1,17 @@
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MapPin, Star, Phone, Check } from 'lucide-react';
 import type { Store } from '@/types';
 import { getStoreBannerImage } from '@/utils/storeBanner';
-import { StoreBannerPreviewModal } from '@/components/StoreBannerPreviewModal';
 
 type VerifiedSellerCardProps = {
   store: Store;
   categoryBannerIndex?: number;
+  isMobileFeatured?: boolean;
 };
 
-export default function VerifiedSellerCard({ store, categoryBannerIndex }: VerifiedSellerCardProps) {
+export default function VerifiedSellerCard({ store, categoryBannerIndex, isMobileFeatured = false }: VerifiedSellerCardProps) {
+  const router = useRouter();
   const initials = store.name
     .split(/\s+/)
     .filter(Boolean)
@@ -24,7 +25,6 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex }: Verif
     category: store.category,
     preferredIndex: typeof categoryBannerIndex === 'number' ? categoryBannerIndex : null,
   });
-  const [bannerPreviewOpen, setBannerPreviewOpen] = useState(false);
   const gradientBackground = 'linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%)';
   const stats = [
     { label: 'Followers', value: store.followersCount ?? 0 },
@@ -53,21 +53,20 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex }: Verif
     });
 
   return (
-    <>
-    <div className="mx-auto flex w-[90%] min-h-0 max-w-full flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
-      <div
-        className="relative z-10 h-[96px] w-full shrink-0 cursor-zoom-in overflow-visible md:h-[160px]"
-        role="button"
-        tabIndex={0}
-        onClick={() => setBannerPreviewOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setBannerPreviewOpen(true);
-          }
-        }}
-        aria-label={`View ${store.name} banner larger`}
-      >
+    <div
+      className={`mx-auto flex min-h-0 max-w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-slate-500 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] ${isMobileFeatured ? 'w-full' : 'w-[90%]'}`}
+      role="link"
+      tabIndex={0}
+      aria-label={`Open ${store.name} store page`}
+      onClick={() => router.push(`/store/${store.username}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          router.push(`/store/${store.username}`);
+        }
+      }}
+    >
+      <div className={`relative z-10 w-full shrink-0 overflow-visible md:h-[160px] ${isMobileFeatured ? 'h-[144px]' : 'h-[96px]'}`}>
         {heroImage ? (
           <img
             src={heroImage}
@@ -150,13 +149,5 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex }: Verif
 
       </div>
     </div>
-    <StoreBannerPreviewModal
-      open={bannerPreviewOpen}
-      onClose={() => setBannerPreviewOpen(false)}
-      imageSrc={heroImage || undefined}
-      fallbackStyle={{ background: gradientBackground }}
-      storeName={store.name}
-    />
-    </>
   );
 }
