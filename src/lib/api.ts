@@ -1615,7 +1615,15 @@ export const cancelBoost = async (boostId: number | string): Promise<StoreBoost>
 
 export const getProductsByStore = async (storeId: number | string) => {
   const response = await apiRequest<BackendProduct[]>(`/products/${storeId}`);
-  return response.data.map((product) =>
+  const data = response.data as unknown;
+  const productRows = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { items?: unknown[] } | null)?.items)
+      ? ((data as { items: unknown[] }).items as BackendProduct[])
+      : Array.isArray((data as { products?: unknown[] } | null)?.products)
+        ? ((data as { products: unknown[] }).products as BackendProduct[])
+        : [];
+  return productRows.map((product) =>
     normalizeProduct(product, {
       id: Number(storeId),
       user_id: 0,
@@ -1630,7 +1638,15 @@ export const getProductsByStore = async (storeId: number | string) => {
 
 export const getServicesByStore = async (storeId: number | string) => {
   const response = await apiRequest<BackendService[]>(`/services/${storeId}`);
-  return response.data.map((service) =>
+  const data = response.data as unknown;
+  const serviceRows = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { items?: unknown[] } | null)?.items)
+      ? ((data as { items: unknown[] }).items as BackendService[])
+      : Array.isArray((data as { services?: unknown[] } | null)?.services)
+        ? ((data as { services: unknown[] }).services as BackendService[])
+        : [];
+  return serviceRows.map((service) =>
     normalizeService(service, {
       id: Number(storeId),
       user_id: 0,
