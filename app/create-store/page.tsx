@@ -125,9 +125,10 @@ export default function CreateStorePage() {
     fetchCategories();
   }, [isLoggedIn, router, user?.email]);
 
-  const countries = Object.keys(locationData);
-  const states = Object.keys(locationData[country] || {});
-  const cities = Object.keys(locationData[country]?.[state] || {});
+  const locationTree = locationData as Record<string, Record<string, Record<string, string>>>;
+  const countries = Object.keys(locationTree);
+  const states = Object.keys(locationTree[country] || {});
+  const cities = Object.keys(locationTree[country]?.[state] || {});
 
   const handleCountryChange = (value: string) => {
     setCountry(value);
@@ -159,7 +160,7 @@ export default function CreateStorePage() {
 
   const handleCityChange = (value: string) => {
     setCity(value);
-    const pin = locationData[country]?.[state]?.[value];
+    const pin = locationTree[country]?.[state]?.[value];
     const nextPin = pin || '';
     setPincode(nextPin);
     setFormData((prev) => ({

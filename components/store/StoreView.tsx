@@ -2087,12 +2087,14 @@ export default function StoreView({
   const isProPlan = Boolean(planIdentifier.includes('pro'));
   const INITIAL_VISIBLE_COUNT = 8;
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+  const userStoreId =
+    user && 'storeId' in user ? (user as { storeId?: string | number | null }).storeId : null;
 
   const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
   /** Robust owner detection (IDs may arrive as number/string across endpoints). */
   const viewerOwnsStore = Boolean(
     (user?.id && store.userId && String(user.id) === String(store.userId)) ||
-      (user?.storeId && store.id && String(user.storeId) === String(store.id)) ||
+      (userStoreId && store.id && String(userStoreId) === String(store.id)) ||
       (user?.storeSlug &&
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())

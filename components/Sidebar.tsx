@@ -40,7 +40,8 @@ export default function Sidebar() {
       setMyStore(store);
     } catch (error) {
       // Laravel `/store/:slug` may intermittently fail (500); gracefully fallback to cached `/api/stores/:slug`.
-      if (isApiError(error) && error.status >= 500) {
+      const apiStatus = isApiError(error) ? error.status : undefined;
+      if (typeof apiStatus === 'number' && apiStatus >= 500) {
         try {
           const fallbackStore = await getStoreBySlug(slug);
           setMyStore(fallbackStore);
