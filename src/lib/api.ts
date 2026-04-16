@@ -280,7 +280,7 @@ export type SearchAllParams = {
 };
 
 /** Live Laravel API (same DB as production). Local PHP only if you set NEXT_PUBLIC_API_BASE_URL to http://127.0.0.1:8000/api/v1/v1 */
-const LIVE_API_BASE = 'https://kaushalschoolfurniture.com/api/v1/v1';
+const LIVE_API_BASE = `${(process.env.NEXT_PUBLIC_BASE_URL ?? 'https://larawans.com').replace(/\/+$/, '')}/api/v1/v1`;
 
 const resolvedPublicApiBase = (() => {
   const v = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();

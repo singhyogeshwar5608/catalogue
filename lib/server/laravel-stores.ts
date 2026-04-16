@@ -11,7 +11,7 @@ import {
 } from '@/src/lib/api-shared';
 import { prefetchFreeTrialDays } from '@/src/lib/freeTrialDays';
 
-const LIVE_API_BASE = 'https://kaushalschoolfurniture.com/api/v1/v1';
+const LIVE_API_BASE = `${(process.env.NEXT_PUBLIC_BASE_URL ?? 'https://larawans.com').replace(/\/+$/, '')}/api/v1/v1`;
 
 export function getServerLaravelApiBase(): string {
   const v = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();

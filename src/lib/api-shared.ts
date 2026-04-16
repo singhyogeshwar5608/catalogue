@@ -4,7 +4,8 @@ import { formatStoreName } from '@/src/lib/format';
 import { trialEndsAtFallbackFromCreated } from '@/src/lib/freeTrialDays';
 
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://kaushalschoolfurniture.com/api/v1/v1';
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  `${(process.env.NEXT_PUBLIC_BASE_URL ?? 'https://larawans.com').replace(/\/+$/, '')}/api/v1/v1`;
 
 export type ApiEnvelope<T> = {
   success: boolean;

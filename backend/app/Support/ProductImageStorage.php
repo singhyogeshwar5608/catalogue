@@ -23,6 +23,14 @@ final class ProductImageStorage
      */
     public static function storeUploaded(UploadedFile $file): string
     {
+        $optimized = ImageCompression::fromUploadedFile($file, 1600, 82);
+        if (is_array($optimized)) {
+            $relative = self::DIR.'/'.Str::uuid()->toString().'.'.$optimized['extension'];
+            Storage::disk(self::DISK)->put($relative, $optimized['binary']);
+
+            return $relative;
+        }
+
         return $file->store(self::DIR, self::DISK);
     }
 
@@ -211,6 +219,13 @@ final class ProductImageStorage
         } elseif (str_contains($head, 'image/webp')) {
             $ext = 'webp';
         }
+
+        $compressed = ImageCompression::compressBinary($raw, "image/{$ext}", 1600, 82);
+        if (is_array($compressed)) {
+            $raw = $compressed['binary'];
+            $ext = $compressed['extension'];
+        }
+
         $relative = self::DIR.'/'.Str::uuid()->toString().'.'.$ext;
         Storage::disk(self::DISK)->put($relative, $raw);
 

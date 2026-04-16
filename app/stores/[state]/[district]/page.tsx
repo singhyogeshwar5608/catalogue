@@ -7,7 +7,11 @@ type LocationStoresPageProps = {
   params: Promise<{ state: string; district: string }>;
 };
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kaushalschoolfurniture.com').replace(/\/+$/, '');
+const SITE_URL = (
+  process.env.NEXT_PUBLIC_BASE_URL ??
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  'https://larawans.com'
+).replace(/\/+$/, '');
 
 /** Turn URL segment `south-delhi` → "South Delhi" for readable headings. */
 function slugSegmentToLabel(segment: string): string {

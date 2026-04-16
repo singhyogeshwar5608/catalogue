@@ -548,6 +548,19 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Crawlable internal links without visual UI impact. */}
+      {orderedStores.length > 0 ? (
+        <nav aria-label="All store links" className="sr-only">
+          <ul>
+            {orderedStores.slice(0, 300).map((store) => (
+              <li key={`seo-link-${store.id}`}>
+                <Link href={`/store/${encodeURIComponent(store.username)}`}>{store.name}</Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      ) : null}
+
     </div>
   );
 }

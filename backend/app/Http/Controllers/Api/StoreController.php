@@ -8,8 +8,10 @@ use App\Models\Category;
 use App\Models\PlatformSetting;
 use App\Models\Product;
 use App\Models\Store;
+use App\Support\ImageCompression;
 use App\Support\NextCatalogCacheInvalidate;
 use App\Support\ProductImageStorage;
+use App\Support\SearchEngineIndexer;
 use App\Support\StoreLogoUrl;
 use Closure;
 use Illuminate\Http\Request;
@@ -479,6 +481,18 @@ class StoreController extends Controller
 
         NextCatalogCacheInvalidate::storesAndProducts();
 
+        try {
+            $publicPath = trim((string) ($store->username ?: $store->slug));
+            if ($publicPath !== '') {
+                SearchEngineIndexer::pingForStore(url('/store/'.$publicPath));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Store indexing ping skipped', [
+                'store_id' => $store->id ?? null,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
         return $this->successResponse('Store created successfully.', [
             'store' => $store,
             'business_type' => $businessType,
@@ -897,6 +911,11 @@ class StoreController extends Controller
             $ext = 'png';
         } elseif (str_contains($head, 'image/webp')) {
             $ext = 'webp';
+        }
+        $compressed = ImageCompression::compressBinary($raw, "image/{$ext}", 1200, 82);
+        if (is_array($compressed)) {
+            $raw = $compressed['binary'];
+            $ext = $compressed['extension'];
         }
         $relative = 'store-logos/'.Str::uuid().'.'.$ext;
         Storage::disk('public')->put($relative, $raw);
