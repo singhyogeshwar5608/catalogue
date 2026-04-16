@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   BarChart3,
+  Bell,
   Briefcase,
   CreditCard,
   Download,
@@ -34,10 +35,13 @@ import {
 } from 'lucide-react';
 import {
   getApiRequestBaseUrl,
+  getMyStoreNotifications,
   getProductsByStore,
+  markStoreNotificationRead,
   getStoreBySlugFromApi,
   getStoreSubscription,
   isApiError,
+  type StoreOwnerNotification,
   updateStore,
 } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
@@ -176,6 +180,11 @@ export default function DashboardPage() {
   const socialInputRefs = useRef<Partial<Record<keyof typeof socialLinks, HTMLInputElement | null>>>({});
   const [showPhone, setShowPhone] = useState(true);
   const [savingPhoneVisibility, setSavingPhoneVisibility] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<StoreOwnerNotification[]>([]);
+  const [notificationsUnread, setNotificationsUnread] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const notificationsPanelRef = useRef<HTMLDivElement>(null);
 
   const hasProducts = myProducts.length > 0;
   const storeUrl = myStore ? `https://cateloge.com/store/${myStore.username}` : '';
@@ -488,6 +497,59 @@ export default function DashboardPage() {
     }
   };
 
+  const loadNotifications = useCallback(async () => {
+    if (!isLoggedIn) return;
+    setNotificationsLoading(true);
+    try {
+      const payload = await getMyStoreNotifications({ limit: 12 });
+      setNotifications(payload.notifications);
+      setNotificationsUnread(payload.unread_count);
+    } catch {
+      // keep dashboard stable if notification endpoint fails
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    void loadNotifications();
+    const id = window.setInterval(() => {
+      void loadNotifications();
+    }, 7000);
+    return () => window.clearInterval(id);
+  }, [isLoggedIn, loadNotifications]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const onDocClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (notificationsPanelRef.current && target && !notificationsPanelRef.current.contains(target)) {
+        setNotificationsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [notificationsOpen]);
+
+  const handleNotificationClick = async (notification: StoreOwnerNotification) => {
+    if (!notification.read_at) {
+      try {
+        await markStoreNotificationRead(notification.id);
+        setNotifications((prev) =>
+          prev.map((row) =>
+            row.id === notification.id ? { ...row, read_at: new Date().toISOString() } : row
+          )
+        );
+        setNotificationsUnread((prev) => Math.max(0, prev - 1));
+      } catch {
+        // ignore read-mark failure in quick panel
+      }
+    }
+    setNotificationsOpen(false);
+    router.push('/dashboard/notifications');
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-slate-200 bg-white">
@@ -608,7 +670,55 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-            <div className="flex shrink-0 flex-col items-end">
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <div ref={notificationsPanelRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen((prev) => !prev)}
+                  className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+                  aria-label="Open notifications"
+                >
+                  <Bell className="h-4 w-4" />
+                  {notificationsUnread > 0 ? (
+                    <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                      {notificationsUnread > 9 ? '9+' : notificationsUnread}
+                    </span>
+                  ) : null}
+                </button>
+                {notificationsOpen ? (
+                  <div className="absolute right-0 z-30 mt-2 w-[min(90vw,340px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                    <div className="border-b border-slate-100 px-3 py-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Notifications</p>
+                    </div>
+                    <div className="max-h-72 overflow-auto">
+                      {notificationsLoading ? (
+                        <p className="px-3 py-4 text-sm text-slate-500">Loading...</p>
+                      ) : notifications.length === 0 ? (
+                        <p className="px-3 py-4 text-sm text-slate-500">No notifications yet.</p>
+                      ) : (
+                        notifications.slice(0, 6).map((n) => (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => void handleNotificationClick(n)}
+                            className={`block w-full border-b border-slate-100 px-3 py-2 text-left transition hover:bg-slate-50 ${
+                              n.read_at ? 'bg-white' : 'bg-primary/[0.04]'
+                            }`}
+                          >
+                            <p className="truncate text-sm font-semibold text-slate-900">{n.title || 'Notification'}</p>
+                            {n.body ? <p className="truncate text-xs text-slate-600">{n.body}</p> : null}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    <div className="px-3 py-2">
+                      <Link href="/dashboard/notifications" className="text-xs font-semibold text-primary hover:underline">
+                        View all
+                      </Link>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               <div className="relative h-14 w-14 sm:h-16 sm:w-16">
                 <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-500 shadow-sm" aria-hidden />
                 {myStore.logo ? (

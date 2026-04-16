@@ -4,7 +4,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { QRCodeCanvas } from 'qrcode.react';
 import {
   createContext,
   useCallback,
@@ -92,6 +91,10 @@ type StoreViewProps = {
   reviewsError?: string | null;
   onLoadMoreReviews?: () => void;
   onSubmitStoreReview?: (payload: { rating: number; comment: string }) => Promise<void>;
+  onToggleFollow?: () => Promise<void> | void;
+  onToggleLike?: () => Promise<void> | void;
+  followBusy?: boolean;
+  likeBusy?: boolean;
   isEditMode?: boolean;
   onEnterEdit?: () => void;
   onInlineLogoEdit?: () => void;
@@ -520,6 +523,35 @@ const staggerContainer = {
   },
 };
 
+function InlineQrCanvas({ value, size, className }: { value: string; size: number; className?: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const QRCode = await import('qrcode');
+        if (!active || !canvasRef.current) return;
+        await QRCode.toCanvas(canvasRef.current, value, {
+          width: size,
+          margin: 1,
+          color: {
+            dark: '#0f172a',
+            light: '#ffffff',
+          },
+        });
+      } catch {
+        // Ignore QR rendering failure; keep page interactive.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [size, value]);
+
+  return <canvas ref={canvasRef} width={size} height={size} className={className} />;
+}
+
 type HeroSectionProps = {
   store: Store;
   heroProduct?: Product;
@@ -529,9 +561,28 @@ type HeroSectionProps = {
   services: Service[];
   isProPlan: boolean;
   isStoreOwner: boolean;
+  canEngage: boolean;
+  onToggleFollow?: () => Promise<void> | void;
+  onToggleLike?: () => Promise<void> | void;
+  followBusy?: boolean;
+  likeBusy?: boolean;
 };
 
-const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan, isStoreOwner }: HeroSectionProps) => {
+const HeroSection = ({
+  store,
+  heroProduct,
+  theme,
+  whatsappLink,
+  products,
+  services,
+  isProPlan,
+  isStoreOwner,
+  canEngage,
+  onToggleFollow,
+  onToggleLike,
+  followBusy = false,
+  likeBusy = false,
+}: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
   const [showQrActions, setShowQrActions] = useState(false);
@@ -599,7 +650,11 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                       className="group relative h-full w-full overflow-hidden rounded-[0.75rem]"
                       onClick={() => setShowQrActions((previous) => !previous)}
                     >
-                      <QRCodeCanvas value={storeUrl || `${store.name}-${store.username}`} size={74} className="h-full w-full rounded-[0.75rem]" />
+                      <InlineQrCanvas
+                        value={storeUrl || `${store.name}-${store.username}`}
+                        size={74}
+                        className="h-full w-full rounded-[0.75rem]"
+                      />
                       <div
                         className={`absolute inset-0 flex items-center justify-center gap-1 rounded-[0.75rem] bg-black/50 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 ${
                           showQrActions ? 'opacity-100' : 'opacity-0'
@@ -714,24 +769,51 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                 )}
 
                 <div className="mt-2.5 grid w-full grid-cols-3 overflow-hidden rounded-xl border border-white/15 bg-white/90 text-slate-900 sm:hidden">
-                  <div className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!canEngage || followBusy || !onToggleFollow) return;
+                      void onToggleFollow();
+                    }}
+                    disabled={!canEngage || followBusy || !onToggleFollow}
+                    className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center transition hover:bg-blue-50/80 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label={store.viewerFollowing ? 'Following store' : 'Follow store'}
+                  >
                     <p className="text-[12px] font-semibold tabular-nums text-slate-900">
                       {(store.followersCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Followers</p>
-                  </div>
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium text-slate-500">
+                      {followBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <UserPlus className="h-2.5 w-2.5" />}
+                      {store.viewerFollowing ? 'Following' : 'Follow'}
+                    </p>
+                  </button>
                   <div className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
                     <p className="text-[12px] font-semibold tabular-nums text-slate-900">
                       {(store.seenCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Views</p>
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium text-slate-500">
+                      <Eye className="h-2.5 w-2.5" />
+                      Seen
+                    </p>
                   </div>
-                  <div className="flex min-h-[48px] flex-col items-center justify-center px-1 py-1.5 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!canEngage || likeBusy || !onToggleLike) return;
+                      void onToggleLike();
+                    }}
+                    disabled={!canEngage || likeBusy || !onToggleLike}
+                    className="flex min-h-[48px] flex-col items-center justify-center px-1 py-1.5 text-center transition hover:bg-rose-50/80 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
+                  >
                     <p className="text-[12px] font-semibold tabular-nums text-slate-900">
                       {(store.likesCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Likes</p>
-                  </div>
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium text-slate-500">
+                      {likeBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Heart className="h-2.5 w-2.5" />}
+                      {store.viewerLiked ? 'Liked' : 'Like'}
+                    </p>
+                  </button>
                 </div>
               </motion.div>
             </motion.div>
@@ -758,6 +840,53 @@ const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, servic
                   <span className="break-words">{store.whatsapp}</span>
                 </div>
               )}
+            </div>
+            <div className="mt-4 grid grid-cols-3 overflow-hidden rounded-xl border border-white/20 bg-white/95 text-slate-900">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canEngage || followBusy || !onToggleFollow) return;
+                  void onToggleFollow();
+                }}
+                disabled={!canEngage || followBusy || !onToggleFollow}
+                className="flex min-h-[52px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={store.viewerFollowing ? 'Following store' : 'Follow store'}
+              >
+                <p className="text-sm font-semibold tabular-nums text-slate-900">
+                  {(store.followersCount ?? 0).toLocaleString('en-IN')}
+                </p>
+                <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-slate-600">
+                  {followBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
+                  {store.viewerFollowing ? 'Following' : 'Follow'}
+                </p>
+              </button>
+              <div className="flex min-h-[52px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+                <p className="text-sm font-semibold tabular-nums text-slate-900">
+                  {(store.seenCount ?? 0).toLocaleString('en-IN')}
+                </p>
+                <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-slate-600">
+                  <Eye className="h-3 w-3" />
+                  Seen
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canEngage || likeBusy || !onToggleLike) return;
+                  void onToggleLike();
+                }}
+                disabled={!canEngage || likeBusy || !onToggleLike}
+                className="flex min-h-[52px] flex-col items-center justify-center px-1 py-1.5 text-center transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
+              >
+                <p className="text-sm font-semibold tabular-nums text-slate-900">
+                  {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                </p>
+                <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-slate-600">
+                  {likeBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Heart className="h-3 w-3" />}
+                  {store.viewerLiked ? 'Liked' : 'Like'}
+                </p>
+              </button>
             </div>
             <div className="mt-6 hidden sm:flex justify-center">
               <a
@@ -2079,6 +2208,10 @@ export default function StoreView({
   reviewsError,
   onLoadMoreReviews,
   onSubmitStoreReview,
+  onToggleFollow,
+  onToggleLike,
+  followBusy = false,
+  likeBusy = false,
 }: StoreViewProps) {
   const { isLoggedIn, user } = useAuth();
   const planIdentifier = store.activeSubscription?.plan?.slug?.toLowerCase()
@@ -2090,7 +2223,13 @@ export default function StoreView({
   const userStoreId =
     user && 'storeId' in user ? (user as { storeId?: string | number | null }).storeId : null;
 
-  const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
+  const whatsappLink = useMemo(() => {
+    const raw = typeof store.whatsapp === 'string' && store.whatsapp.trim() !== ''
+      ? store.whatsapp
+      : (typeof store.phone === 'string' ? store.phone : '');
+    const digits = raw.replace(/[^0-9]/g, '');
+    return digits ? `https://wa.me/${digits}` : '#';
+  }, [store.phone, store.whatsapp]);
   /** Robust owner detection (IDs may arrive as number/string across endpoints). */
   const viewerOwnsStore = Boolean(
     (user?.id && store.userId && String(user.id) === String(store.userId)) ||
@@ -2099,6 +2238,7 @@ export default function StoreView({
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())
   );
+  const canEngage = !viewerOwnsStore && Boolean(store.id);
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
   const guestReviewsStorageKey = useMemo(() => `storeGuestReviews:${store.id}`, [store.id]);
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([]);
@@ -2135,7 +2275,12 @@ export default function StoreView({
   } · Signature picks in ${marqueeCategory}`;
   const approvedReviews = useMemo(() => reviews.filter((review) => review.isApproved !== false), [reviews]);
   const totalRecordedReviews = Math.max(reviewSummary?.totalReviews ?? 0, store.totalReviews ?? 0, approvedReviews.length);
-  const aggregateRating = reviewSummary?.rating ?? store.rating;
+  const aggregateRating = useMemo(() => {
+    const raw = reviewSummary?.rating ?? store.rating;
+    const parsed = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return Math.max(0, Math.min(5, parsed));
+  }, [reviewSummary?.rating, store.rating]);
   const reviewsMergedForStats = useMemo(
     () => [...guestReviews, ...approvedReviews],
     [guestReviews, approvedReviews]
@@ -2148,7 +2293,9 @@ export default function StoreView({
   const cardDisplayRating = useMemo(() => {
     if (reviewsMergedForStats.length === 0) return aggregateRating;
     const sum = reviewsMergedForStats.reduce((s, r) => s + (Number(r.rating) || 0), 0);
-    return sum / reviewsMergedForStats.length;
+    const avg = sum / reviewsMergedForStats.length;
+    if (!Number.isFinite(avg) || avg <= 0) return 0;
+    return Math.max(0, Math.min(5, avg));
   }, [reviewsMergedForStats, aggregateRating]);
   const cardDisplayCount = reviewsMergedForStats.length > 0 ? reviewsMergedForStats.length : totalRecordedReviews;
   const ratingBreakdown = useMemo(
@@ -2427,6 +2574,11 @@ export default function StoreView({
           whatsappLink={whatsappLink}
           isProPlan={isProPlan}
           isStoreOwner={viewerOwnsStore}
+          canEngage={canEngage}
+          onToggleFollow={onToggleFollow}
+          onToggleLike={onToggleLike}
+          followBusy={followBusy}
+          likeBusy={likeBusy}
         />
 
         <ProductGrid

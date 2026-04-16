@@ -9,6 +9,7 @@ import {
   Zap,
   CreditCard,
   Users,
+  Bell,
   Menu,
   X,
   ShoppingBag,
@@ -74,6 +75,7 @@ export default function Sidebar() {
   const menuItems = [
     { href: '/', icon: Home, label: 'Home Page' },
     { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { href: '/dashboard/notifications', icon: Bell, label: 'Notifications' },
     ...(businessType === 'product' || businessType === 'hybrid' 
       ? [{ href: '/dashboard/products', icon: Package, label: 'Products' }] 
       : []),
