@@ -21,10 +21,14 @@ export async function fetchLocationLinksFromLaravel(): Promise<LocationLinkRow[]
       headers: { Accept: 'application/json' },
       next: { revalidate: 300 },
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`[sitemap] stores/location-links HTTP ${res.status}`);
+      return [];
+    }
     const json = (await res.json()) as ApiEnvelope<LocationLinkRow[]>;
     return Array.isArray(json?.data) ? json.data : [];
-  } catch {
+  } catch (error) {
+    console.error('[sitemap] stores/location-links request failed', error);
     return [];
   }
 }

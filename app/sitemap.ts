@@ -30,17 +30,40 @@ async function fetchStoreLinks(): Promise<StoreLinkRow[]> {
       headers: { Accept: 'application/json' },
       next: { revalidate: 300 },
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`[sitemap] stores/internal-links HTTP ${res.status}`);
+      return [];
+    }
     const json = (await res.json()) as ApiEnvelope<StoreLinkRow[]>;
     return Array.isArray(json?.data) ? json.data : [];
-  } catch {
+  } catch (error) {
+    console.error('[sitemap] stores/internal-links request failed', error);
     return [];
   }
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = SITE_URL.replace(/\/+$/, '');
-  const [stores, locations] = await Promise.all([fetchStoreLinks(), fetchLocationLinksFromLaravel()]);
+  let stores: StoreLinkRow[] = [];
+  let locations: Awaited<ReturnType<typeof fetchLocationLinksFromLaravel>> = [];
+
+  try {
+    stores = await fetchStoreLinks();
+  } catch (error) {
+    console.error('[sitemap] fetchStoreLinks failed', error);
+    stores = [];
+  }
+
+  try {
+    locations = await fetchLocationLinksFromLaravel();
+  } catch (error) {
+    console.error('[sitemap] fetchLocationLinksFromLaravel failed', error);
+    locations = [];
+  }
+
+  console.info(`[sitemap] stores fetched: ${stores.length}`);
+  console.info(`[sitemap] locations fetched: ${locations.length}`);
+
   const seen = new Set<string>();
   const urls: MetadataRoute.Sitemap = [
     {
