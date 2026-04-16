@@ -12,8 +12,8 @@ import {
   parseApiValidationErrors,
   type Category,
 } from '@/src/lib/api';
-import { lookupPinCode } from '@/src/lib/location';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { locationData } from '@/data/locationData';
+import { Loader2 } from 'lucide-react';
 
 const defaultLogo = 'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?w=200&h=200&fit=crop';
 const MAX_LOGO_DIMENSION = 600;
@@ -70,7 +70,7 @@ async function compressImageToDataUrl(file: File): Promise<string> {
 
 export default function CreateStorePage() {
   const router = useRouter();
-  const { isLoggedIn, user, setUser, logout } = useAuth();
+  const { isLoggedIn, user, setUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -78,6 +78,12 @@ export default function CreateStorePage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
+  const [categoryQuery, setCategoryQuery] = useState('');
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
+  const [country, setCountry] = useState('');
+  const [state, setState] = useState('');
+  const [city, setCity] = useState('');
+  const [pincode, setPincode] = useState('');
   const [formData, setFormData] = useState({
     categoryId: 0,
     storeName: '',
@@ -90,6 +96,7 @@ export default function CreateStorePage() {
     city: '',
     district: '',
     state: '',
+    country: '',
   });
 
   useEffect(() => {
@@ -118,32 +125,51 @@ export default function CreateStorePage() {
     fetchCategories();
   }, [isLoggedIn, router, user?.email]);
 
-  useEffect(() => {
-    const digits = formData.pinCode.replace(/[^0-9]/g, '');
-    if (digits.length !== 6) {
-      return;
-    }
+  const locationTree = locationData as Record<string, Record<string, Record<string, string>>>;
+  const countries = Object.keys(locationTree);
+  const states = Object.keys(locationTree[country] || {});
+  const cities = Object.keys(locationTree[country]?.[state] || {});
 
-    let cancelled = false;
-    const fetchPinDetails = async () => {
-      const result = await lookupPinCode(digits);
-      if (cancelled || !result) {
-        return;
-      }
-      setFormData((prev) => ({
-        ...prev,
-        city: result.locality ?? result.city ?? prev.city,
-        district: result.district ?? prev.district,
-        state: result.state ?? prev.state,
-      }));
-    };
+  const handleCountryChange = (value: string) => {
+    setCountry(value);
+    setState('');
+    setCity('');
+    setPincode('');
+    setFormData((prev) => ({
+      ...prev,
+      country: value,
+      state: '',
+      city: '',
+      district: '',
+      pinCode: '',
+    }));
+  };
 
-    fetchPinDetails();
+  const handleStateChange = (value: string) => {
+    setState(value);
+    setCity('');
+    setPincode('');
+    setFormData((prev) => ({
+      ...prev,
+      state: value,
+      city: '',
+      district: '',
+      pinCode: '',
+    }));
+  };
 
-    return () => {
-      cancelled = true;
-    };
-  }, [formData.pinCode]);
+  const handleCityChange = (value: string) => {
+    setCity(value);
+    const pin = locationTree[country]?.[state]?.[value];
+    const nextPin = pin || '';
+    setPincode(nextPin);
+    setFormData((prev) => ({
+      ...prev,
+      city: value,
+      district: value,
+      pinCode: nextPin,
+    }));
+  };
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -184,7 +210,7 @@ export default function CreateStorePage() {
       return;
     }
 
-    const emailTrimmed = formData.email.trim();
+    const emailTrimmed = (user?.email ?? formData.email).trim();
     if (!emailTrimmed) {
       setErrorMessage('Please enter your business email');
       setLoading(false);
@@ -195,7 +221,14 @@ export default function CreateStorePage() {
     const normalizedDescription =
       formData.description?.trim() || `Discover curated ${selectedCategory?.name.toLowerCase() || 'products'} in your area.`;
 
-    const locationLabel = [formData.city.trim(), formData.district.trim(), formData.state.trim()].filter(Boolean).join(', ');
+    const locationLabel = [
+      formData.city.trim(),
+      formData.district.trim(),
+      formData.state.trim(),
+      formData.country.trim(),
+    ]
+      .filter(Boolean)
+      .join(', ');
     const fullAddress = [
       formData.address.trim(),
       locationLabel,
@@ -245,82 +278,65 @@ export default function CreateStorePage() {
     }
   };
 
-  const handleBackToLogin = () => {
-    logout();
-    router.replace('/auth');
-  };
-
   if (!isAuthorized) {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 pt-6 pb-0 md:pb-8">
-      <div className="w-full max-w-md mx-auto space-y-6">
-        <button
-          type="button"
-          onClick={handleBackToLogin}
-          aria-label="Sign out and go back to login"
-          className="group relative isolate flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200/90 bg-white/90 px-4 py-3.5 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm transition-all duration-300 hover:border-indigo-300/70 hover:shadow-md hover:shadow-indigo-500/[0.12] active:scale-[0.98] md:w-auto md:justify-start"
-        >
-          <span
-            className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-indigo-500/0 via-indigo-500/[0.07] to-violet-500/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-            aria-hidden
-          />
-          <span
-            className="pointer-events-none absolute inset-0 -z-10 -translate-x-full bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 transition duration-700 ease-out group-hover:translate-x-full group-hover:opacity-100"
-            aria-hidden
-          />
-          <ArrowLeft
-            className="h-4 w-4 shrink-0 text-indigo-600 transition-transform duration-300 ease-out group-hover:-translate-x-1"
-            aria-hidden
-          />
-          <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent transition-all duration-300 group-hover:from-indigo-700 group-hover:to-violet-600">
-            Back to login
-          </span>
-        </button>
-
-        <header className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Create store</p>
-          <h1 className="text-2xl font-semibold text-gray-900">Set up your store</h1>
-        </header>
-
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm px-4 py-5 space-y-5">
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Company logo</label>
-              <p className="text-xs text-gray-500">Drop an image or browse your files (PNG/JPG).</p>
-            </div>
-            <label className="block rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 p-6 text-center cursor-pointer hover:border-blue-300 transition">
-              <div className="flex flex-col items-center gap-3 text-blue-600">
-                {logoPreview ? (
-                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden border border-blue-100">
-                    <Image src={logoPreview} alt="Logo preview" fill className="object-cover" />
-                  </div>
-                ) : (
-                  <div className="w-16 h-16 rounded-2xl bg-white shadow-inner flex items-center justify-center">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M4 16L8.5 11.5C9.05228 10.9477 9.94772 10.9477 10.5 11.5L13.5 14.5" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M15 13L16.5 11.5C17.0523 10.9477 17.9477 10.9477 18.5 11.5L20 13" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <rect x="3" y="5" width="18" height="14" rx="3" stroke="#2563eb" strokeWidth="1.5" />
-                      <circle cx="9" cy="9" r="1" fill="#2563eb" />
-                    </svg>
-                  </div>
-                )}
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">
-                    {formData.logo ? formData.logo.name : 'Drop your image here, or browse'}
-                  </p>
-                  <p className="text-xs text-gray-500">Supports: JPG, JPEG2000, PNG</p>
+    <div className="create-store-page h-[calc(100dvh-8.5rem)] min-h-[calc(100dvh-8.5rem)] bg-gray-50 overflow-y-auto px-2 py-0 md:min-h-[100dvh] md:h-auto md:max-h-none md:overflow-y-auto md:px-4 md:pt-6 md:pb-8">
+      <div className="create-store-shell flex h-full w-full items-center px-2 py-0 max-[700px]:px-1.5 md:h-auto md:px-0 md:py-0">
+        <div className="create-store-container mx-auto flex h-full w-full max-w-md flex-1 flex-col justify-center">
+        <form onSubmit={handleSubmit} className="create-store-form bg-white rounded-xl border border-gray-200 shadow-sm px-2 py-2.5 space-y-2.5 max-[700px]:space-y-2 max-[700px]:px-1.5 max-[700px]:py-2 md:rounded-2xl md:px-4 md:py-5 md:space-y-5">
+          <div className="create-store-logo-block space-y-2 max-[700px]:space-y-1.5 md:space-y-3">
+            <div className="flex items-center justify-between gap-1.5 md:justify-center md:gap-4">
+              <div className="create-store-hook-panel hidden lg:flex">
+                <p className="create-store-hook-title">Launch your store with confidence</p>
+                <div className="create-store-hook-lines">
+                  <p>Check visibility before publishing</p>
+                  <p>Check branding with logo and name</p>
+                  <p>Check address details for trust</p>
                 </div>
               </div>
-              <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
-            </label>
-            {fieldErrors.logo && <p className="text-sm text-red-600">{fieldErrors.logo[0]}</p>}
+              <div className="w-4/5 space-y-1 md:flex-1">
+                <label htmlFor="storeNameTop" className="text-[11px] font-medium text-gray-700 md:hidden">
+                  Store name
+                </label>
+                <input
+                  id="storeNameTop"
+                  type="text"
+                  value={formData.storeName}
+                  onChange={(e) => setFormData({ ...formData, storeName: e.target.value })}
+                  placeholder="Store name"
+                  required
+                  className="h-[34px] w-full rounded-xl border border-gray-400 bg-gray-50 px-2 py-1 text-[11px] text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-300 max-[700px]:h-8 max-[700px]:py-0.5 md:hidden"
+                />
+              </div>
+
+              <label className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg border border-dashed border-indigo-200 bg-gradient-to-br from-indigo-50 via-sky-50 to-emerald-50 p-1 text-center cursor-pointer hover:border-indigo-300 transition max-[700px]:h-20 max-[700px]:w-20 md:h-44 md:w-44 md:rounded-2xl md:border-2 md:p-6">
+                {logoPreview ? (
+                  <Image src={logoPreview} alt="Logo preview" fill className="object-cover" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-blue-600 md:gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-white/90 shadow-inner flex items-center justify-center md:w-16 md:h-16 md:rounded-2xl">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M4 16L8.5 11.5C9.05228 10.9477 9.94772 10.9477 10.5 11.5L13.5 14.5" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M15 13L16.5 11.5C17.0523 10.9477 17.9477 10.9477 18.5 11.5L20 13" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <rect x="3" y="5" width="18" height="14" rx="3" stroke="#2563eb" strokeWidth="1.5" />
+                          <circle cx="9" cy="9" r="1" fill="#2563eb" />
+                        </svg>
+                    </div>
+                    <p className="text-[9px] font-semibold text-gray-800 md:text-sm">Upload Logo</p>
+                  </div>
+                )}
+                <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
+              </label>
+            </div>
+            {fieldErrors.logo && <p className="text-[11px] text-red-600 md:text-sm">{fieldErrors.logo[0]}</p>}
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="storeName" className="text-sm font-medium text-gray-700">
+          <div className="create-store-grid">
+          <div className="desktop-span-2 space-y-1.5 max-[700px]:space-y-1">
+            <label htmlFor="storeName" className="hidden text-[11px] font-medium text-gray-700 md:block md:text-sm">
               Store name
             </label>
             <input
@@ -328,37 +344,68 @@ export default function CreateStorePage() {
               type="text"
               value={formData.storeName}
               onChange={(e) => setFormData({ ...formData, storeName: e.target.value })}
-              placeholder="eg. Urban Living"
+              placeholder="Store name"
               required
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              className="hidden h-[34px] w-full rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:h-8 max-[700px]:py-0.5 md:block md:px-4 md:py-3 md:text-sm"
             />
-            {fieldErrors.name && <p className="text-sm text-red-600">{fieldErrors.name[0]}</p>}
+            {fieldErrors.name && <p className="text-[11px] text-red-600 md:text-sm">{fieldErrors.name[0]}</p>}
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="category" className="text-sm font-medium text-gray-700">
+          <div className="space-y-1.5 max-[700px]:space-y-1">
+            <label htmlFor="category" className="text-[11px] font-medium text-gray-700 md:text-sm">
               Category
             </label>
-            <select
-              id="category"
-              value={formData.categoryId}
-              onChange={(e) => setFormData({ ...formData, categoryId: Number(e.target.value) })}
-              required
-              disabled={loadingCategories}
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 disabled:opacity-50"
-            >
-              <option value="0">{loadingCategories ? 'Loading categories...' : 'Select a category'}</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-            {fieldErrors.category_id && <p className="text-sm text-red-600">{fieldErrors.category_id[0]}</p>}
+            <div className="relative">
+              <input
+                id="category"
+                type="text"
+                value={categoryQuery}
+                onClick={() => setIsCategoryOpen((prev) => !prev)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCategoryQuery(value);
+                  setIsCategoryOpen(true);
+                  const matched = categories.find((cat) => cat.name.toLowerCase() === value.trim().toLowerCase());
+                  setFormData({ ...formData, categoryId: matched ? matched.id : 0 });
+                }}
+                required
+                disabled={loadingCategories}
+                placeholder={loadingCategories ? 'Loading categories...' : 'Search or select category'}
+              className="h-[34px] w-full rounded-xl border border-gray-200 bg-white px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 disabled:opacity-50 max-[700px]:h-8 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
+              />
+              {isCategoryOpen && !loadingCategories && (
+                <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                  <ul className="max-h-40 overflow-y-auto py-1">
+                    {categories
+                      .filter((cat) => cat.name.toLowerCase().includes(categoryQuery.trim().toLowerCase()))
+                      .map((cat) => (
+                        <li key={cat.id}>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setCategoryQuery(cat.name);
+                              setFormData({ ...formData, categoryId: cat.id });
+                              setIsCategoryOpen(false);
+                            }}
+                            className="w-full px-2 py-1.5 text-left text-[11px] text-gray-700 hover:bg-gray-50 md:px-4 md:py-2 md:text-sm"
+                          >
+                            {cat.name}
+                          </button>
+                        </li>
+                      ))}
+                    {categories.filter((cat) => cat.name.toLowerCase().includes(categoryQuery.trim().toLowerCase())).length === 0 && (
+                      <li className="px-2 py-1.5 text-[11px] text-gray-400 md:px-4 md:py-2 md:text-sm">No category found</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+            {fieldErrors.category_id && <p className="text-[11px] text-red-600 md:text-sm">{fieldErrors.category_id[0]}</p>}
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="phone" className="text-sm font-medium text-gray-700">
+          <div className="space-y-1.5 max-[700px]:space-y-1">
+            <label htmlFor="phone" className="text-[11px] font-medium text-gray-700 md:text-sm">
               Phone number
             </label>
             <input
@@ -366,49 +413,31 @@ export default function CreateStorePage() {
               type="tel"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="+91 98765 43210"
+              placeholder="Phone number"
               required
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              className="h-[34px] w-full rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:h-8 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
             />
-            {fieldErrors.phone && <p className="text-sm text-red-600">{fieldErrors.phone[0]}</p>}
+            {fieldErrors.phone && <p className="text-[11px] text-red-600 md:text-sm">{fieldErrors.phone[0]}</p>}
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium text-gray-700">
-              Business email
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="contact@yourbusiness.com"
-              required
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
-            />
-            {fieldErrors.email && <p className="text-sm text-red-600">{fieldErrors.email[0]}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="address" className="text-sm font-medium text-gray-700">
-              Complete address
+          <div className="desktop-span-2 space-y-1.5 max-[700px]:space-y-1">
+            <label htmlFor="description" className="text-[11px] font-medium text-gray-700 md:text-sm">
+              Company description <span className="text-gray-400">(optional)</span>
             </label>
             <textarea
-              id="address"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              placeholder="Shop 12, Market Road, near sector park"
-              required
-              rows={3}
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              id="description"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Company description"
+              rows={2}
+              className="w-full min-h-[64px] max-h-[84px] resize-none rounded-xl border border-gray-200 px-2 py-1.5 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:py-1 md:px-4 md:py-3 md:text-sm"
             />
-            {fieldErrors.address && <p className="text-sm text-red-600">{fieldErrors.address[0]}</p>}
+            {fieldErrors.description && <p className="text-[11px] text-red-600 md:text-sm">{fieldErrors.description[0]}</p>}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="pinCode" className="text-sm font-medium text-gray-700">
+          <div className="desktop-span-2 grid grid-cols-2 gap-2 max-[700px]:gap-1.5 md:gap-4">
+            <div className="space-y-1.5 max-[700px]:space-y-1">
+              <label htmlFor="pinCode" className="text-[11px] font-medium text-gray-700 md:text-sm">
                 PIN code
               </label>
               <input
@@ -416,75 +445,95 @@ export default function CreateStorePage() {
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
-                value={formData.pinCode}
-                onChange={(e) => setFormData({ ...formData, pinCode: e.target.value.replace(/[^0-9]/g, '').slice(0, 6) })}
-                placeholder="e.g. 136027"
+                value={pincode}
+                placeholder="PIN code"
                 required
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                readOnly
+                className="h-[34px] w-full rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:h-8 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
               />
             </div>
-            <div className="space-y-2">
-              <label htmlFor="city" className="text-sm font-medium text-gray-700">
-                City / Village
-              </label>
-              <input
-                id="city"
-                type="text"
-                value={formData.city}
-                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                placeholder="e.g. Sangatpura"
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="district" className="text-sm font-medium text-gray-700">
+            <div className="space-y-1.5 max-[700px]:space-y-1">
+              <label htmlFor="district" className="text-[11px] font-medium text-gray-700 md:text-sm">
                 District <span className="text-gray-400">(auto or manual)</span>
               </label>
               <input
                 id="district"
                 type="text"
-                value={formData.district}
-                onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-                placeholder="e.g. Kaithal"
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                list="city-options"
+                value={city}
+                onChange={(e) => handleCityChange(e.target.value)}
+                placeholder="District"
+                className="h-[34px] w-full rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:h-8 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
               />
+              <datalist id="city-options">
+                {cities.map((cityOption) => (
+                  <option key={cityOption} value={cityOption} />
+                ))}
+              </datalist>
             </div>
-            <div className="space-y-2">
-              <label htmlFor="state" className="text-sm font-medium text-gray-700">
+          </div>
+
+          <div className="desktop-span-2 grid grid-cols-2 gap-2 max-[700px]:gap-1.5 md:gap-4">
+            <div className="space-y-1.5 max-[700px]:space-y-1">
+              <label htmlFor="state" className="text-[11px] font-medium text-gray-700 md:text-sm">
                 State
               </label>
               <input
                 id="state"
                 type="text"
-                value={formData.state}
-                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                placeholder="e.g. Haryana"
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                list="state-options"
+                value={state}
+                onChange={(e) => handleStateChange(e.target.value)}
+                placeholder="State"
+                className="h-[34px] w-full rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:h-8 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
                 required
               />
+              <datalist id="state-options">
+                {states.map((stateOption) => (
+                  <option key={stateOption} value={stateOption} />
+                ))}
+              </datalist>
+            </div>
+            <div className="space-y-1.5 max-[700px]:space-y-1">
+              <label htmlFor="country" className="text-[11px] font-medium text-gray-700 md:text-sm">
+                Country
+              </label>
+              <input
+                id="country"
+                type="text"
+                list="country-options"
+                value={country}
+                onChange={(e) => handleCountryChange(e.target.value)}
+                placeholder="Country"
+                className="h-[34px] w-full rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:h-8 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
+                required
+              />
+              <datalist id="country-options">
+                {countries.map((countryOption) => (
+                  <option key={countryOption} value={countryOption} />
+                ))}
+              </datalist>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="description" className="text-sm font-medium text-gray-700">
-              Company description <span className="text-gray-400">(optional)</span>
+          <div className="desktop-span-2 space-y-1.5 max-[700px]:space-y-1">
+            <label htmlFor="address" className="text-[11px] font-medium text-gray-700 md:text-sm">
+              Complete address
             </label>
             <textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Share what you sell and any delivery info."
-              rows={4}
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              id="address"
+              value={formData.address}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              placeholder="Complete address"
+              required
+              rows={2}
+              className="w-full max-h-[60px] resize-none rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
             />
-            {fieldErrors.description && <p className="text-sm text-red-600">{fieldErrors.description[0]}</p>}
+            {fieldErrors.address && <p className="text-[11px] text-red-600 md:text-sm">{fieldErrors.address[0]}</p>}
           </div>
 
           {fieldErrors.location && (
-            <p className="text-sm text-red-600">
+            <p className="desktop-span-2 text-[11px] text-red-600 md:text-sm">
               <span className="font-medium">Location: </span>
               {fieldErrors.location[0]}
             </p>
@@ -493,7 +542,7 @@ export default function CreateStorePage() {
           {errorMessage && (
             <div
               role="alert"
-              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 whitespace-pre-line"
+              className="desktop-span-2 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] text-red-800 whitespace-pre-line md:px-3 md:py-2 md:text-sm"
             >
               {errorMessage}
             </div>
@@ -502,19 +551,178 @@ export default function CreateStorePage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-gray-900 py-3 text-sm font-semibold text-white transition disabled:opacity-60 flex items-center justify-center gap-2"
+            className="desktop-span-2 w-full shrink-0 rounded-xl bg-gray-900 py-2 text-xs font-semibold text-white transition disabled:opacity-60 flex items-center justify-center gap-1.5 max-[700px]:py-1.5 md:py-3 md:text-sm"
           >
             {loading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3 h-3 animate-spin md:w-4 md:h-4" />
                 Creating store...
               </>
             ) : (
               'Create my store'
             )}
           </button>
+          </div>
         </form>
+        </div>
       </div>
+      <style jsx>{`
+        @media (min-width: 1024px) {
+          .create-store-page {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px 24px;
+          }
+
+          .create-store-shell {
+            max-width: 1060px;
+            padding: 0;
+          }
+
+          .create-store-container {
+            max-width: 960px;
+          }
+
+          .create-store-form {
+            width: 100%;
+            max-width: 960px;
+            padding: 32px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            border-color: #e5e7eb;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            column-gap: 20px;
+            row-gap: 20px;
+          }
+
+          .create-store-logo-block,
+          .create-store-grid,
+          .desktop-span-2 {
+            grid-column: span 2;
+          }
+
+          .create-store-logo-block {
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            padding: 18px 20px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+          }
+
+          .create-store-logo-block > div {
+            justify-content: space-between;
+            align-items: center;
+            gap: 24px;
+          }
+
+          .create-store-hook-panel {
+            flex: 1;
+            flex-direction: column;
+            justify-content: center;
+            gap: 10px;
+            min-height: 170px;
+            padding: 12px 6px;
+            color: #1f2937;
+          }
+
+          .create-store-hook-title {
+            font-size: 22px;
+            line-height: 1.25;
+            font-weight: 700;
+            margin: 0;
+            color: #111827;
+          }
+
+          .create-store-hook-lines {
+            display: grid;
+            gap: 8px;
+          }
+
+          .create-store-hook-lines p {
+            position: relative;
+            margin: 0;
+            padding-left: 22px;
+            font-size: 14px;
+            line-height: 1.45;
+            color: #4b5563;
+          }
+
+          .create-store-hook-lines p::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 7px;
+            width: 12px;
+            height: 12px;
+            border-radius: 9999px;
+            border: 2px solid #9ca3af;
+            background: #ffffff;
+          }
+
+          .create-store-hook-lines p::after {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 11px;
+            width: 6px;
+            height: 2px;
+            background: #6b7280;
+            border-radius: 2px;
+          }
+
+          .create-store-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+          }
+
+          .create-store-grid > div {
+            min-width: 0;
+          }
+
+          .create-store-form label {
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #374151;
+          }
+
+          .create-store-form input:not([type='file']) {
+            height: 48px;
+            font-size: 14px;
+            padding: 10px 14px;
+          }
+
+          .create-store-form textarea {
+            font-size: 14px;
+            padding: 10px 14px;
+            min-height: 96px;
+            max-height: none;
+          }
+
+          .create-store-form input:not([type='file']):hover,
+          .create-store-form textarea:hover {
+            border-color: #9ca3af;
+            background-color: #ffffff;
+          }
+
+          .create-store-form input:not([type='file']):focus,
+          .create-store-form textarea:focus {
+            border-color: #6b7280;
+            box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.25);
+          }
+
+          .create-store-form button[type='submit'] {
+            height: 50px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 10px;
+            margin-top: 4px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

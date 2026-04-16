@@ -2,7 +2,9 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { QRCodeCanvas } from 'qrcode.react';
 import {
   createContext,
   useCallback,
@@ -74,6 +76,10 @@ import {
 } from '@/src/lib/api';
 import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
 import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
+import { demoProducts } from '@/data/demoProducts';
+
+const FALLBACK_PRODUCT_IMAGE = '/fallback/product-placeholder.svg';
+const DEMO_PRODUCT_CTA_IMAGE = '/demo/upload-product-cta.png';
 
 type StoreViewProps = {
   store: Store;
@@ -86,10 +92,6 @@ type StoreViewProps = {
   reviewsError?: string | null;
   onLoadMoreReviews?: () => void;
   onSubmitStoreReview?: (payload: { rating: number; comment: string }) => Promise<void>;
-  onToggleFollow?: () => Promise<void> | void;
-  onToggleLike?: () => Promise<void> | void;
-  followBusy?: boolean;
-  likeBusy?: boolean;
   isEditMode?: boolean;
   onEnterEdit?: () => void;
   onInlineLogoEdit?: () => void;
@@ -203,7 +205,16 @@ function buildProductGallery(product: Product): string[] {
   return urls;
 }
 
-const ProductImageCarousel = ({ products, services }: { products: Product[]; services: Service[] }) => {
+const ProductImageCarousel = ({
+  products,
+  services,
+  isStoreOwner,
+}: {
+  products: Product[];
+  services: Service[];
+  isStoreOwner: boolean;
+}) => {
+  const router = useRouter();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [lightbox, setLightbox] = useState<{ images: string[]; title: string } | null>(null);
 
@@ -243,9 +254,13 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
     <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
       <div className="relative aspect-square md:aspect-[4/3]">
         {combinedItems.map((item, index) => {
+          const isDemoProduct =
+            item.type === 'product' && typeof (item.data as Product).id === 'string'
+              ? (item.data as Product).id.startsWith('demo')
+              : false;
           const itemTitle = item.type === 'product' ? (item.data as Product).name : (item.data as Service).title;
           const hasImage = Boolean((item.data as Product | Service).image);
-          const heroImage = (item.data as Product | Service).image;
+          const heroImage = isDemoProduct ? DEMO_PRODUCT_CTA_IMAGE : (item.data as Product | Service).image;
           const galleryImages =
             item.type === 'product'
               ? buildProductGallery(item.data as Product)
@@ -265,6 +280,26 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
               transition={{ duration: 0.6, ease: 'easeInOut' }}
             >
               {hasImage ? (
+                isDemoProduct && isStoreOwner ? (
+                  <button
+                    type="button"
+                    className="absolute inset-0 block cursor-pointer border-0 bg-transparent p-0 text-left"
+                    aria-label="Upload product"
+                    onClick={() => router.push('/dashboard/products')}
+                  >
+                    <Image
+                      src={heroImage}
+                      alt={itemTitle}
+                      fill
+                      className="rounded-[28px] bg-white object-contain"
+                      sizes="(max-width: 640px) 100vw, 512px"
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-white/50" />
+                    <div className="absolute inset-0 z-10 flex items-center justify-center">
+                      <span className="relative z-10 rounded-md bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow-sm">Upload Product</span>
+                    </div>
+                  </button>
+                ) : (
                 <button
                   type="button"
                   className="absolute inset-0 block cursor-pointer border-0 bg-transparent p-0 text-left"
@@ -283,6 +318,7 @@ const ProductImageCarousel = ({ products, services }: { products: Product[]; ser
                     sizes="(max-width: 640px) 100vw, 512px"
                   />
                 </button>
+                )
               ) : (
                 <div className="absolute inset-0 flex h-full w-full items-center justify-center rounded-[28px] bg-gradient-to-br from-slate-800 to-slate-900 text-white/50">
                   <Layers className="h-12 w-12" aria-hidden />
@@ -492,29 +528,43 @@ type HeroSectionProps = {
   products: Product[];
   services: Service[];
   isProPlan: boolean;
-  canEngage: boolean;
-  onToggleFollow?: () => Promise<void> | void;
-  onToggleLike?: () => Promise<void> | void;
-  followBusy?: boolean;
-  likeBusy?: boolean;
+  isStoreOwner: boolean;
 };
 
-const HeroSection = ({
-  store,
-  heroProduct,
-  theme,
-  whatsappLink,
-  products,
-  services,
-  isProPlan,
-  canEngage,
-  onToggleFollow,
-  onToggleLike,
-  followBusy = false,
-  likeBusy = false,
-}: HeroSectionProps) => {
+const HeroSection = ({ store, heroProduct, theme, whatsappLink, products, services, isProPlan, isStoreOwner }: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
+  const [showQrActions, setShowQrActions] = useState(false);
+  const qrAvatarRef = useRef<HTMLDivElement | null>(null);
+  const storeUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/store/${store.username}`;
+  }, [store.username]);
+
+  const downloadQR = useCallback(() => {
+    const canvas = qrAvatarRef.current?.querySelector('canvas');
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${store.username}-qr.png`;
+    link.click();
+  }, [store.username]);
+
+  const shareQR = useCallback(async () => {
+    if (!storeUrl) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: store.name,
+          text: 'Check out my store',
+          url: storeUrl,
+        });
+      }
+    } catch {
+      /* ignore share cancellation/errors */
+    }
+  }, [store.name, storeUrl]);
 
   return (
     <div className="pt-0">
@@ -543,17 +593,52 @@ const HeroSection = ({
             >
               <span className="relative inline-flex items-center">
                 <span className="relative inline-flex h-[3.9rem] w-[3.9rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/40 bg-white/95 p-1.5 shadow-xl sm:h-[4.6rem] sm:w-[4.6rem]">
-                  {/* Native img: avoids Next image pipeline issues with proxied / cross-origin storage URLs */}
-                  <img
-                    src={store.logo}
-                    alt={`${store.name} logo`}
-                    width={74}
-                    height={74}
-                    className="h-full w-full object-cover"
-                    loading="eager"
-                    decoding="async"
-                    referrerPolicy="no-referrer"
-                  />
+                  {isStoreOwner ? (
+                    <div
+                      ref={qrAvatarRef}
+                      className="group relative h-full w-full overflow-hidden rounded-[0.75rem]"
+                      onClick={() => setShowQrActions((previous) => !previous)}
+                    >
+                      <QRCodeCanvas value={storeUrl || `${store.name}-${store.username}`} size={74} className="h-full w-full rounded-[0.75rem]" />
+                      <div
+                        className={`absolute inset-0 flex items-center justify-center gap-1 rounded-[0.75rem] bg-black/50 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 ${
+                          showQrActions ? 'opacity-100' : 'opacity-0'
+                        }`}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={downloadQR}
+                          className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-800"
+                        >
+                          Download
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void shareQR();
+                          }}
+                          className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-800"
+                        >
+                          Share
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Native img: avoids Next image pipeline issues with proxied / cross-origin storage URLs */}
+                      <img
+                        src={store.logo}
+                        alt={`${store.name} logo`}
+                        width={74}
+                        height={74}
+                        className="h-full w-full object-cover"
+                        loading="eager"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
+                      />
+                    </>
+                  )}
                 </span>
                 {(store.isVerified || isProPlan) && (
                   <span
@@ -624,57 +709,29 @@ const HeroSection = ({
 
                 {(products.length > 0 || services.length > 0) && (
                   <div className="mt-4 w-full sm:hidden">
-                    <ProductImageCarousel products={products} services={services} />
+                    <ProductImageCarousel products={products} services={services} isStoreOwner={isStoreOwner} />
                   </div>
                 )}
 
-                <div className="mt-2.5 grid w-full grid-cols-3 gap-2 sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!canEngage || followBusy || !onToggleFollow) return;
-                      void onToggleFollow();
-                    }}
-                    disabled={!canEngage || followBusy || !onToggleFollow}
-                    className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-blue-800"
-                  >
-                    <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-blue-100">
-                      <UserPlus className="h-2.5 w-2.5 shrink-0 text-blue-200" />
-                      {store.viewerFollowing ? 'Following' : 'Follow'}
-                    </span>
-                    <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
-                      {followBusy ? '...' : (store.followersCount ?? 0).toLocaleString('en-IN')}
+                <div className="mt-2.5 grid w-full grid-cols-3 overflow-hidden rounded-xl border border-white/15 bg-white/90 text-slate-900 sm:hidden">
+                  <div className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
+                      {(store.followersCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!canEngage || likeBusy || !onToggleLike) return;
-                      void onToggleLike();
-                    }}
-                    disabled={!canEngage || likeBusy || !onToggleLike}
-                    className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-pink-800"
-                  >
-                    <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-rose-100">
-                      <Heart className="h-2.5 w-2.5 shrink-0 text-rose-200" />
-                      {store.viewerLiked ? 'Liked' : 'Like'}
-                    </span>
-                    <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
-                      {likeBusy ? '...' : (store.likesCount ?? 0).toLocaleString('en-IN')}
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-[36px] w-full items-center justify-between rounded-2xl border border-emerald-400/35 bg-emerald-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-emerald-800"
-                  >
-                    <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.03em] text-emerald-100">
-                      <Eye className="h-2.5 w-2.5 shrink-0 text-emerald-200" />
-                      Views
-                    </span>
-                    <p className="ml-2 shrink-0 text-[10px] font-bold tabular-nums text-white">
+                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Followers</p>
+                  </div>
+                  <div className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
                       {(store.seenCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                  </button>
+                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Views</p>
+                  </div>
+                  <div className="flex min-h-[48px] flex-col items-center justify-center px-1 py-1.5 text-center">
+                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
+                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                    </p>
+                    <p className="mt-0.5 text-[9px] font-medium text-slate-500">Likes</p>
+                  </div>
                 </div>
               </motion.div>
             </motion.div>
@@ -702,51 +759,6 @@ const HeroSection = ({
                 </div>
               )}
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEngage || followBusy || !onToggleFollow) return;
-                  void onToggleFollow();
-                }}
-                disabled={!canEngage || followBusy || !onToggleFollow}
-                className="inline-flex min-h-[40px] w-full items-center justify-between rounded-2xl border border-blue-400/35 bg-blue-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-blue-100">
-                  <UserPlus className="h-3 w-3 shrink-0 text-blue-200" />
-                  {store.viewerFollowing ? 'Following' : 'Follow'}
-                </span>
-                <p className="ml-2 shrink-0 text-[11px] font-bold tabular-nums text-white">
-                  {followBusy ? '...' : (store.followersCount ?? 0).toLocaleString('en-IN')}
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEngage || likeBusy || !onToggleLike) return;
-                  void onToggleLike();
-                }}
-                disabled={!canEngage || likeBusy || !onToggleLike}
-                className="inline-flex min-h-[40px] w-full items-center justify-between rounded-2xl border border-pink-400/35 bg-pink-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)] transition hover:bg-pink-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-rose-100">
-                  <Heart className="h-3 w-3 shrink-0 text-rose-200" />
-                  {store.viewerLiked ? 'Liked' : 'Like'}
-                </span>
-                <p className="ml-2 shrink-0 text-[11px] font-bold tabular-nums text-white">
-                  {likeBusy ? '...' : (store.likesCount ?? 0).toLocaleString('en-IN')}
-                </p>
-              </button>
-              <div className="inline-flex min-h-[40px] w-full items-center justify-between rounded-2xl border border-emerald-400/35 bg-emerald-900 px-2 py-1.5 text-white shadow-[0_8px_18px_rgba(3,7,18,0.45)]">
-                <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.03em] text-emerald-100">
-                  <Eye className="h-3 w-3 shrink-0 text-emerald-200" />
-                  Seen
-                </span>
-                <p className="ml-2 shrink-0 text-[11px] font-bold tabular-nums text-white">
-                  {(store.seenCount ?? 0).toLocaleString('en-IN')}
-                </p>
-              </div>
-            </div>
             <div className="mt-6 hidden sm:flex justify-center">
               <a
                 href={`${whatsappLink}?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
@@ -761,7 +773,7 @@ const HeroSection = ({
           </motion.div>
         </section>
       </div>
-      <motion.div variants={fadeInVariants} className="mt-12 flex justify-center px-4 sm:hidden">
+      <motion.div variants={fadeInVariants} className="relative z-20 mt-16 mb-20 flex justify-center px-4 sm:hidden">
         <a
           href={`${whatsappLink}?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
           target="_blank"
@@ -1169,7 +1181,7 @@ function BuyNowProductModal({
             </p>
             <p className="inline-flex items-center gap-1">
               <Star className="h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400" aria-hidden />
-              <span className="font-medium text-slate-800">{Number(product.rating ?? 0).toFixed(1)}</span>
+              <span className="font-medium text-slate-800">{product.rating.toFixed(1)}</span>
             </p>
             <p>
               Reviews: <span className="font-semibold text-slate-800">{product.totalReviews}</span>
@@ -1267,6 +1279,8 @@ type StoreCatalogProductCardProps = {
   whatsappLink: string;
   storeName: string;
   isStoreOwner: boolean;
+  showOwnerUploadButton?: boolean;
+  onUploadProduct?: () => void;
   cartQty: number;
   onAddToCart: () => void;
   onBuyNow: () => void;
@@ -1277,6 +1291,8 @@ function StoreCatalogProductCard({
   whatsappLink,
   storeName,
   isStoreOwner,
+  showOwnerUploadButton = false,
+  onUploadProduct,
   cartQty,
   onAddToCart,
   onBuyNow,
@@ -1284,11 +1300,24 @@ function StoreCatalogProductCard({
   const [activeIndex, setActiveIndex] = useState(0);
   const gallery = useMemo(() => buildProductGallery(product), [product]);
   const heroSrc = gallery[activeIndex] ?? product.image;
+  const isDemoProduct = product.id.startsWith('demo');
+  const [heroImageSrc, setHeroImageSrc] = useState(heroSrc || FALLBACK_PRODUCT_IMAGE);
+  const [demoImageSrc, setDemoImageSrc] = useState(DEMO_PRODUCT_CTA_IMAGE);
   const discount = getDiscountPercent(product.price, product.originalPrice);
   const badgeLabel = discount ? 'Best Seller' : 'Featured';
   const brandInitial = (storeName?.trim()?.charAt(0) || 'B').toUpperCase();
   const unitLabel = formatPriceUnitLabel(product);
   const cardClickable = product.inStock && !isStoreOwner;
+
+  useEffect(() => {
+    setHeroImageSrc(heroSrc || FALLBACK_PRODUCT_IMAGE);
+  }, [heroSrc]);
+
+  useEffect(() => {
+    if (isDemoProduct) {
+      setDemoImageSrc(DEMO_PRODUCT_CTA_IMAGE);
+    }
+  }, [isDemoProduct, product.id]);
 
   return (
     <article
@@ -1312,13 +1341,46 @@ function StoreCatalogProductCard({
     >
       <div className="relative overflow-hidden">
         <div className="relative block h-[45vw] max-h-[180px] w-full bg-slate-100 p-0 md:h-auto md:max-h-none md:aspect-[4/3]">
-          <Image
-            src={heroSrc}
-            alt={product.name}
-            fill
-            className="object-cover transition duration-300 group-hover:scale-[1.02]"
-            sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
-          />
+          {isDemoProduct && isStoreOwner ? (
+            <div
+              onClick={(event) => {
+                event.stopPropagation();
+                onUploadProduct?.();
+              }}
+              className="relative h-full w-full cursor-pointer"
+            >
+              <Image
+                src={demoImageSrc}
+                alt={product.name}
+                fill
+                className="object-cover transition duration-300 group-hover:scale-[1.02]"
+                sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
+                onError={() => {
+                  setDemoImageSrc(FALLBACK_PRODUCT_IMAGE);
+                }}
+              />
+              <div className="pointer-events-none absolute inset-0 bg-white/50" />
+              <div className="absolute inset-0 z-10 flex items-center justify-center">
+                <span className="relative z-10 rounded-md bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow-sm">Upload Product</span>
+              </div>
+            </div>
+          ) : (
+            <Image
+              src={isDemoProduct ? demoImageSrc : heroImageSrc}
+              alt={product.name}
+              fill
+              className="object-cover transition duration-300 group-hover:scale-[1.02]"
+              sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
+              onError={() => {
+                if (isDemoProduct) {
+                  setDemoImageSrc(FALLBACK_PRODUCT_IMAGE);
+                  return;
+                }
+                setHeroImageSrc(FALLBACK_PRODUCT_IMAGE);
+              }}
+            />
+          )}
+          {isDemoProduct && !isStoreOwner ? <div className="pointer-events-none absolute inset-0 bg-white/50" /> : null}
           <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-800 shadow-sm md:left-3 md:top-3 md:px-2.5 md:py-1 md:text-[10px]">
             {badgeLabel}
           </span>
@@ -1392,6 +1454,7 @@ function StoreCatalogProductCard({
 
 type ProductGridProps = {
   products: Product[];
+  realProductsCount: number;
   services?: Service[];
   theme: Theme;
   visibleCount: number;
@@ -1516,6 +1579,7 @@ type PriceFilter = 'all' | 'under-1000' | '1000-5000' | 'above-5000';
 
 const ProductGrid = ({
   products,
+  realProductsCount,
   services,
   theme,
   visibleCount,
@@ -1528,6 +1592,7 @@ const ProductGrid = ({
   cartEntries,
   onAddToCart,
 }: ProductGridProps) => {
+  const router = useRouter();
   const [filterType, setFilterType] = useState<'all' | 'products' | 'services'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('featured');
@@ -1627,6 +1692,7 @@ const ProductGrid = ({
     () => combinedEntries.findIndex((entry) => entry.type === 'service'),
     [combinedEntries]
   );
+  const hasRealProducts = realProductsCount > 0;
 
   return (
     <section id="products" className="py-10">
@@ -1752,6 +1818,7 @@ const ProductGrid = ({
                     : 'No products or services match these filters. Try adjusting your search.'}
               </p>
             ) : (
+              <>
               <motion.div
                 key={filterType + searchQuery}
                 className="mt-6 grid grid-cols-2 gap-2 min-w-0 sm:mt-10 sm:gap-3 md:gap-4 lg:grid-cols-3 xl:grid-cols-4"
@@ -1794,6 +1861,8 @@ const ProductGrid = ({
                         whatsappLink={whatsappLink}
                         storeName={storeName}
                         isStoreOwner={isStoreOwner}
+                        showOwnerUploadButton={!hasRealProducts && isStoreOwner}
+                        onUploadProduct={() => router.push('/dashboard/products')}
                         cartQty={cartQuantities[product.id] ?? 0}
                         onAddToCart={() => onAddToCart(product, 1)}
                         onBuyNow={() => {
@@ -1805,6 +1874,18 @@ const ProductGrid = ({
                   );
                 })}
               </motion.div>
+              {filterType !== 'services' ? (
+                <div className="mt-3 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/dashboard/products')}
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
+                  >
+                    Upload more products
+                  </button>
+                </div>
+              ) : null}
+              </>
             )}
 
         {filterType !== 'services' && canLoadMore && (
@@ -1852,17 +1933,16 @@ function StoreRatingSummaryCard({
   /** Optional line under the count (e.g. device-only guest reviews). */
   countCaption?: string;
 }) {
-  const safeAggregateRating = Number.isFinite(Number(aggregateRating)) ? Number(aggregateRating) : 0;
   return (
     <div className="rounded-2xl border border-slate-100 bg-slate-50/90 p-3 shadow-inner max-sm:p-3 sm:p-5">
       <div className="flex flex-col gap-4 max-sm:gap-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
         <div className="flex flex-col items-start sm:min-w-[9rem]">
           <p className="text-3xl font-bold tabular-nums text-slate-900 max-sm:text-[1.75rem] sm:text-5xl">
-            {safeAggregateRating.toFixed(1)}
+            {aggregateRating.toFixed(1)}
           </p>
-          <RatingStars rating={safeAggregateRating} size="sm" className="mt-0.5 max-sm:scale-90 max-sm:origin-left sm:mt-1" />
+          <RatingStars rating={aggregateRating} size="sm" className="mt-0.5 max-sm:scale-90 max-sm:origin-left sm:mt-1" />
           <p className="mt-1 text-xs font-medium text-slate-600 max-sm:mt-0.5 max-sm:text-[0.65rem] sm:mt-1.5 sm:text-sm">
-            {safeAggregateRating.toFixed(1)} out of 5
+            {aggregateRating.toFixed(1)} out of 5
           </p>
           <p className="mt-0.5 text-[0.65rem] text-slate-400 max-sm:text-[0.6rem] sm:text-xs">
             Based on {totalRecordedReviews.toLocaleString()} review{totalRecordedReviews === 1 ? '' : 's'}
@@ -1999,10 +2079,6 @@ export default function StoreView({
   reviewsError,
   onLoadMoreReviews,
   onSubmitStoreReview,
-  onToggleFollow,
-  onToggleLike,
-  followBusy = false,
-  likeBusy = false,
 }: StoreViewProps) {
   const { isLoggedIn, user } = useAuth();
   const planIdentifier = store.activeSubscription?.plan?.slug?.toLowerCase()
@@ -2011,20 +2087,18 @@ export default function StoreView({
   const isProPlan = Boolean(planIdentifier.includes('pro'));
   const INITIAL_VISIBLE_COUNT = 8;
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+  const userStoreId =
+    user && 'storeId' in user ? (user as { storeId?: string | number | null }).storeId : null;
 
-  const whatsappLink = useMemo(() => {
-    const rawWhatsapp = typeof store.whatsapp === 'string' ? store.whatsapp : '';
-    const digits = rawWhatsapp.replace(/[^0-9]/g, '');
-    return `https://wa.me/${digits}`;
-  }, [store.whatsapp]);
-  /** Prefer store owner id — slug-only match can wrongly skip visit tracking if slugs collide or auth slug is stale. */
+  const whatsappLink = useMemo(() => `https://wa.me/${store.whatsapp.replace(/[^0-9]/g, '')}`, [store.whatsapp]);
+  /** Robust owner detection (IDs may arrive as number/string across endpoints). */
   const viewerOwnsStore = Boolean(
-    (user?.id && store.userId && user.id === store.userId) ||
+    (user?.id && store.userId && String(user.id) === String(store.userId)) ||
+      (userStoreId && store.id && String(userStoreId) === String(store.id)) ||
       (user?.storeSlug &&
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())
   );
-  const canEngage = !viewerOwnsStore && Boolean(store.id);
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
   const guestReviewsStorageKey = useMemo(() => `storeGuestReviews:${store.id}`, [store.id]);
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([]);
@@ -2035,17 +2109,33 @@ export default function StoreView({
   const [guestReviewNotice, setGuestReviewNotice] = useState<string | null>(null);
 
   const theme = useMemo(() => getThemeForCategory(store.businessType), [store.businessType]);
-  const marqueeCategory = products[0]?.category || store.businessType || 'exclusive collections';
+  const normalizedDemoProducts = useMemo<Product[]>(
+    () =>
+      demoProducts.map((product) => ({
+        id: product.id,
+        storeId: store.id,
+        storeName: store.name,
+        storeSlug: store.username,
+        name: product.name,
+        description: `${product.name} preview item for your catalogue.`,
+        price: Number(String(product.price).replace(/[^\d.]/g, '')) || 0,
+        image: product.image,
+        images: [product.image],
+        category: store.businessType || 'General',
+        rating: store.rating || 4.5,
+        totalReviews: store.totalReviews || 0,
+        inStock: true,
+      })),
+    [store.id, store.name, store.username, store.businessType, store.rating, store.totalReviews]
+  );
+  const displayProducts = products.length > 0 ? products : normalizedDemoProducts;
+  const marqueeCategory = displayProducts[0]?.category || store.businessType || 'exclusive collections';
   const marqueeMessage = `Welcome to ${store.name} — Trusted in ${store.location || 'your city'} · Call ${
     store.whatsapp || 'N/A'
   } · Signature picks in ${marqueeCategory}`;
   const approvedReviews = useMemo(() => reviews.filter((review) => review.isApproved !== false), [reviews]);
   const totalRecordedReviews = Math.max(reviewSummary?.totalReviews ?? 0, store.totalReviews ?? 0, approvedReviews.length);
-  const aggregateRating = useMemo(() => {
-    const raw = reviewSummary?.rating ?? store.rating;
-    const numeric = typeof raw === 'number' ? raw : Number(raw);
-    return Number.isFinite(numeric) ? numeric : 0;
-  }, [reviewSummary?.rating, store.rating]);
+  const aggregateRating = reviewSummary?.rating ?? store.rating;
   const reviewsMergedForStats = useMemo(
     () => [...guestReviews, ...approvedReviews],
     [guestReviews, approvedReviews]
@@ -2058,8 +2148,7 @@ export default function StoreView({
   const cardDisplayRating = useMemo(() => {
     if (reviewsMergedForStats.length === 0) return aggregateRating;
     const sum = reviewsMergedForStats.reduce((s, r) => s + (Number(r.rating) || 0), 0);
-    const avg = sum / reviewsMergedForStats.length;
-    return Number.isFinite(avg) ? avg : aggregateRating;
+    return sum / reviewsMergedForStats.length;
   }, [reviewsMergedForStats, aggregateRating]);
   const cardDisplayCount = reviewsMergedForStats.length > 0 ? reviewsMergedForStats.length : totalRecordedReviews;
   const ratingBreakdown = useMemo(
@@ -2076,7 +2165,7 @@ export default function StoreView({
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const loadMoreProducts = () => {
-    setVisibleCount((previous) => Math.min(previous + INITIAL_VISIBLE_COUNT, products.length));
+    setVisibleCount((previous) => Math.min(previous + INITIAL_VISIBLE_COUNT, displayProducts.length));
   };
 
   const resetVisibleProducts = () => {
@@ -2333,19 +2422,16 @@ export default function StoreView({
         <HeroSection
           store={store}
           theme={theme}
-          products={products}
+          products={displayProducts}
           services={services}
           whatsappLink={whatsappLink}
           isProPlan={isProPlan}
-          canEngage={canEngage}
-          onToggleFollow={onToggleFollow}
-          onToggleLike={onToggleLike}
-          followBusy={followBusy}
-          likeBusy={likeBusy}
+          isStoreOwner={viewerOwnsStore}
         />
 
         <ProductGrid
-          products={products}
+          products={displayProducts}
+          realProductsCount={products.length}
           services={services}
           theme={theme}
           visibleCount={visibleCount}
@@ -2367,26 +2453,13 @@ export default function StoreView({
                 <div className="border-b border-slate-100 p-3.5 max-sm:p-3 sm:p-8 sm:pb-6">
                   <div className="flex gap-2.5 max-sm:gap-2 sm:gap-4">
                     <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm max-sm:h-10 max-sm:w-10 sm:h-14 sm:w-14 sm:rounded-xl">
-                      {(() => {
-                        const candidate = products[0]?.image ?? store.logo ?? '';
-                        const previewSrc = typeof candidate === 'string' ? candidate.trim() : '';
-                        if (!previewSrc) {
-                          return (
-                            <div className="absolute inset-0 flex items-center justify-center text-slate-400">
-                              <Layers className="h-4 w-4 sm:h-5 sm:w-5" />
-                            </div>
-                          );
-                        }
-                        return (
-                          <Image
-                            src={previewSrc}
-                            alt={products[0] ? `${products[0].name} preview` : `${store.name} logo`}
-                            fill
-                            className="object-cover"
-                            sizes="(max-width:640px) 40px, 56px"
-                          />
-                        );
-                      })()}
+                      <Image
+                        src={store.logo}
+                        alt={`${store.name} logo`}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width:640px) 40px, 56px"
+                      />
                     </div>
                     <div className="min-w-0 flex-1 space-y-0.5 max-sm:space-y-0 sm:space-y-1">
                       <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 max-sm:leading-tight sm:text-[11px] sm:tracking-[0.2em]">

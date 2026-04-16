@@ -2,25 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Check } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
 import {
   formatValidationErrorsForDisplay,
-  getGoogleOAuthApiBaseUrl,
   isApiError,
   parseApiValidationErrors,
 } from '@/src/lib/api';
 import { resolvePostAuthRedirect } from '@/src/lib/auth-redirect';
 import { GoogleAuthButton } from '@/components/GoogleAuthButton';
-
-const GoogleGlyph = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-    <path d="M17.64 9.2045c0-.6381-.0573-1.2518-.1636-1.8409H9v3.4814h4.8445a4.1428 4.1428 0 0 1-1.7977 2.7172v2.2589h2.9081c1.7036-1.5691 2.6851-3.881 2.6851-6.6166Z" fill="#4285F4" />
-    <path d="M9 18c2.43 0 4.4672-.8059 5.9568-2.1798l-2.9081-2.2589c-.8066.54-1.8376.8591-3.0487.8591-2.3448 0-4.3295-1.5832-5.0376-3.7106H.9572V13.09C2.4377 15.9832 5.4818 18 9 18Z" fill="#34A853" />
-    <path d="M3.9624 10.71A5.4089 5.4089 0 0 1 3.6745 9c0-.5944.1038-1.1718.2879-1.71V4.909H.9572A8.9945 8.9945 0 0 0 0 9c0 1.4564.3474 2.8345.9572 4.091l3.0052-2.381Z" fill="#FBBC05" />
-    <path d="M9 3.5795c1.3213 0 2.5073.4549 3.4415 1.3484l2.5812-2.5812C13.4629.8914 11.4259 0 9 0 5.4818 0 2.4377 2.0168.9572 4.909l3.0052 2.381c.7081-2.1274 2.6928-3.7105 5.0376-3.7105Z" fill="#EA4335" />
-  </svg>
-);
 
 export default function AuthPage() {
   const router = useRouter();
@@ -53,21 +43,6 @@ export default function AuthPage() {
 
     router.replace(resolvePostAuthRedirect(redirectTarget, user));
   }, [shouldRedirect, isLoggedIn, user, router, redirectTarget]);
-
-  const googleRedirectUrl = useMemo(() => {
-    const base = getGoogleOAuthApiBaseUrl();
-    const url = new URL(`${base}/auth/google`);
-    const desiredRedirect = redirectTarget ?? (view === 'signup' ? '/create-store' : null);
-    if (desiredRedirect) {
-      url.searchParams.set('redirect', desiredRedirect);
-    }
-    return url.toString();
-  }, [redirectTarget, view]);
-
-  const handleGoogleLogin = () => {
-    if (typeof window === 'undefined') return;
-    window.location.href = googleRedirectUrl;
-  };
 
   const clearGoogleParams = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -166,194 +141,227 @@ export default function AuthPage() {
     setLoginError(null);
   };
 
-  return (
-    <div className="min-h-screen overflow-hidden bg-gray-50 px-3 pt-16 pb-24 flex items-start justify-center md:items-center md:px-4 md:pb-0 md:pt-0">
-      <div className="w-full max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow-sm px-3 pt-2.5 pb-4 space-y-4 md:px-4 md:pt-3 md:pb-5 md:space-y-5">
-        <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-gray-400 md:text-xs">{view === 'login' ? 'Sign in' : 'Sign up'}</p>
-          <h1 className="text-xl font-semibold text-gray-900 md:text-2xl">Create your store</h1>
-          <p className="text-xs text-gray-600 md:text-sm">
-            {view === 'login'
-              ? 'Continue with your email to access your store tools.'
-              : 'Create a free account to set up your store.'}
-          </p>
-        </div>
+  const onboardingBullets = [
+    'No website needed',
+    'Share your catalog on WhatsApp',
+    'Get more customers',
+    'Accept online payments with payment gateway',
+    'Manage products and orders in one dashboard',
+    'Get a branded online store link instantly',
+  ];
 
-        <div className="space-y-4">
+  return (
+    <div className="flex min-h-[calc(100dvh-8.5rem)] items-center justify-center bg-slate-100 px-2.5 py-2 md:min-h-[100dvh] md:py-6">
+      <div className="mx-auto w-full max-w-[420px] md:max-w-5xl">
+        <div className="grid overflow-hidden rounded-xl border border-gray-200 bg-white md:rounded-2xl md:grid-cols-2">
+          <section className="px-3 pt-3 pb-2.5 md:border-r md:border-b-0 md:px-6 md:py-6">
+            <div className="relative md:space-y-4">
+              <div className="pr-32 pt-2 md:pr-0 md:pt-0 md:space-y-2">
+                <h1 className="text-[1.15rem] leading-tight font-bold text-slate-900 md:text-[2rem]">
+                  Create Your <span className="text-emerald-500">FREE</span> Catalog
+                </h1>
+                <p className="mt-1 text-xs font-semibold text-slate-900 md:text-base">in 30 Seconds</p>
+              </div>
+              <div className="absolute top-0 right-0 md:static md:mt-5">
+                <img
+                  src="https://res.cloudinary.com/drcfeoi6p/image/upload/v1775726970/create_ihhax6.png"
+                  alt="Create free catalog preview"
+                  className="h-32 w-32 object-contain md:mx-auto md:h-auto md:max-h-none md:w-full"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+
+            <ul className="mt-3.5 space-y-1.5 md:mt-4 md:space-y-2.5">
+              {onboardingBullets.map((bullet) => (
+                <li key={bullet} className="flex items-center gap-2.5 text-[11px] font-medium text-slate-800 md:text-base">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                    <Check className="h-3.5 w-3.5" />
+                  </span>
+                  <span>{bullet}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="mx-auto w-full max-w-[360px] px-2.5 pt-2 pb-3 space-y-3 md:max-w-none md:px-5 md:pt-5 md:pb-5 md:space-y-5">
+          <div className="space-y-4">
           <GoogleAuthButton
             redirectTo={redirectTarget ?? (view === 'signup' ? '/create-store' : undefined)}
             disabled={externalLoading}
           >
             {externalLoading ? 'Connecting to Google...' : view === 'login' ? 'Sign in with Google' : 'Continue with Google'}
           </GoogleAuthButton>
-          <div className="flex items-center gap-2 text-[11px] text-gray-400 md:text-xs">
-            <span className="h-px flex-1 bg-gray-200" />
-            <span>or continue with email</span>
-            <span className="h-px flex-1 bg-gray-200" />
+            <div className="flex items-center gap-2 text-[11px] text-gray-400 md:text-xs">
+              <span className="h-px flex-1 bg-gray-200" />
+              <span>or continue with email</span>
+              <span className="h-px flex-1 bg-gray-200" />
+            </div>
           </div>
-        </div>
 
-        {view === 'login' ? (
-          <form onSubmit={handleEmailLogin} className="space-y-3.5 md:space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-xs font-medium text-gray-700 md:text-sm">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4" />
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  required
-                  className="w-full rounded-xl border border-gray-200 pl-10 pr-3 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-xs font-medium text-gray-700 md:text-sm">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4 pointer-events-none" />
-                <input
-                  id="password"
-                  type={loginPasswordVisible ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
-                  required
-                  autoComplete="current-password"
-                  className="w-full rounded-xl border border-gray-200 pl-10 pr-11 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setLoginPasswordVisible((v) => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                  aria-label={loginPasswordVisible ? 'Hide password' : 'Show password'}
-                >
-                  {loginPasswordVisible ? (
-                    <EyeOff className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
-                  ) : (
-                    <Eye className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-[#e8ecff] py-2.5 text-xs font-semibold text-[#0c1323] transition hover:bg-[#dce2ff] disabled:opacity-60 md:py-3 md:text-sm"
-            >
-              {loading ? 'Signing in...' : 'Login'}
-            </button>
-            {loginError && (
-              <p className="whitespace-pre-line text-center text-[11px] text-red-500 md:text-xs">{loginError}</p>
-            )}
-          </form>
-        ) : (
-          <form onSubmit={handleSignup} className="space-y-3.5 md:space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="name" className="text-xs font-medium text-gray-700 md:text-sm">
-                Full name
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Your name"
-                required
-                className="w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:px-4 md:py-3 md:text-sm"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="signup-email" className="text-xs font-medium text-gray-700 md:text-sm">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4" />
-                <input
-                  id="signup-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  required
-                  className="w-full rounded-xl border border-gray-200 pl-10 pr-3 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="signup-password" className="text-xs font-medium text-gray-700 md:text-sm">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4 pointer-events-none" />
-                <input
-                  id="signup-password"
-                  type={signupPasswordVisible ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create password"
-                  required
-                  autoComplete="new-password"
-                  className="w-full rounded-xl border border-gray-200 pl-10 pr-11 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setSignupPasswordVisible((v) => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                  aria-label={signupPasswordVisible ? 'Hide password' : 'Show password'}
-                >
-                  {signupPasswordVisible ? (
-                    <EyeOff className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
-                  ) : (
-                    <Eye className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
-                  )}
-                </button>
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-[#e8ecff] py-2.5 text-xs font-semibold text-[#0c1323] transition hover:bg-[#dce2ff] disabled:opacity-60 md:py-3 md:text-sm"
-            >
-              {loading ? 'Creating account...' : 'Create store'}
-            </button>
-            {signupError && (
-              <p className="whitespace-pre-line text-center text-[11px] text-red-500 md:text-xs">{signupError}</p>
-            )}
-          </form>
-        )}
-
-        <div className="space-y-2">
-          {ctaMessage && <p className="text-center text-[11px] text-red-500 md:text-xs">{ctaMessage}</p>}
           {view === 'login' ? (
-            <button
-              onClick={handleProceedToCreate}
-              className="w-full rounded-xl border border-gray-900 py-2.5 text-xs font-semibold text-gray-900 md:py-3 md:text-sm"
-            >
-              Create store
-            </button>
+            <form onSubmit={handleEmailLogin} className="space-y-3.5 md:space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="email" className="text-xs font-medium text-gray-700 md:text-sm">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4" />
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    required
+                    className="w-full rounded-xl border border-gray-200 pl-10 pr-3 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="password" className="text-xs font-medium text-gray-700 md:text-sm">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4 pointer-events-none" />
+                  <input
+                    id="password"
+                    type={loginPasswordVisible ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Password"
+                    required
+                    autoComplete="current-password"
+                    className="w-full rounded-xl border border-gray-200 pl-10 pr-11 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLoginPasswordVisible((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    aria-label={loginPasswordVisible ? 'Hide password' : 'Show password'}
+                  >
+                    {loginPasswordVisible ? (
+                      <EyeOff className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                    ) : (
+                      <Eye className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl bg-[#e8ecff] py-2.5 text-xs font-semibold text-[#0c1323] transition hover:bg-[#dce2ff] disabled:opacity-60 md:py-3 md:text-sm"
+              >
+                {loading ? 'Signing in...' : 'Login'}
+              </button>
+              {loginError && (
+                <p className="whitespace-pre-line text-center text-[11px] text-red-500 md:text-xs">{loginError}</p>
+              )}
+            </form>
           ) : (
-            <button
-              onClick={() => {
-                setView('login');
-                setLoginError(null);
-                setSignupError(null);
-              }}
-              className="w-full rounded-xl border border-gray-200 py-2.5 text-xs font-semibold text-gray-600 md:py-3 md:text-sm"
-            >
-              Back to login
-            </button>
+            <form onSubmit={handleSignup} className="space-y-3.5 md:space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="name" className="text-xs font-medium text-gray-700 md:text-sm">
+                  Full name
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your name"
+                  required
+                  className="w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:px-4 md:py-3 md:text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="signup-email" className="text-xs font-medium text-gray-700 md:text-sm">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4" />
+                  <input
+                    id="signup-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    required
+                    className="w-full rounded-xl border border-gray-200 pl-10 pr-3 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="signup-password" className="text-xs font-medium text-gray-700 md:text-sm">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 md:h-4 md:w-4 pointer-events-none" />
+                  <input
+                    id="signup-password"
+                    type={signupPasswordVisible ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Create password"
+                    required
+                    autoComplete="new-password"
+                    className="w-full rounded-xl border border-gray-200 pl-10 pr-11 py-2.5 text-xs focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 md:py-3 md:text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSignupPasswordVisible((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    aria-label={signupPasswordVisible ? 'Hide password' : 'Show password'}
+                  >
+                    {signupPasswordVisible ? (
+                      <EyeOff className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                    ) : (
+                      <Eye className="h-4 w-4 md:h-[1.125rem] md:w-[1.125rem]" aria-hidden />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl bg-[#e8ecff] py-2.5 text-xs font-semibold text-[#0c1323] transition hover:bg-[#dce2ff] disabled:opacity-60 md:py-3 md:text-sm"
+              >
+                {loading ? 'Creating account...' : 'Create store'}
+              </button>
+              {signupError && (
+                <p className="whitespace-pre-line text-center text-[11px] text-red-500 md:text-xs">{signupError}</p>
+              )}
+            </form>
           )}
+
+          <div className="space-y-2">
+            {ctaMessage && <p className="text-center text-[11px] text-red-500 md:text-xs">{ctaMessage}</p>}
+            {view === 'login' ? (
+              <button
+                onClick={handleProceedToCreate}
+                className="w-full rounded-xl border border-gray-900 py-2.5 text-xs font-semibold text-gray-900 md:py-3 md:text-sm"
+              >
+                Create store
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setView('login');
+                  setLoginError(null);
+                  setSignupError(null);
+                }}
+                className="w-full rounded-xl border border-gray-200 py-2.5 text-xs font-semibold text-gray-600 md:py-3 md:text-sm"
+              >
+                Back to login
+              </button>
+            )}
+          </div>
+          </section>
         </div>
       </div>
     </div>

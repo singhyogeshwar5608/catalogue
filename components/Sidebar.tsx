@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -12,17 +11,16 @@ import {
   Users,
   Menu,
   X,
+  ShoppingBag,
   Briefcase,
   LogOut,
   Home,
   Plug2,
-  Bell,
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { getMyStoreNotifications, getStoreBySlugFromApi } from '@/src/lib/api';
+import { getStoreBySlug, getStoreBySlugFromApi, isApiError } from '@/src/lib/api';
 import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
-import dashboardLogo from '@/assets/Larawans.svg';
 
 export default function Sidebar() {
   const router = useRouter();
@@ -30,18 +28,30 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [myStore, setMyStore] = useState<Store | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
 
   const loadStore = useCallback(async () => {
-    if (!user?.storeSlug) {
+    const slug = user?.storeSlug?.trim();
+    if (!slug) {
       setMyStore(null);
       return;
     }
     try {
-      const store = await getStoreBySlugFromApi(user.storeSlug);
+      const store = await getStoreBySlugFromApi(slug);
       setMyStore(store);
     } catch (error) {
-      console.error('Failed to load store:', error);
+      // Laravel `/store/:slug` may intermittently fail (500); gracefully fallback to cached `/api/stores/:slug`.
+      const apiStatus = isApiError(error) ? error.status : undefined;
+      if (typeof apiStatus === 'number' && apiStatus >= 500) {
+        try {
+          const fallbackStore = await getStoreBySlug(slug);
+          setMyStore(fallbackStore);
+          return;
+        } catch (fallbackError) {
+          console.error('Failed to load store via both endpoints:', fallbackError);
+        }
+      } else {
+        console.error('Failed to load store:', error);
+      }
       setMyStore(null);
     }
   }, [user?.storeSlug]);
@@ -58,39 +68,12 @@ export default function Sidebar() {
     return () => window.removeEventListener(STORE_PROFILE_REFRESH_EVENT, onRefresh);
   }, [loadStore]);
 
-  useEffect(() => {
-    if (!user) {
-      setUnreadCount(0);
-      return undefined;
-    }
-    let stopped = false;
-    const loadUnread = async () => {
-      try {
-        const payload = await getMyStoreNotifications({ limit: 1 });
-        if (!stopped) {
-          setUnreadCount(payload.unread_count);
-        }
-      } catch {
-        // Ignore sidebar badge failures.
-      }
-    };
-    void loadUnread();
-    const id = window.setInterval(() => {
-      void loadUnread();
-    }, 4000);
-    return () => {
-      stopped = true;
-      window.clearInterval(id);
-    };
-  }, [user, pathname]);
-
   const businessType = myStore?.businessType || 'product';
   const showPaymentsHub = storeCanAccessPaymentIntegrationHub(myStore);
 
   const menuItems = [
     { href: '/', icon: Home, label: 'Home Page' },
     { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { href: '/dashboard/notifications', icon: Bell, label: 'Notifications' },
     ...(businessType === 'product' || businessType === 'hybrid' 
       ? [{ href: '/dashboard/products', icon: Package, label: 'Products' }] 
       : []),
@@ -118,8 +101,21 @@ export default function Sidebar() {
         className="md:hidden fixed top-0 left-0 right-0 z-50 flex min-h-[3.75rem] items-center justify-between border-b border-gray-200 bg-white px-4 pb-3"
         style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
       >
-        <Link href="/" className="flex items-center gap-2">
-          <Image src={dashboardLogo} alt="Larawans" className="h-8 w-auto object-contain" priority />
+        <Link href="/" className="flex min-w-0 items-center gap-2">
+          {myStore?.logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={myStore.logo}
+              alt={myStore.name || 'Store logo'}
+              className="h-8 w-8 rounded-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <ShoppingBag className="h-6 w-6 text-primary" />
+          )}
+          <span className="truncate text-lg font-bold text-gray-900">
+            {myStore?.name?.trim() ? myStore.name : 'Cateloge'}
+          </span>
         </Link>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -151,9 +147,7 @@ export default function Sidebar() {
               <ul className="space-y-2">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = item.href === '/dashboard'
-                    ? pathname === '/dashboard'
-                    : pathname?.startsWith(item.href);
+                  const isActive = false;
                   
                   return (
                     <li key={item.href}>
@@ -168,11 +162,6 @@ export default function Sidebar() {
                       >
                         <Icon className="w-5 h-5" />
                         <span className="font-medium">{item.label}</span>
-                        {item.href === '/dashboard/notifications' && unreadCount > 0 ? (
-                          <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? 'bg-white text-primary' : 'bg-primary text-white'}`}>
-                            {unreadCount > 99 ? '99+' : unreadCount}
-                          </span>
-                        ) : null}
                       </Link>
                     </li>
                   );
@@ -196,16 +185,15 @@ export default function Sidebar() {
       {/* Desktop Sidebar */}
       <div className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:w-64 md:border-r md:border-gray-200 md:bg-white">
         <div className="flex flex-col flex-1 overflow-y-auto">
-          <div className="flex items-center px-4 py-6 border-b border-gray-200">
-            <Image src={dashboardLogo} alt="Larawans" className="h-9 w-auto object-contain" priority />
+          <div className="flex items-center gap-2 px-4 py-6 border-b border-gray-200">
+            <ShoppingBag className="w-8 h-8 text-primary" />
+            <span className="text-xl font-bold text-gray-900">Cateloge</span>
           </div>
           <nav className="flex-1 p-4">
             <ul className="space-y-2">
               {menuItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = item.href === '/dashboard'
-                  ? pathname === '/dashboard'
-                  : pathname?.startsWith(item.href);
+                const isActive = false;
                 
                 return (
                   <li key={item.href}>
@@ -219,11 +207,6 @@ export default function Sidebar() {
                     >
                       <Icon className="w-5 h-5" />
                       <span className="font-medium">{item.label}</span>
-                      {item.href === '/dashboard/notifications' && unreadCount > 0 ? (
-                        <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? 'bg-white text-primary' : 'bg-primary text-white'}`}>
-                          {unreadCount > 99 ? '99+' : unreadCount}
-                        </span>
-                      ) : null}
                     </Link>
                   </li>
                 );

@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, ShoppingCart, Star } from 'lucide-react';
 import { Product } from '@/types';
 
 const CARD_BG = '#ffffff';
 const MUTED = '#6b7280';
+const FALLBACK_PRODUCT_IMAGE = '/fallback/product-placeholder.svg';
 
 interface ProductCardProps {
   product: Product;
@@ -32,10 +33,10 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
   const [showModal, setShowModal] = useState(false);
   const gallery = useMemo(() => buildGallery(product), [product]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [heroImageSrc, setHeroImageSrc] = useState(gallery[activeIndex] ?? product.image);
+  const [modalImageSrc, setModalImageSrc] = useState(product.image);
 
   const heroSrc = gallery[activeIndex] ?? product.image;
-  const modalImageSrc = gallery[0] ?? product.image;
-  const hasHeroImage = typeof heroSrc === 'string' && heroSrc.trim() !== '';
   const discount = product.originalPrice
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
@@ -43,6 +44,14 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
   const tagline = product.category || product.storeName || 'Best quality product';
   const brandInitial = (product.storeName?.trim()?.charAt(0) || 'B').toUpperCase();
   const badgeLabel = discount > 0 ? 'Best Seller' : 'Featured';
+
+  useEffect(() => {
+    setHeroImageSrc(heroSrc || FALLBACK_PRODUCT_IMAGE);
+  }, [heroSrc]);
+
+  useEffect(() => {
+    setModalImageSrc(product.image || FALLBACK_PRODUCT_IMAGE);
+  }, [product.image]);
 
   const stop = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -55,19 +64,16 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
     >
       <div className="relative overflow-hidden">
         <div className="relative h-[45vw] max-h-[180px] w-full bg-slate-100 md:h-auto md:max-h-none md:aspect-[4/3]">
-          {hasHeroImage ? (
-            <Image
-              src={heroSrc}
-              alt={product.name}
-              fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 320px"
-              className="object-cover transition duration-300 group-hover:scale-[1.02]"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-100 text-xs font-medium text-slate-500">
-              No image
-            </div>
-          )}
+          <Image
+            src={heroImageSrc}
+            alt={product.name}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 320px"
+            className="object-cover transition duration-300 group-hover:scale-[1.02]"
+            onError={() => {
+              setHeroImageSrc(FALLBACK_PRODUCT_IMAGE);
+            }}
+          />
           <span className="absolute left-2 top-2 rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-800 shadow-sm md:left-3 md:top-3 md:px-2.5 md:py-1 md:text-[10px]">
             {badgeLabel}
           </span>
@@ -149,13 +155,15 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
           >
             <div className="grid grid-cols-1 md:grid-cols-2">
               <div className="relative h-72 md:h-full">
-                {typeof modalImageSrc === 'string' && modalImageSrc.trim() !== '' ? (
-                  <Image src={modalImageSrc} alt={product.name} fill className="object-cover" />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-slate-100 text-sm font-medium text-slate-500">
-                    No image
-                  </div>
-                )}
+                <Image
+                  src={modalImageSrc}
+                  alt={product.name}
+                  fill
+                  className="object-cover"
+                  onError={() => {
+                    setModalImageSrc(FALLBACK_PRODUCT_IMAGE);
+                  }}
+                />
                 {discount > 0 && (
                   <div className="absolute right-4 top-4 rounded-full bg-white px-3 py-1 text-xs font-semibold text-red-600">
                     {discount}% off

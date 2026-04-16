@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X, Search } from 'lucide-react';
+import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X, Search, ChevronDown, Check } from 'lucide-react';
 import type { Product, Service, Store } from '@/types';
 import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlugFromApi, isApiError, updateProduct } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
@@ -186,7 +186,21 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [unitDropdownOpen, setUnitDropdownOpen] = useState(false);
+  const unitDropdownRef = useRef<HTMLDivElement | null>(null);
   const isEditingProduct = Boolean(editingProduct);
+
+  useEffect(() => {
+    if (!unitDropdownOpen) return;
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!unitDropdownRef.current) return;
+      if (!unitDropdownRef.current.contains(event.target as Node)) {
+        setUnitDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [unitDropdownOpen]);
 
   useEffect(() => {
     setShowAddForm(defaultShowForm);
@@ -383,13 +397,13 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
         unit_type: formState.unitType,
         unit_custom_label: formState.unitType === 'custom' ? formState.unitCustomLabel.trim() || null : null,
         unit_quantity: Number.isFinite(unitQuantityValue) && unitQuantityValue > 0 ? unitQuantityValue : null,
-        wholesale_enabled: formState.wholesaleEnabled,
+        wholesale_enabled: Boolean(formState.wholesalePrice || formState.wholesaleMinQty),
         wholesale_price:
-          formState.wholesaleEnabled && formState.wholesalePrice
+          formState.wholesalePrice
             ? Number(formState.wholesalePrice)
             : null,
         wholesale_min_qty:
-          formState.wholesaleEnabled && formState.wholesaleMinQty
+          formState.wholesaleMinQty
             ? Number(formState.wholesaleMinQty)
             : null,
         min_order_quantity: formState.minOrderQuantity ? Number(formState.minOrderQuantity) : undefined,
@@ -571,12 +585,6 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
   return (
     <div className="space-y-6 md:space-y-8 pb-24">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">Products</h1>
-          <p className="text-sm md:text-base text-gray-600">
-            {isEditingProduct ? 'Editing product details' : 'Manage your product catalog'}
-          </p>
-        </div>
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
           <button
             onClick={() => {
@@ -590,13 +598,13 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               setShowAddForm((prev) => !prev);
             }}
             disabled={!hasStore || (newCatalogLocked && !editingProduct)}
-            className={`flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-semibold rounded-xl text-white shadow-sm transition sm:w-auto sm:px-4 md:px-6 md:py-3 md:text-base ${
+            className={`flex items-center justify-center gap-1.5 w-full px-2.5 py-1.5 text-xs font-semibold rounded-xl text-white shadow-sm transition sm:w-auto sm:gap-2 sm:px-4 sm:py-2 sm:text-sm md:px-6 md:py-3 md:text-base ${
               isEditingProduct
                 ? 'bg-amber-500 hover:bg-amber-600'
                 : 'bg-primary hover:bg-primary-700'
             } disabled:opacity-60`}
           >
-            <Plus className="w-4 h-4 md:w-5 md:h-5" />
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
             <span className="hidden sm:inline">{isEditingProduct ? 'Editing product' : 'Add Product'}</span>
             <span className="sm:hidden">{isEditingProduct ? 'Editing product' : 'Add Product'}</span>
           </button>
@@ -610,9 +618,9 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               setShowAddServiceForm((prev) => !prev);
             }}
             disabled={!hasStore || newCatalogLocked}
-            className="flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-semibold rounded-xl border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 sm:w-auto sm:px-4 md:px-6 md:py-3 md:text-base"
+            className="flex items-center justify-center gap-1.5 w-full px-2.5 py-1.5 text-xs font-semibold rounded-xl border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 sm:w-auto sm:gap-2 sm:px-4 sm:py-2 sm:text-sm md:px-6 md:py-3 md:text-base"
           >
-            <Briefcase className="w-4 h-4 md:w-5 md:h-5" />
+            <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
             <span className="hidden sm:inline">Add Service</span>
             <span className="sm:hidden">Add Service</span>
           </button>
@@ -650,56 +658,53 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       )}
 
       {showAddForm && (
-        <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400">
-                {isEditingProduct ? 'Update existing product' : 'Create new product'}
-              </p>
-              <h2 className="mt-1 text-2xl font-semibold text-slate-900">
-                {isEditingProduct ? `Editing: ${editingProduct?.name ?? ''}` : 'Add Product'}
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">Keep the details short and clear so the form stays easy to use on mobile.</p>
-            </div>
-            <div className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              Product setup
-            </div>
-          </div>
-
-          <form onSubmit={handleAddProduct} className="space-y-5">
-            <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)]">
-              <div className="space-y-2">
-                <label className="block text-[13px] font-semibold text-slate-700" htmlFor="product-image-input">
-                  Product cover
-                </label>
-                <label
-                  htmlFor="product-image-input"
-                  className="relative flex cursor-pointer flex-col items-center justify-center gap-3 rounded-[24px] border border-dashed border-primary/30 bg-primary/5 px-4 py-5 text-center transition hover:border-primary hover:bg-primary/10"
-                >
-                  <div className="relative">
-                    {imagePreview ? (
-                      <>
-                        <img src={imagePreview} alt="Preview" className="h-24 w-24 rounded-[22px] border border-white object-cover shadow-md sm:h-28 sm:w-28" />
-                        <button
-                          type="button"
-                          onClick={handleRemoveImage}
-                          className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white text-slate-600 shadow-md transition hover:bg-red-500 hover:text-white"
-                          aria-label="Remove image"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-primary shadow-sm sm:h-20 sm:w-20">
-                        <ImageIcon className="h-7 w-7 sm:h-8 sm:w-8" />
+        <div className="add-product-form-shell rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <form onSubmit={handleAddProduct} className="add-product-form space-y-5">
+            <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="md:justify-self-start">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                  <div className="space-y-1 text-left">
+                    <label className="block text-left text-[13px] font-semibold text-slate-700" htmlFor="product-image-input">
+                      Product cover
+                    </label>
+                    <label
+                      htmlFor="product-image-input"
+                      className={`relative inline-flex min-h-[128px] w-[112px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-slate-300 bg-white text-center shadow-[0_6px_18px_rgba(15,23,42,0.12)] ${imagePreview ? 'px-2 py-2' : 'px-2 py-2'}`}
+                    >
+                      <div className="relative">
+                        {imagePreview ? (
+                          <>
+                            <img src={imagePreview} alt="Preview" className="h-20 w-20 rounded-[14px] border border-slate-200 bg-white object-contain p-1 sm:h-24 sm:w-24" />
+                            <button
+                              type="button"
+                              onClick={handleRemoveImage}
+                              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white text-slate-600 transition hover:bg-red-500 hover:text-white"
+                              aria-label="Remove image"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary sm:h-14 sm:w-14">
+                            <ImageIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </label>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-900">Upload product image</p>
-                    <p className="text-[11px] leading-5 text-slate-500">Square JPG or PNG under 3.5MB.</p>
+
+                  <div style={{ marginTop: '50px' }}>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Name *</label>
+                  <input
+                    type="text"
+                    value={formState.name}
+                    onChange={(event) => setFormState({ ...formState, name: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                    placeholder="e.g., Modern Wooden Chair"
+                    required
+                  />
                   </div>
-                </label>
+                </div>
                 <input
                   id="product-image-input"
                   ref={imageInputRef}
@@ -712,25 +717,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               </div>
 
               <div className="space-y-4">
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400">Basic details</p>
-                    <h3 className="mt-1 text-base font-semibold text-slate-900">Product information</h3>
-                  </div>
-
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Name *</label>
-                      <input
-                        type="text"
-                        value={formState.name}
-                        onChange={(event) => setFormState({ ...formState, name: event.target.value })}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                        placeholder="e.g., Modern Wooden Chair"
-                        required
-                      />
-                    </div>
-
+                <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Price (₹) *</label>
@@ -760,138 +747,116 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                       </div>
                     </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Description</label>
-                      <textarea
-                        rows={4}
-                        value={formState.description}
-                        onChange={(event) => setFormState({ ...formState, description: event.target.value })}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                        placeholder="Highlight product features, materials, or usage in a few short lines."
-                      />
-                    </div>
-                  </div>
                 </div>
 
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400">Selling setup</p>
-                    <h3 className="mt-1 text-base font-semibold text-slate-900">Units and stock</h3>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
+                <div className="grid grid-cols-2 items-end gap-2">
+                    <div ref={unitDropdownRef} className="relative">
                       <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Sell by *</label>
-                      <select
-                        value={formState.unitType}
-                        onChange={(event) =>
-                          setFormState({
-                            ...formState,
-                            unitType: event.target.value as ProductUnitType,
-                            unitCustomLabel: '',
-                          })
-                        }
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                      <button
+                        type="button"
+                        onClick={() => setUnitDropdownOpen((previous) => !previous)}
+                        className="flex h-[34px] w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[8px] text-slate-900 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
                       >
-                        {PRODUCT_UNIT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="truncate">
+                          {PRODUCT_UNIT_OPTIONS.find((option) => option.value === formState.unitType)?.label ?? 'Select unit'}
+                        </span>
+                        <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition ${unitDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {unitDropdownOpen && (
+                        <div className="absolute left-0 right-0 z-30 mt-1.5 max-h-44 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-lg">
+                          {PRODUCT_UNIT_OPTIONS.map((option) => {
+                            const selected = option.value === formState.unitType;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setFormState({
+                                    ...formState,
+                                    unitType: option.value,
+                                    unitCustomLabel: '',
+                                  });
+                                  setUnitDropdownOpen(false);
+                                }}
+                                className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-[8px] transition ${
+                                  selected ? 'bg-primary/10 text-primary' : 'text-slate-700 hover:bg-slate-50'
+                                }`}
+                              >
+                                <span>{option.label}</span>
+                                {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Units included *</label>
+                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Units *</label>
                       <input
                         type="number"
                         min="0.01"
                         step="0.01"
                         value={formState.unitQuantity}
                         onChange={(event) => setFormState({ ...formState, unitQuantity: event.target.value })}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                        className="h-[34px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[8px] text-left text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
                         placeholder="e.g., 12"
                       />
                     </div>
 
                     {formState.unitType === 'custom' && (
-                      <div className="sm:col-span-2">
+                      <div className="col-span-2">
                         <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Custom unit label *</label>
                         <input
                           type="text"
                           value={formState.unitCustomLabel}
                           onChange={(event) => setFormState({ ...formState, unitCustomLabel: event.target.value })}
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
                           placeholder="e.g., Bundle"
                         />
                       </div>
                     )}
 
-                    <div className="sm:col-span-2">
-                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Inventory status</label>
-                      <select
-                        value={formState.stockStatus}
-                        onChange={(event) => setFormState({ ...formState, stockStatus: event.target.value as ProductFormState['stockStatus'] })}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                      >
-                        <option value="inStock">In Stock</option>
-                        <option value="outOfStock">Out of Stock</option>
-                      </select>
-                      <p className="mt-1.5 text-xs leading-5 text-slate-500">Use unit details to explain how much quantity the buyer receives per order.</p>
-                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Wholesale price</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formState.wholesalePrice}
+                      onChange={(event) => setFormState({ ...formState, wholesalePrice: event.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                      placeholder="350.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Min qty</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={formState.wholesaleMinQty}
+                      onChange={(event) => setFormState({ ...formState, wholesaleMinQty: event.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                      placeholder="20"
+                    />
                   </div>
                 </div>
 
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
-                  <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={formState.wholesaleEnabled}
-                      onChange={(event) =>
-                        setFormState({
-                          ...formState,
-                          wholesaleEnabled: event.target.checked,
-                          wholesalePrice: event.target.checked ? formState.wholesalePrice : '',
-                          wholesaleMinQty: event.target.checked ? formState.wholesaleMinQty : '',
-                        })
-                      }
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/40"
-                    />
-                    <div>
-                      <p className="font-semibold text-slate-900">Offer wholesale pricing</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">Show a bulk price and minimum order quantity for larger buyers.</p>
-                    </div>
-                  </label>
-
-                  {formState.wholesaleEnabled && (
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Wholesale price</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formState.wholesalePrice}
-                          onChange={(event) => setFormState({ ...formState, wholesalePrice: event.target.value })}
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                          placeholder="350.00"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Min qty</label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={formState.wholesaleMinQty}
-                          onChange={(event) => setFormState({ ...formState, wholesaleMinQty: event.target.value })}
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                          placeholder="20"
-                        />
-                      </div>
-                    </div>
-                  )}
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Description</label>
+                  <textarea
+                    rows={4}
+                    value={formState.description}
+                    onChange={(event) => setFormState({ ...formState, description: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                    placeholder="Highlight product features, materials, or usage in a few short lines."
+                  />
                 </div>
+
               </div>
             </div>
 
@@ -902,7 +867,6 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
             )}
 
             <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs leading-5 text-slate-500">Keep images light and text concise so the product card looks better on mobile and desktop.</div>
               <div className="grid grid-cols-2 gap-2 sm:flex">
                 <button
                   type="button"
@@ -928,170 +892,171 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       )}
 
       {showAddServiceForm && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-gray-400">Create new service</p>
-              <h2 className="text-xl font-semibold text-gray-900">Add Service</h2>
-            </div>
-            <div className="rounded-full bg-gray-100 p-2">
-              <Briefcase className="w-5 h-5 text-gray-500" />
-            </div>
-          </div>
-          <form onSubmit={handleAddService} className="space-y-4">
-            <div className="mx-auto w-full sm:w-2/3">
-              <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="service-image-input">Service cover photo</label>
-              <label
-                htmlFor="service-image-input"
-                className="relative flex cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-primary/40 bg-primary/5 px-6 py-6 text-center transition hover:border-primary hover:bg-primary/10"
-              >
-                <div className="relative">
-                  {serviceImagePreview ? (
-                    <>
-                      <img src={serviceImagePreview} alt="Preview" className="h-32 w-32 rounded-3xl object-cover border border-white shadow-lg" />
-                      <button
-                        type="button"
-                        onClick={handleRemoveServiceImage}
-                        className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white text-slate-600 shadow-lg transition hover:bg-red-500 hover:text-white"
-                        aria-label="Remove image"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-primary shadow-md">
-                      <ImageIcon className="h-9 w-9" />
+        <div className="add-product-form-shell rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <form onSubmit={handleAddService} className="add-product-form space-y-5">
+            <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="md:justify-self-start">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                  <div className="space-y-1 text-left">
+                    <label className="block text-left text-[13px] font-semibold text-slate-700" htmlFor="service-image-input">
+                      Service cover
+                    </label>
+                    <label
+                      htmlFor="service-image-input"
+                      className={`relative inline-flex min-h-[128px] w-[112px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-slate-300 bg-white text-center shadow-[0_6px_18px_rgba(15,23,42,0.12)] ${serviceImagePreview ? 'px-2 py-2' : 'px-2 py-2'}`}
+                    >
+                      <div className="relative">
+                        {serviceImagePreview ? (
+                          <>
+                            <img src={serviceImagePreview} alt="Preview" className="h-20 w-20 rounded-[14px] border border-slate-200 bg-white object-contain p-1 sm:h-24 sm:w-24" />
+                            <button
+                              type="button"
+                              onClick={handleRemoveServiceImage}
+                              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white text-slate-600 transition hover:bg-red-500 hover:text-white"
+                              aria-label="Remove image"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary sm:h-14 sm:w-14">
+                            <ImageIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+
+                  <div style={{ marginTop: '50px' }}>
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Service name *</label>
+                    <input
+                      type="text"
+                      value={serviceFormState.title}
+                      onChange={(event) => setServiceFormState({ ...serviceFormState, title: event.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                      placeholder="e.g., Bridal Makeup Session"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <input
+                  id="service-image-input"
+                  ref={serviceImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleServiceImageChange}
+                  className="hidden"
+                />
+                {serviceImageError && <p className="text-sm text-red-600">{serviceImageError}</p>}
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-4">
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Price (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={serviceFormState.price}
+                        onChange={(event) => setServiceFormState({ ...serviceFormState, price: event.target.value })}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                        placeholder="1200"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Package price (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={serviceFormState.packagePrice}
+                        onChange={(event) => setServiceFormState({ ...serviceFormState, packagePrice: event.target.value })}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                        placeholder="5000"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 items-end gap-2">
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Billing unit *</label>
+                    <select
+                      value={serviceFormState.billingUnit}
+                      onChange={(event) =>
+                        setServiceFormState({
+                          ...serviceFormState,
+                          billingUnit: event.target.value as ServiceBillingUnit,
+                          customBillingUnit: '',
+                        })
+                      }
+                      className="h-[34px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[8px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                    >
+                      {SERVICE_BILLING_UNITS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Min booking qty</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={serviceFormState.minQuantity}
+                      onChange={(event) => setServiceFormState({ ...serviceFormState, minQuantity: event.target.value })}
+                      className="h-[34px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[8px] text-left text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                      placeholder="e.g., 2"
+                    />
+                  </div>
+
+                  {serviceFormState.billingUnit === 'custom' && (
+                    <div className="col-span-2">
+                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Custom billing label *</label>
+                      <input
+                        type="text"
+                        value={serviceFormState.customBillingUnit}
+                        onChange={(event) =>
+                          setServiceFormState({ ...serviceFormState, customBillingUnit: event.target.value })
+                        }
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                        placeholder="e.g., Complete project"
+                      />
                     </div>
                   )}
                 </div>
-                <div className="space-y-1 text-center">
-                  <p className="text-sm font-semibold text-slate-900">Upload service photo</p>
-                  <p className="hidden text-[11px] text-slate-500 sm:block">PNG/JPG up to 3.5MB.</p>
-                </div>
-                <span className="hidden rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-primary shadow-sm sm:inline-block">Drag & drop coming soon</span>
-              </label>
-              <input
-                id="service-image-input"
-                ref={serviceImageInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleServiceImageChange}
-                className="hidden"
-              />
-              {serviceImageError && <p className="mt-2 text-sm text-red-600">{serviceImageError}</p>}
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Title *</label>
-                <input
-                  type="text"
-                  value={serviceFormState.title}
-                  onChange={(event) => setServiceFormState({ ...serviceFormState, title: event.target.value })}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="e.g., Bridal Makeup Session"
-                  required
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Price (₹)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={serviceFormState.price}
-                  onChange={(event) => setServiceFormState({ ...serviceFormState, price: event.target.value })}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="1200"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Billing unit *</label>
-                <select
-                  value={serviceFormState.billingUnit}
-                  onChange={(event) =>
-                    setServiceFormState({
-                      ...serviceFormState,
-                      billingUnit: event.target.value as ServiceBillingUnit,
-                      customBillingUnit: '',
-                    })
-                  }
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                >
-                  {SERVICE_BILLING_UNITS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {serviceFormState.billingUnit === 'custom' && (
-                <div className="md:col-span-1">
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Custom unit label *</label>
-                  <input
-                    type="text"
-                    value={serviceFormState.customBillingUnit}
-                    onChange={(event) =>
-                      setServiceFormState({ ...serviceFormState, customBillingUnit: event.target.value })
-                    }
-                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="e.g., Complete project"
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Description</label>
+                  <textarea
+                    rows={4}
+                    value={serviceFormState.description}
+                    onChange={(event) => setServiceFormState({ ...serviceFormState, description: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                    placeholder="Share what makes this service unique."
                   />
                 </div>
-              )}
 
-              <div className="md:col-span-1">
-                <label className="mb-1 block text-sm font-medium text-gray-700">Minimum booking qty</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={serviceFormState.minQuantity}
-                  onChange={(event) => setServiceFormState({ ...serviceFormState, minQuantity: event.target.value })}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="e.g., 2"
-                />
-                <p className="mt-1 text-xs text-gray-500">Buyers must book at least this many units.</p>
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Visibility</label>
+                  <select
+                    value={serviceFormState.isActive ? 'active' : 'inactive'}
+                    onChange={(event) => setServiceFormState({ ...serviceFormState, isActive: event.target.value === 'active' })}
+                    className="h-[34px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[8px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Hidden</option>
+                  </select>
+                </div>
               </div>
-
-              <div className="md:col-span-1">
-                <label className="mb-1 block text-sm font-medium text-gray-700">Package price (₹)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={serviceFormState.packagePrice}
-                  onChange={(event) => setServiceFormState({ ...serviceFormState, packagePrice: event.target.value })}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="e.g., 5000"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
-              <textarea
-                rows={4}
-                value={serviceFormState.description}
-                onChange={(event) => setServiceFormState({ ...serviceFormState, description: event.target.value })}
-                className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Share what makes this service unique."
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Visibility</label>
-              <select
-                value={serviceFormState.isActive ? 'active' : 'inactive'}
-                onChange={(event) => setServiceFormState({ ...serviceFormState, isActive: event.target.value === 'active' })}
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Hidden</option>
-              </select>
             </div>
 
             {serviceFormError && (
@@ -1100,9 +1065,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               </div>
             )}
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-gray-500">Add services from this page without opening a new screen.</div>
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="grid grid-cols-2 gap-2 sm:flex">
                 <button
                   type="button"
                   onClick={() => {
@@ -1112,14 +1076,14 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                     setServiceImageError(null);
                     setServiceFormError(null);
                   }}
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                  className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={serviceFormSubmitting || newCatalogLocked}
-                  className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:opacity-50"
+                  className="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:opacity-50"
                 >
                   {serviceFormSubmitting ? 'Adding...' : 'Add Service'}
                 </button>
@@ -1495,6 +1459,36 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
           </div>
         </div>
       )}
+      <style jsx>{`
+        .add-product-form :is(label, p, span, button, a) {
+          font-size: 80% !important;
+        }
+
+        .add-product-form label {
+          margin-bottom: 0.3rem !important;
+          line-height: 1.2 !important;
+        }
+
+        .add-product-form input:not([type='checkbox']):not([type='file']),
+        .add-product-form select,
+        .add-product-form textarea {
+          font-size: 70% !important;
+          line-height: 1.2 !important;
+          padding-top: 0.28rem !important;
+          padding-bottom: 0.28rem !important;
+          min-height: 1.95rem;
+        }
+
+        .add-product-form textarea {
+          min-height: 5.25rem;
+        }
+
+        .add-product-form input::placeholder,
+        .add-product-form textarea::placeholder {
+          font-size: 80% !important;
+          line-height: 1.2 !important;
+        }
+      `}</style>
     </div>
   );
 }
