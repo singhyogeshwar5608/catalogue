@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class PlatformSetting extends Model
@@ -16,6 +17,13 @@ class PlatformSetting extends Model
     public const KEY_SUBSCRIPTION_ADDON_QR_CODE_INR = 'subscription_addon_qr_code_inr';
 
     public const KEY_SUBSCRIPTION_ADDON_PAYMENT_GATEWAY_HELP_INR = 'subscription_addon_payment_gateway_help_inr';
+
+    /** Percent off (0–100) for each billing commitment length; used when merchants subscribe for that term. */
+    public const KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_MONTH_PCT = 'subscription_billing_discount_1_month_pct';
+
+    public const KEY_SUBSCRIPTION_BILLING_DISCOUNT_3_MONTHS_PCT = 'subscription_billing_discount_3_months_pct';
+
+    public const KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_YEAR_PCT = 'subscription_billing_discount_1_year_pct';
 
     /** Default when the row is missing or invalid (keep in sync with `DEFAULT_FREE_TRIAL_DAYS` in `src/lib/freeTrialDays.ts`). */
     public const DEFAULT_FREE_TRIAL_DAYS = 5;
@@ -96,6 +104,111 @@ class PlatformSetting extends Model
             ['key' => $key],
             ['value' => (string) $n]
         );
+    }
+
+    /** Integer percent 0–100 (0 if missing or invalid). */
+    public static function percent0to100(string $key): int
+    {
+        if (! Schema::hasTable('platform_settings')) {
+            return 0;
+        }
+
+        $row = static::query()->where('key', $key)->first();
+        if (! $row || $row->value === null || $row->value === '') {
+            return 0;
+        }
+
+        return max(0, min(100, (int) $row->value));
+    }
+
+    public static function setPercent0to100(string $key, int $value): void
+    {
+        if (! Schema::hasTable('platform_settings')) {
+            return;
+        }
+
+        $n = max(0, min(100, $value));
+        $now = now();
+
+        // Use Query Builder so `value` and `updated_at` always persist (some stacks mis-handle Eloquent updateOrCreate on `key`).
+        if (DB::table('platform_settings')->where('key', $key)->exists()) {
+            DB::table('platform_settings')->where('key', $key)->update([
+                'value' => (string) $n,
+                'updated_at' => $now,
+            ]);
+        } else {
+            DB::table('platform_settings')->insert([
+                'key' => $key,
+                'value' => (string) $n,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+    }
+
+    /**
+     * @return array{discount_1_month_pct: int, discount_3_months_pct: int, discount_1_year_pct: int}
+     */
+    public static function subscriptionBillingDiscountsPayload(): array
+    {
+        if (! Schema::hasTable('platform_settings')) {
+            return [
+                'discount_1_month_pct' => 0,
+                'discount_3_months_pct' => 0,
+                'discount_1_year_pct' => 0,
+            ];
+        }
+
+        return [
+            'discount_1_month_pct' => self::percent0to100(self::KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_MONTH_PCT),
+            'discount_3_months_pct' => self::percent0to100(self::KEY_SUBSCRIPTION_BILLING_DISCOUNT_3_MONTHS_PCT),
+            'discount_1_year_pct' => self::percent0to100(self::KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_YEAR_PCT),
+        ];
+    }
+
+    /**
+     * Payload for super-admin API: percents plus raw `platform_settings` rows and which DB Laravel is writing to
+     * (helps when phpMyAdmin shows a different database or SQLite vs MySQL confusion).
+     *
+     * @return array<string, mixed>
+     */
+    public static function subscriptionBillingDiscountsApiEnvelope(): array
+    {
+        $base = self::subscriptionBillingDiscountsPayload();
+        $keys = [
+            self::KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_MONTH_PCT,
+            self::KEY_SUBSCRIPTION_BILLING_DISCOUNT_3_MONTHS_PCT,
+            self::KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_YEAR_PCT,
+        ];
+
+        $rows = [];
+        if (Schema::hasTable('platform_settings')) {
+            $rows = DB::table('platform_settings')
+                ->whereIn('key', $keys)
+                ->orderBy('key')
+                ->get(['key', 'value', 'updated_at'])
+                ->map(static function ($r) {
+                    return [
+                        'key' => $r->key,
+                        'value' => $r->value,
+                        'updated_at' => $r->updated_at !== null ? (string) $r->updated_at : null,
+                    ];
+                })
+                ->all();
+        }
+
+        $default = (string) config('database.default');
+        $conn = config("database.connections.{$default}", []);
+        $dbIdentity = [
+            'connection' => $default,
+            'driver' => (string) ($conn['driver'] ?? ''),
+            'database' => (string) ($conn['database'] ?? ''),
+        ];
+
+        return array_merge($base, [
+            '_persisted_rows' => $rows,
+            '_laravel_database' => $dbIdentity,
+        ]);
     }
 
     /**

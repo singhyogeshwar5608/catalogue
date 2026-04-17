@@ -164,7 +164,7 @@ function backendStoreSocialLinks(store: BackendStore): NonNullable<Store['social
   };
 }
 
-function normalizeServiceRow(service: BackendService, store: BackendStore): Service {
+export function normalizeBackendService(service: BackendService, store: BackendStore): Service {
   const raw = service.billing_unit;
   const billingUnit =
     typeof raw === 'string' && isServiceBillingUnit(raw) ? raw : undefined;
@@ -245,7 +245,7 @@ export const normalizeStore = (store: BackendStore): Store => {
 
   const services =
     Array.isArray(store.services) && store.services.length > 0
-      ? store.services.map((s) => normalizeServiceRow(s, store))
+      ? store.services.map((s) => normalizeBackendService(s, store))
       : undefined;
 
   const normalizedCategory = categoryObj

@@ -2,13 +2,13 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -74,11 +74,14 @@ import {
   isApiError,
 } from '@/src/lib/api';
 import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
+import { checkoutQrImageSrc } from '@/src/lib/checkoutAssetUrl';
 import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
-import { demoProducts } from '@/data/demoProducts';
+// Demo catalog items removed: stores should show products only after upload.
 
 const FALLBACK_PRODUCT_IMAGE = '/fallback/product-placeholder.svg';
 const DEMO_PRODUCT_CTA_IMAGE = '/demo/upload-product-cta.png';
+const OWNER_NO_PRODUCTS_PLACEHOLDER_IMAGE =
+  'https://res.cloudinary.com/drcfeoi6p/image/upload/v1776249845/11111-removebg-preview_a2qqe4.png';
 
 type StoreViewProps = {
   store: Store;
@@ -217,13 +220,21 @@ const ProductImageCarousel = ({
   services: Service[];
   isStoreOwner: boolean;
 }) => {
-  const router = useRouter();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [lightbox, setLightbox] = useState<{ images: string[]; title: string } | null>(null);
 
-  const combinedItems = useMemo(() => {
-    const items: Array<{ type: 'product' | 'service'; data: Product | Service }> = [];
-    (products ?? []).forEach((product) => items.push({ type: 'product', data: product }));
+  type HeroCarouselItem =
+    | { type: 'placeholder' }
+    | { type: 'product'; data: Product }
+    | { type: 'service'; data: Service };
+
+  const combinedItems = useMemo((): HeroCarouselItem[] => {
+    const items: HeroCarouselItem[] = [];
+    const prodList = products ?? [];
+    if (prodList.length === 0) {
+      items.push({ type: 'placeholder' });
+    }
+    prodList.forEach((product) => items.push({ type: 'product', data: product }));
     (services ?? []).forEach((service) => items.push({ type: 'service', data: service }));
     return items;
   }, [products, services]);
@@ -257,16 +268,68 @@ const ProductImageCarousel = ({
     <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
       <div className="relative aspect-square md:aspect-[4/3]">
         {combinedItems.map((item, index) => {
+          if (item.type === 'placeholder') {
+            return (
+              <motion.div
+                key="hero-carousel-placeholder"
+                className="absolute inset-0"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{
+                  opacity: index === currentIndex ? 1 : 0,
+                  scale: index === currentIndex ? 1 : 1.02,
+                }}
+                transition={{ duration: 0.6, ease: 'easeInOut' }}
+              >
+                {isStoreOwner ? (
+                  <Link
+                    href="/dashboard/products"
+                    prefetch
+                    className="absolute inset-0 block cursor-pointer text-left"
+                    aria-label="Add products in dashboard"
+                  >
+                    <Image
+                      src={OWNER_NO_PRODUCTS_PLACEHOLDER_IMAGE}
+                      alt=""
+                      fill
+                      className="rounded-[28px] bg-white object-contain p-6"
+                      sizes="(max-width: 640px) 100vw, 512px"
+                    />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent px-3 pb-4 pt-12">
+                      <p className="text-center text-[13px] font-semibold text-white">
+                        Upload your first products here — Add products
+                      </p>
+                    </div>
+                  </Link>
+                ) : (
+                  <>
+                    <Image
+                      src={OWNER_NO_PRODUCTS_PLACEHOLDER_IMAGE}
+                      alt=""
+                      fill
+                      className="rounded-[28px] bg-white object-contain p-6"
+                      sizes="(max-width: 640px) 100vw, 512px"
+                    />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent px-3 pb-4 pt-12">
+                      <p className="text-center text-[13px] font-semibold text-white">
+                        No products yet — check back soon
+                      </p>
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            );
+          }
+
           const isDemoProduct =
-            item.type === 'product' && typeof (item.data as Product).id === 'string'
-              ? (item.data as Product).id.startsWith('demo')
+            item.type === 'product' && typeof item.data.id === 'string'
+              ? item.data.id.startsWith('demo')
               : false;
-          const itemTitle = item.type === 'product' ? (item.data as Product).name : (item.data as Service).title;
-          const hasImage = Boolean((item.data as Product | Service).image);
-          const heroImage = isDemoProduct ? DEMO_PRODUCT_CTA_IMAGE : (item.data as Product | Service).image;
+          const itemTitle = item.type === 'product' ? item.data.name : item.data.title;
+          const hasImage = Boolean(item.data.image);
+          const heroImage = isDemoProduct ? DEMO_PRODUCT_CTA_IMAGE : item.data.image;
           const galleryImages =
             item.type === 'product'
-              ? buildProductGallery(item.data as Product)
+              ? buildProductGallery(item.data)
               : heroImage
                 ? [heroImage]
                 : [];
@@ -284,11 +347,11 @@ const ProductImageCarousel = ({
             >
               {hasImage ? (
                 isDemoProduct && isStoreOwner ? (
-                  <button
-                    type="button"
-                    className="absolute inset-0 block cursor-pointer border-0 bg-transparent p-0 text-left"
+                  <Link
+                    href="/dashboard/products"
+                    prefetch
+                    className="absolute inset-0 block cursor-pointer text-left"
                     aria-label="Upload product"
-                    onClick={() => router.push('/dashboard/products')}
                   >
                     <Image
                       src={heroImage}
@@ -301,7 +364,7 @@ const ProductImageCarousel = ({
                     <div className="absolute inset-0 z-10 flex items-center justify-center">
                       <span className="relative z-10 rounded-md bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow-sm">Upload Product</span>
                     </div>
-                  </button>
+                  </Link>
                 ) : (
                 <button
                   type="button"
@@ -352,6 +415,169 @@ const ProductImageCarousel = ({
     </>
   );
 };
+
+/** Desktop-only (lg+): one product at a time in the hero card, auto-advances with horizontal slide. */
+const HERO_DESKTOP_CAROUSEL_INTERVAL_MS = 4200;
+
+function HeroDesktopProductMarquee({
+  products,
+  storeUsername,
+  isStoreOwner,
+}: {
+  products: Product[];
+  storeUsername: string;
+  isStoreOwner: boolean;
+}) {
+  const slides = useMemo(() => {
+    const list: { id: string | number; name: string; image: string }[] = [];
+    for (const p of products) {
+      const img = p.image?.trim() || buildProductGallery(p)[0];
+      if (!img) continue;
+      list.push({ id: p.id, name: p.name, image: img });
+    }
+    return list;
+  }, [products]);
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [frameWidth, setFrameWidth] = useState(280);
+
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const w = Math.round(el.clientWidth);
+      if (w > 0) setFrameWidth(w);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const slideIdsKey = useMemo(() => slides.map((s) => String(s.id)).join(','), [slides]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [slideIdsKey]);
+
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    const id = window.setInterval(() => {
+      setActiveIndex((prev) => (prev + 1) % slides.length);
+    }, HERO_DESKTOP_CAROUSEL_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [slides.length, slideIdsKey]);
+
+  useEffect(() => {
+    if (activeIndex >= slides.length) setActiveIndex(0);
+  }, [activeIndex, slides.length]);
+
+  if (products.length === 0) {
+    return (
+      <div className="w-full max-w-lg shrink-0 overflow-hidden rounded-3xl border border-white/20 bg-slate-950/70 p-5 text-left text-white/90 shadow-[0_30px_120px_rgba(2,6,23,0.62)] backdrop-blur">
+        <p className="text-xs uppercase tracking-[0.4em] text-white/60">Products</p>
+        <div className="relative mt-3 h-[260px] w-full overflow-hidden rounded-2xl border border-white/10 bg-white shadow-inner">
+          {isStoreOwner ? (
+            <Link
+              href="/dashboard/products"
+              prefetch
+              className="relative block h-full w-full"
+              aria-label="Add products in dashboard"
+            >
+              <Image
+                src={OWNER_NO_PRODUCTS_PLACEHOLDER_IMAGE}
+                alt=""
+                fill
+                className="object-contain p-5"
+                sizes="512px"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-3 pb-3 pt-10">
+                <p className="text-center text-[12px] font-semibold leading-snug text-white">
+                  Upload your first products here.{' '}
+                  <span className="underline decoration-white/50 underline-offset-2">Add products</span>
+                </p>
+              </div>
+            </Link>
+          ) : (
+            <>
+              <Image
+                src={OWNER_NO_PRODUCTS_PLACEHOLDER_IMAGE}
+                alt=""
+                fill
+                className="object-contain p-5"
+                sizes="512px"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-3 pb-3 pt-8">
+                <p className="line-clamp-2 text-center text-[12px] font-semibold leading-snug text-white">
+                  No products yet — check back soon
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (!slides.length) return null;
+
+  const trackWidthPx = slides.length * frameWidth;
+
+  return (
+    <div className="w-full max-w-lg shrink-0 overflow-hidden rounded-3xl border border-white/20 bg-slate-950/70 p-5 text-left text-white/90 shadow-[0_30px_120px_rgba(2,6,23,0.62)] backdrop-blur">
+      <p className="text-xs uppercase tracking-[0.4em] text-white/60">Products</p>
+      <div ref={viewportRef} className="relative mt-3 h-[260px] w-full overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-inner">
+        <motion.div
+          className="flex h-full"
+          animate={{ x: -activeIndex * frameWidth }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          style={{ width: trackWidthPx }}
+        >
+          {slides.map((s) => (
+            <div key={`hero-desk-slide-${String(s.id)}`} className="shrink-0" style={{ width: frameWidth }}>
+              <Link
+                href={`/store/${encodeURIComponent(storeUsername)}#products`}
+                className="relative block h-full w-full overflow-hidden no-underline outline-none ring-offset-2 ring-offset-slate-950 focus-visible:ring-2 focus-visible:ring-white/70"
+                scroll
+                aria-label={`View ${s.name} in catalog`}
+              >
+                <img
+                  src={s.image}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-3 pb-3 pt-8">
+                  <p className="line-clamp-2 text-center text-[12px] font-semibold leading-snug text-white">{s.name}</p>
+                </div>
+              </Link>
+            </div>
+          ))}
+        </motion.div>
+      </div>
+      {slides.length > 1 ? (
+        <div className="mt-3 flex justify-center gap-1.5" role="tablist" aria-label="Product slides">
+          {slides.map((_, i) => (
+            <button
+              key={`hero-desk-dot-${i}`}
+              type="button"
+              role="tab"
+              aria-selected={i === activeIndex}
+              aria-label={`Show product ${i + 1}`}
+              onClick={() => setActiveIndex(i)}
+              className={`h-1.5 rounded-full transition-all ${
+                i === activeIndex ? 'w-7 bg-white shadow-sm' : 'w-1.5 bg-white/35 hover:bg-white/55'
+              }`}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 type CartEntry = {
   productId: string;
@@ -523,34 +749,7 @@ const staggerContainer = {
   },
 };
 
-function InlineQrCanvas({ value, size, className }: { value: string; size: number; className?: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const QRCode = await import('qrcode');
-        if (!active || !canvasRef.current) return;
-        await QRCode.toCanvas(canvasRef.current, value, {
-          width: size,
-          margin: 1,
-          color: {
-            dark: '#0f172a',
-            light: '#ffffff',
-          },
-        });
-      } catch {
-        // Ignore QR rendering failure; keep page interactive.
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [size, value]);
-
-  return <canvas ref={canvasRef} width={size} height={size} className={className} />;
-}
+// (QR rendering removed from the hero avatar: the store logo should always be shown.)
 
 type HeroSectionProps = {
   store: Store;
@@ -585,37 +784,12 @@ const HeroSection = ({
 }: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
-  const [showQrActions, setShowQrActions] = useState(false);
-  const qrAvatarRef = useRef<HTMLDivElement | null>(null);
-  const storeUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/store/${store.username}`;
-  }, [store.username]);
 
-  const downloadQR = useCallback(() => {
-    const canvas = qrAvatarRef.current?.querySelector('canvas');
-    if (!canvas) return;
-    const url = canvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${store.username}-qr.png`;
-    link.click();
-  }, [store.username]);
+  // Owners can like/follow their own store once (no undo).
+  const ownerFollowLocked = isStoreOwner && Boolean(store.viewerFollowing);
+  const ownerLikeLocked = isStoreOwner && Boolean(store.viewerLiked);
 
-  const shareQR = useCallback(async () => {
-    if (!storeUrl) return;
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: store.name,
-          text: 'Check out my store',
-          url: storeUrl,
-        });
-      }
-    } catch {
-      /* ignore share cancellation/errors */
-    }
-  }, [store.name, storeUrl]);
+  // QR download/share actions removed from the hero avatar to avoid masking the store logo for owners.
 
   return (
     <div className="pt-0">
@@ -630,8 +804,9 @@ const HeroSection = ({
 
         <section
           id="home"
-          className="absolute inset-0 z-20 flex flex-col gap-4 px-3.5 pt-1.5 pb-3 text-white sm:gap-6 sm:px-6 sm:pt-16 sm:pb-4 lg:px-10"
+          className="absolute inset-0 z-20 flex flex-col gap-4 px-3.5 pt-1.5 pb-3 text-white sm:gap-6 sm:px-6 sm:pt-16 sm:pb-4 lg:flex-row lg:items-stretch lg:justify-between lg:gap-8 lg:px-10 lg:pt-14 lg:pb-6"
         >
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 sm:gap-6 lg:h-full">
           <motion.div
             variants={staggerContainer}
             initial="hidden"
@@ -644,56 +819,17 @@ const HeroSection = ({
             >
               <span className="relative inline-flex items-center">
                 <span className="relative inline-flex h-[3.9rem] w-[3.9rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/40 bg-white/95 p-1.5 shadow-xl sm:h-[4.6rem] sm:w-[4.6rem]">
-                  {isStoreOwner ? (
-                    <div
-                      ref={qrAvatarRef}
-                      className="group relative h-full w-full overflow-hidden rounded-[0.75rem]"
-                      onClick={() => setShowQrActions((previous) => !previous)}
-                    >
-                      <InlineQrCanvas
-                        value={storeUrl || `${store.name}-${store.username}`}
-                        size={74}
-                        className="h-full w-full rounded-[0.75rem]"
-                      />
-                      <div
-                        className={`absolute inset-0 flex items-center justify-center gap-1 rounded-[0.75rem] bg-black/50 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 ${
-                          showQrActions ? 'opacity-100' : 'opacity-0'
-                        }`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          onClick={downloadQR}
-                          className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-800"
-                        >
-                          Download
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void shareQR();
-                          }}
-                          className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-800"
-                        >
-                          Share
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Native img: avoids Next image pipeline issues with proxied / cross-origin storage URLs */}
-                      <img
-                        src={store.logo}
-                        alt={`${store.name} logo`}
-                        width={74}
-                        height={74}
-                        className="h-full w-full object-cover"
-                        loading="eager"
-                        decoding="async"
-                        referrerPolicy="no-referrer"
-                      />
-                    </>
-                  )}
+                  {/* Always show the store's uploaded logo (even for the owner). */}
+                  <img
+                    src={store.logo}
+                    alt={`${store.name} logo`}
+                    width={74}
+                    height={74}
+                    className="h-full w-full object-cover"
+                    loading="eager"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                  />
                 </span>
                 {(store.isVerified || isProPlan) && (
                   <span
@@ -762,32 +898,58 @@ const HeroSection = ({
                   </div>
                 )}
 
-                {(products.length > 0 || services.length > 0) && (
-                  <div className="mt-4 w-full sm:hidden">
-                    <ProductImageCarousel products={products} services={services} isStoreOwner={isStoreOwner} />
-                  </div>
-                )}
+                <div className="mt-4 w-full sm:hidden">
+                  <ProductImageCarousel products={products} services={services} isStoreOwner={isStoreOwner} />
+                </div>
 
-                <div className="mt-2.5 grid w-full grid-cols-3 overflow-hidden rounded-xl border border-white/15 bg-white/90 text-slate-900 sm:hidden">
+                <div className="mt-2.5 grid w-full grid-cols-3 gap-2 text-slate-900 sm:hidden">
                   <button
                     type="button"
                     onClick={() => {
                       if (!canEngage || followBusy || !onToggleFollow) return;
+                      if (ownerFollowLocked) return;
                       void onToggleFollow();
                     }}
-                    disabled={!canEngage || followBusy || !onToggleFollow}
-                    className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center transition hover:bg-blue-50/80 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!canEngage || followBusy || !onToggleFollow || ownerFollowLocked}
+                    className={`flex min-h-[48px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      store.viewerFollowing
+                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-md hover:bg-emerald-700'
+                        : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-emerald-50/80'
+                    }`}
                     aria-label={store.viewerFollowing ? 'Following store' : 'Follow store'}
                   >
-                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
+                    <p className={`text-[12px] font-semibold tabular-nums ${store.viewerFollowing ? 'text-white' : 'text-slate-900'}`}>
                       {(store.followersCount ?? 0).toLocaleString('en-IN')}
                     </p>
-                    <p className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium text-slate-500">
+                    <p className={`mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium ${store.viewerFollowing ? 'text-white/90' : 'text-slate-500'}`}>
                       {followBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <UserPlus className="h-2.5 w-2.5" />}
                       {store.viewerFollowing ? 'Following' : 'Follow'}
                     </p>
                   </button>
-                  <div className="flex min-h-[48px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!canEngage || likeBusy || !onToggleLike) return;
+                      if (ownerLikeLocked) return;
+                      void onToggleLike();
+                    }}
+                    disabled={!canEngage || likeBusy || !onToggleLike || ownerLikeLocked}
+                    className={`flex min-h-[48px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      store.viewerLiked
+                        ? 'border-red-600 bg-red-600 text-white shadow-md hover:bg-red-700'
+                        : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-rose-50/80'
+                    }`}
+                    aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
+                  >
+                    <p className={`text-[12px] font-semibold tabular-nums ${store.viewerLiked ? 'text-white' : 'text-slate-900'}`}>
+                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                    </p>
+                    <p className={`mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium ${store.viewerLiked ? 'text-white/90' : 'text-slate-500'}`}>
+                      {likeBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Heart className="h-2.5 w-2.5" />}
+                      {store.viewerLiked ? 'Liked' : 'Like'}
+                    </p>
+                  </button>
+                  <div className="flex min-h-[48px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white/95 px-1 py-1.5 text-center shadow-sm">
                     <p className="text-[12px] font-semibold tabular-nums text-slate-900">
                       {(store.seenCount ?? 0).toLocaleString('en-IN')}
                     </p>
@@ -796,24 +958,6 @@ const HeroSection = ({
                       Seen
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!canEngage || likeBusy || !onToggleLike) return;
-                      void onToggleLike();
-                    }}
-                    disabled={!canEngage || likeBusy || !onToggleLike}
-                    className="flex min-h-[48px] flex-col items-center justify-center px-1 py-1.5 text-center transition hover:bg-rose-50/80 disabled:cursor-not-allowed disabled:opacity-60"
-                    aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
-                  >
-                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
-                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
-                    </p>
-                    <p className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium text-slate-500">
-                      {likeBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Heart className="h-2.5 w-2.5" />}
-                      {store.viewerLiked ? 'Liked' : 'Like'}
-                    </p>
-                  </button>
                 </div>
               </motion.div>
             </motion.div>
@@ -841,26 +985,54 @@ const HeroSection = ({
                 </div>
               )}
             </div>
-            <div className="mt-4 grid grid-cols-3 overflow-hidden rounded-xl border border-white/20 bg-white/95 text-slate-900">
+            <div className="mt-4 grid grid-cols-3 gap-2 text-slate-900">
               <button
                 type="button"
                 onClick={() => {
                   if (!canEngage || followBusy || !onToggleFollow) return;
+                  if (ownerFollowLocked) return;
                   void onToggleFollow();
                 }}
-                disabled={!canEngage || followBusy || !onToggleFollow}
-                className="flex min-h-[52px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!canEngage || followBusy || !onToggleFollow || ownerFollowLocked}
+                className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  store.viewerFollowing
+                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-md hover:bg-emerald-700'
+                    : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-emerald-50'
+                }`}
                 aria-label={store.viewerFollowing ? 'Following store' : 'Follow store'}
               >
-                <p className="text-sm font-semibold tabular-nums text-slate-900">
+                <p className={`text-sm font-semibold tabular-nums ${store.viewerFollowing ? 'text-white' : 'text-slate-900'}`}>
                   {(store.followersCount ?? 0).toLocaleString('en-IN')}
                 </p>
-                <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-slate-600">
+                <p className={`mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium ${store.viewerFollowing ? 'text-white/90' : 'text-slate-600'}`}>
                   {followBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
                   {store.viewerFollowing ? 'Following' : 'Follow'}
                 </p>
               </button>
-              <div className="flex min-h-[52px] flex-col items-center justify-center border-r border-slate-200/80 px-1 py-1.5 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canEngage || likeBusy || !onToggleLike) return;
+                  if (ownerLikeLocked) return;
+                  void onToggleLike();
+                }}
+                disabled={!canEngage || likeBusy || !onToggleLike || ownerLikeLocked}
+                className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  store.viewerLiked
+                    ? 'border-red-600 bg-red-600 text-white shadow-md hover:bg-red-700'
+                    : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-rose-50'
+                }`}
+                aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
+              >
+                <p className={`text-sm font-semibold tabular-nums ${store.viewerLiked ? 'text-white' : 'text-slate-900'}`}>
+                  {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                </p>
+                <p className={`mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium ${store.viewerLiked ? 'text-white/90' : 'text-slate-600'}`}>
+                  {likeBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Heart className="h-3 w-3" />}
+                  {store.viewerLiked ? 'Liked' : 'Like'}
+                </p>
+              </button>
+              <div className="flex min-h-[52px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white/95 px-1 py-1.5 text-center shadow-sm">
                 <p className="text-sm font-semibold tabular-nums text-slate-900">
                   {(store.seenCount ?? 0).toLocaleString('en-IN')}
                 </p>
@@ -869,28 +1041,10 @@ const HeroSection = ({
                   Seen
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEngage || likeBusy || !onToggleLike) return;
-                  void onToggleLike();
-                }}
-                disabled={!canEngage || likeBusy || !onToggleLike}
-                className="flex min-h-[52px] flex-col items-center justify-center px-1 py-1.5 text-center transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
-              >
-                <p className="text-sm font-semibold tabular-nums text-slate-900">
-                  {(store.likesCount ?? 0).toLocaleString('en-IN')}
-                </p>
-                <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-slate-600">
-                  {likeBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Heart className="h-3 w-3" />}
-                  {store.viewerLiked ? 'Liked' : 'Like'}
-                </p>
-              </button>
             </div>
             <div className="mt-6 hidden sm:flex justify-center">
               <a
-                href={`${whatsappLink}?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
+                href={`https://wa.me/?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(37,99,235,0.35)] transition hover:-translate-y-0.5 hover:bg-blue-500 sm:px-8 sm:text-base"
@@ -900,11 +1054,20 @@ const HeroSection = ({
               </a>
             </div>
           </motion.div>
+          </div>
+
+          <div className="hidden shrink-0 self-center lg:block">
+            <HeroDesktopProductMarquee
+              products={products}
+              storeUsername={store.username}
+              isStoreOwner={isStoreOwner}
+            />
+          </div>
         </section>
       </div>
       <motion.div variants={fadeInVariants} className="relative z-20 mt-16 mb-20 flex justify-center px-4 sm:hidden">
         <a
-          href={`${whatsappLink}?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
+          href={`https://wa.me/?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(37,99,235,0.35)] transition hover:-translate-y-0.5 hover:bg-blue-500 sm:px-8 sm:text-base"
@@ -1047,7 +1210,7 @@ type BuyNowProductModalProps = {
   product: Product;
   quantity: number;
   storeName: string;
-  /** Logged-in visitor owns this storefront — Razorpay / cart purchase is blocked. */
+  /** Logged-in visitor owns this storefront. */
   isStoreOwner: boolean;
   onClose: () => void;
   onQuantityChange: (next: number) => void;
@@ -1070,6 +1233,7 @@ function BuyNowProductModal({
   const [payBusy, setPayBusy] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [addSuccessMessage, setAddSuccessMessage] = useState<string | null>(null);
+  const qrSectionRef = useRef<HTMLDivElement | null>(null);
   const gallery = useMemo(() => buildProductGallery(product), [product]);
   const heroSrc = gallery[heroIndex] ?? product.image;
   const discount = getDiscountPercent(product.price, product.originalPrice);
@@ -1079,7 +1243,8 @@ function BuyNowProductModal({
   const addDisabled = !product.inStock;
   const lineTotal = useMemo(() => product.price * quantity, [product.price, quantity]);
   const canPayOnline = Boolean(checkout?.onlinePaymentAvailable);
-  const hasAnyPayment = canPayOnline;
+  const canPayQr = Boolean(checkout?.qrPaymentAvailable && checkout?.paymentQrUrl);
+  const hasAnyPayment = canPayOnline || canPayQr;
 
   useEffect(() => {
     setHeroIndex(0);
@@ -1088,18 +1253,6 @@ function BuyNowProductModal({
 
   useEffect(() => {
     let cancelled = false;
-    if (isStoreOwner) {
-      setCheckoutLoading(false);
-      setCheckoutLoadError(null);
-      setCheckout({
-        onlinePaymentAvailable: false,
-        qrPaymentAvailable: false,
-        paymentQrUrl: null,
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
     setCheckoutLoading(true);
     setCheckoutLoadError(null);
     getProductById(product.id)
@@ -1120,7 +1273,7 @@ function BuyNowProductModal({
   }, [product.id, isStoreOwner]);
 
   const startRazorpayCheckout = async () => {
-    if (isStoreOwner || !product.inStock || checkoutLoading || !canPayOnline) return;
+    if (!product.inStock || checkoutLoading || !canPayOnline) return;
     setPayError(null);
     setPayBusy(true);
     try {
@@ -1168,17 +1321,20 @@ function BuyNowProductModal({
   };
 
   const handleBuyNowPayment = async () => {
-    if (isStoreOwner) {
-      setPayError('You cannot purchase products from your own store.');
-      return;
-    }
     if (!product.inStock || checkoutLoading) return;
     setPayError(null);
     if (canPayOnline) {
       await startRazorpayCheckout();
       return;
     }
-    setPayError('This seller has not enabled online payment on their plan yet. Use the full product page or contact the store.');
+    if (canPayQr) {
+      setPayError('Scan the QR code below to pay.');
+      queueMicrotask(() => {
+        qrSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+    setPayError('This seller has not enabled payments on their plan yet.');
   };
 
   const handleAddToCartFromModal = () => {
@@ -1214,7 +1370,7 @@ function BuyNowProductModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="buy-now-product-title"
-        className="relative z-[201] flex max-h-[min(84vh,620px)] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-slate-200 shadow-2xl sm:max-h-[85vh] sm:max-w-lg"
+        className="relative z-[201] flex max-h-[min(92vh,740px)] w-full max-w-[min(100%,26rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 shadow-2xl sm:max-h-[85vh] sm:max-w-lg"
         style={{ backgroundColor: '#f8fafc' }}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-2.5 sm:px-5 sm:py-3">
@@ -1232,20 +1388,15 @@ function BuyNowProductModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-2 sm:px-5 sm:pb-5 sm:pt-3">
-          {isStoreOwner ? (
-            <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-700">
-              You cannot buy your own products here. Customers use Pay online or QR on your live store.
-            </p>
-          ) : null}
           <div className="flex justify-center">
-            {/* Fixed 1:1 frame, smaller than full modal width */}
-            <div className="relative h-36 w-36 shrink-0 overflow-hidden rounded-xl bg-white aspect-square sm:h-56 sm:w-56">
+            {/* Fixed 1:1 frame; larger for better product visibility */}
+            <div className="relative h-44 w-44 shrink-0 overflow-hidden rounded-xl bg-white aspect-square sm:h-72 sm:w-72">
               <Image
                 src={heroSrc}
                 alt={product.name}
                 fill
                 className="object-contain p-1.5 sm:p-2"
-                sizes="(max-width: 640px) 160px, 192px"
+                sizes="(max-width: 640px) 176px, 288px"
                 priority
               />
               {discount ? (
@@ -1374,6 +1525,18 @@ function BuyNowProductModal({
                 >
                   Add to cart
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void handleBuyNowPayment()}
+                  disabled={!product.inStock || checkoutLoading || payBusy || !hasAnyPayment}
+                  className={`inline-flex h-8 min-w-[108px] items-center justify-center rounded-xl px-2.5 text-[10px] font-semibold shadow-sm transition sm:min-w-[150px] sm:text-sm ${
+                    !product.inStock || checkoutLoading || payBusy || !hasAnyPayment
+                      ? 'cursor-not-allowed bg-slate-300 text-white'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                >
+                  Pay & Buy Online
+                </button>
               </div>
             </div>
             <p className="mt-1 text-[8px]" style={{ color: CATALOG_MUTED }}>
@@ -1385,6 +1548,29 @@ function BuyNowProductModal({
               </p>
             ) : null}
           </div>
+
+          {canPayQr && checkout?.paymentQrUrl ? (
+            <div ref={qrSectionRef} className="mt-3 border-t border-slate-200 pt-2">
+              <p className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: CATALOG_MUTED }}>
+                Pay via QR
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-slate-700">
+                Scan this QR code to pay the seller.
+              </p>
+              <div className="mt-2 flex justify-center">
+                <div className="w-full max-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white p-2">
+                  <img
+                    src={checkoutQrImageSrc(checkout.paymentQrUrl)}
+                    alt="Payment QR code"
+                    className="h-auto w-full object-contain"
+                    loading="lazy"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
@@ -1409,7 +1595,6 @@ type StoreCatalogProductCardProps = {
   storeName: string;
   isStoreOwner: boolean;
   showOwnerUploadButton?: boolean;
-  onUploadProduct?: () => void;
   cartQty: number;
   onAddToCart: () => void;
   onBuyNow: () => void;
@@ -1421,7 +1606,6 @@ function StoreCatalogProductCard({
   storeName,
   isStoreOwner,
   showOwnerUploadButton = false,
-  onUploadProduct,
   cartQty,
   onAddToCart,
   onBuyNow,
@@ -1436,7 +1620,7 @@ function StoreCatalogProductCard({
   const badgeLabel = discount ? 'Best Seller' : 'Featured';
   const brandInitial = (storeName?.trim()?.charAt(0) || 'B').toUpperCase();
   const unitLabel = formatPriceUnitLabel(product);
-  const cardClickable = product.inStock && !isStoreOwner;
+  const cardClickable = true;
 
   useEffect(() => {
     setHeroImageSrc(heroSrc || FALLBACK_PRODUCT_IMAGE);
@@ -1471,12 +1655,11 @@ function StoreCatalogProductCard({
       <div className="relative overflow-hidden">
         <div className="relative block h-[45vw] max-h-[180px] w-full bg-slate-100 p-0 md:h-auto md:max-h-none md:aspect-[4/3]">
           {isDemoProduct && isStoreOwner ? (
-            <div
-              onClick={(event) => {
-                event.stopPropagation();
-                onUploadProduct?.();
-              }}
-              className="relative h-full w-full cursor-pointer"
+            <Link
+              href="/dashboard/products"
+              prefetch
+              onClick={(event) => event.stopPropagation()}
+              className="relative block h-full w-full cursor-pointer"
             >
               <Image
                 src={demoImageSrc}
@@ -1492,7 +1675,7 @@ function StoreCatalogProductCard({
               <div className="absolute inset-0 z-10 flex items-center justify-center">
                 <span className="relative z-10 rounded-md bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow-sm">Upload Product</span>
               </div>
-            </div>
+            </Link>
           ) : (
             <Image
               src={isDemoProduct ? demoImageSrc : heroImageSrc}
@@ -1549,16 +1732,12 @@ function StoreCatalogProductCard({
               event.stopPropagation();
               onAddToCart();
             }}
-            disabled={!product.inStock || isStoreOwner}
+            disabled={!product.inStock}
             title={
-              isStoreOwner
-                ? 'You cannot add your own products to cart'
-                : product.inStock
-                  ? 'Add to cart'
-                  : 'Out of stock'
+              product.inStock ? 'Add to cart' : 'Out of stock'
             }
             className={`inline-flex min-w-[74px] items-center justify-center gap-0.5 rounded-full border px-2 py-1 text-[8px] font-semibold transition md:min-w-[120px] md:gap-1 md:px-3.5 md:py-1.5 md:text-xs ${
-              product.inStock && !isStoreOwner
+              product.inStock
                 ? 'border-slate-900 bg-white text-slate-900 hover:bg-slate-100'
                 : 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-500'
             }`}
@@ -1592,7 +1771,7 @@ type ProductGridProps = {
   whatsappLink: string;
   storeName: string;
   storeWhatsapp?: string;
-  /** Viewer is the store owner — hide self-purchase actions. */
+  /** Viewer is the store owner. */
   isStoreOwner: boolean;
   cartEntries: CartEntry[];
   onAddToCart: (product: Product, quantity: number) => void;
@@ -1721,7 +1900,6 @@ const ProductGrid = ({
   cartEntries,
   onAddToCart,
 }: ProductGridProps) => {
-  const router = useRouter();
   const [filterType, setFilterType] = useState<'all' | 'products' | 'services'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('featured');
@@ -1822,6 +2000,11 @@ const ProductGrid = ({
     [combinedEntries]
   );
   const hasRealProducts = realProductsCount > 0;
+  const showEmptyProductPlaceholders =
+    realProductsCount === 0 &&
+    !filtersActive &&
+    filterType !== 'services' &&
+    combinedEntries.length === 0;
 
   return (
     <section id="products" className="py-10">
@@ -1939,13 +2122,66 @@ const ProductGrid = ({
             </div>
 
             {combinedEntries.length === 0 ? (
-              <p className="mt-12 text-center text-slate-500">
-                {filterType === 'services'
-                  ? 'No services match these filters. Try adjusting your search.'
-                  : filterType === 'products'
-                    ? 'No products match these filters. Try adjusting your search.'
-                    : 'No products or services match these filters. Try adjusting your search.'}
-              </p>
+              showEmptyProductPlaceholders ? (
+                <div className="mt-6 sm:mt-10">
+                  <motion.div
+                    className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3 md:gap-4 lg:grid-cols-3 xl:grid-cols-4"
+                    variants={staggerContainer}
+                    initial="hidden"
+                    whileInView="visible"
+                    viewport={{ once: false, amount: 0.2 }}
+                  >
+                    {Array.from({ length: 4 }, (_, i) => (
+                      <motion.div
+                        key={`empty-product-placeholder-${i}`}
+                        className="min-w-0"
+                        variants={fadeInVariants}
+                        transition={{ delay: i * 0.02 }}
+                      >
+                        <article className="flex h-full min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+                          <div className="relative h-[45vw] max-h-[180px] w-full bg-slate-50 md:aspect-[4/3] md:h-auto md:max-h-none">
+                            <Image
+                              src={OWNER_NO_PRODUCTS_PLACEHOLDER_IMAGE}
+                              alt=""
+                              fill
+                              className="object-contain p-3"
+                              sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 45vw, 50vw"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-2.5 px-2 py-3 md:gap-3 md:px-4 md:py-4">
+                            <p className="text-center text-[11px] font-medium leading-snug text-slate-600 md:text-sm">
+                              {isStoreOwner
+                                ? 'Upload your first products here.'
+                                : 'No products yet — check back soon.'}
+                            </p>
+                            {isStoreOwner ? (
+                              <Link
+                                href="/dashboard/products"
+                                prefetch
+                                className="inline-flex w-full items-center justify-center rounded-full border border-slate-900 bg-slate-900 px-3 py-2 text-[10px] font-semibold text-white shadow-sm transition hover:bg-slate-800 md:py-2.5 md:text-xs"
+                              >
+                                Add products
+                              </Link>
+                            ) : null}
+                          </div>
+                        </article>
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                </div>
+              ) : (
+                <p className="mt-12 text-center text-slate-500">
+                  {!filtersActive && realProductsCount === 0 && rawServices.length === 0
+                    ? isStoreOwner
+                      ? 'No products yet. Upload your first product to show it here.'
+                      : 'No products yet. Please check back soon.'
+                    : filterType === 'services'
+                      ? 'No services match these filters. Try adjusting your search.'
+                      : filterType === 'products'
+                        ? 'No products match these filters. Try adjusting your search.'
+                        : 'No products or services match these filters. Try adjusting your search.'}
+                </p>
+              )
             ) : (
               <>
               <motion.div
@@ -1991,7 +2227,6 @@ const ProductGrid = ({
                         storeName={storeName}
                         isStoreOwner={isStoreOwner}
                         showOwnerUploadButton={!hasRealProducts && isStoreOwner}
-                        onUploadProduct={() => router.push('/dashboard/products')}
                         cartQty={cartQuantities[product.id] ?? 0}
                         onAddToCart={() => onAddToCart(product, 1)}
                         onBuyNow={() => {
@@ -2005,13 +2240,13 @@ const ProductGrid = ({
               </motion.div>
               {filterType !== 'services' ? (
                 <div className="mt-3 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => router.push('/dashboard/products')}
+                  <Link
+                    href="/dashboard/products"
+                    prefetch
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
                   >
                     Upload more products
-                  </button>
+                  </Link>
                 </div>
               ) : null}
               </>
@@ -2227,7 +2462,15 @@ export default function StoreView({
     const raw = typeof store.whatsapp === 'string' && store.whatsapp.trim() !== ''
       ? store.whatsapp
       : (typeof store.phone === 'string' ? store.phone : '');
-    const digits = raw.replace(/[^0-9]/g, '');
+    let digits = raw.replace(/[^0-9]/g, '');
+    // WhatsApp `wa.me` requires country code. Most India numbers are stored as 10 digits.
+    if (digits.length === 10) {
+      digits = `91${digits}`;
+    }
+    // Trim leading zeros if someone saved 0XXXXXXXXXX.
+    if (digits.length > 10 && digits.startsWith('0')) {
+      digits = digits.replace(/^0+/, '');
+    }
     return digits ? `https://wa.me/${digits}` : '#';
   }, [store.phone, store.whatsapp]);
   /** Robust owner detection (IDs may arrive as number/string across endpoints). */
@@ -2238,7 +2481,7 @@ export default function StoreView({
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())
   );
-  const canEngage = !viewerOwnsStore && Boolean(store.id);
+  const canEngage = Boolean(store.id);
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
   const guestReviewsStorageKey = useMemo(() => `storeGuestReviews:${store.id}`, [store.id]);
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([]);
@@ -2249,27 +2492,7 @@ export default function StoreView({
   const [guestReviewNotice, setGuestReviewNotice] = useState<string | null>(null);
 
   const theme = useMemo(() => getThemeForCategory(store.businessType), [store.businessType]);
-  const normalizedDemoProducts = useMemo<Product[]>(
-    () =>
-      demoProducts.map((product) => ({
-        id: product.id,
-        storeId: store.id,
-        storeName: store.name,
-        storeSlug: store.username,
-        name: product.name,
-        description: `${product.name} preview item for your catalogue.`,
-        price: Number(String(product.price).replace(/[^\d.]/g, '')) || 0,
-        image: product.image,
-        images: [product.image],
-        category: store.businessType || 'General',
-        rating: store.rating || 4.5,
-        totalReviews: store.totalReviews || 0,
-        inStock: true,
-      })),
-    [store.id, store.name, store.username, store.businessType, store.rating, store.totalReviews]
-  );
-  const displayProducts = products.length > 0 ? products : normalizedDemoProducts;
-  const marqueeCategory = displayProducts[0]?.category || store.businessType || 'exclusive collections';
+  const marqueeCategory = store.businessType || 'exclusive collections';
   const marqueeMessage = `Welcome to ${store.name} — Trusted in ${store.location || 'your city'} · Call ${
     store.whatsapp || 'N/A'
   } · Signature picks in ${marqueeCategory}`;
@@ -2312,7 +2535,7 @@ export default function StoreView({
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const loadMoreProducts = () => {
-    setVisibleCount((previous) => Math.min(previous + INITIAL_VISIBLE_COUNT, displayProducts.length));
+    setVisibleCount((previous) => Math.min(previous + INITIAL_VISIBLE_COUNT, products.length));
   };
 
   const resetVisibleProducts = () => {
@@ -2406,11 +2629,6 @@ export default function StoreView({
 
   const handleAddToCart = useCallback(
     (product: Product, quantity: number) => {
-      if (viewerOwnsStore) {
-        setCartNotice("You can't add your own products to the cart.");
-        window.setTimeout(() => setCartNotice(null), 3000);
-        return;
-      }
       setCartEntries((prev) => {
         const totalItems = prev.reduce((sum, entry) => sum + entry.quantity, 0);
         if (totalItems >= MAX_CART_ITEMS) {
@@ -2439,7 +2657,7 @@ export default function StoreView({
         ];
       });
     },
-    [viewerOwnsStore]
+    []
   );
 
   const handleUpdateQuantity = useCallback((productId: string, newQuantity: number) => {
@@ -2468,19 +2686,17 @@ export default function StoreView({
           text: `My cart (${cartItemsCount} items, ₹${cartTotal})`,
         });
       } else {
-        const itemsList = cartEntries
-          .map((entry) => `${entry.name} x${entry.quantity} = ₹${entry.price * entry.quantity}`)
-          .join('%0A');
-        const message = `Hi ${store.name},%0A%0AMy Cart:%0A${itemsList}%0A%0ATotal: ₹${cartTotal}`;
-        window.open(`${whatsappLink}?text=${message}`, '_blank');
+        const itemsList = cartEntries.map((entry) => `${entry.name} x${entry.quantity} = ₹${entry.price * entry.quantity}`).join('\n');
+        const message = `Hi ${store.name},\n\nMy Cart:\n${itemsList}\n\nTotal: ₹${cartTotal}`;
+        const url = `${whatsappLink}?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank');
       }
     } catch (error) {
       console.error('Failed to share cart', error);
-      const itemsList = cartEntries
-        .map((entry) => `${entry.name} x${entry.quantity} = ₹${entry.price * entry.quantity}`)
-        .join('%0A');
-      const message = `Hi ${store.name},%0A%0AMy Cart:%0A${itemsList}%0A%0ATotal: ₹${cartTotal}`;
-      window.open(`${whatsappLink}?text=${message}`, '_blank');
+      const itemsList = cartEntries.map((entry) => `${entry.name} x${entry.quantity} = ₹${entry.price * entry.quantity}`).join('\n');
+      const message = `Hi ${store.name},\n\nMy Cart:\n${itemsList}\n\nTotal: ₹${cartTotal}`;
+      const url = `${whatsappLink}?text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank');
     } finally {
       setIsSharingCart(false);
     }
@@ -2569,7 +2785,7 @@ export default function StoreView({
         <HeroSection
           store={store}
           theme={theme}
-          products={displayProducts}
+          products={products}
           services={services}
           whatsappLink={whatsappLink}
           isProPlan={isProPlan}
@@ -2582,7 +2798,7 @@ export default function StoreView({
         />
 
         <ProductGrid
-          products={displayProducts}
+          products={products}
           realProductsCount={products.length}
           services={services}
           theme={theme}

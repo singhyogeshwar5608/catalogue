@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 
 class StoreOwnerNotificationController extends Controller
 {
-    /** Auto-remove read notifications after 24 hours. */
+    /** Delete only read notifications once they are at least 24 hours old. */
     private const READ_TTL_HOURS = 24;
 
     /**
@@ -26,7 +26,9 @@ class StoreOwnerNotificationController extends Controller
             ]);
         }
 
-        // Keep only recent read notifications; unread notifications are never auto-deleted.
+        // Unread notifications are never auto-deleted.
+        // A notification becomes eligible for deletion only after it has been read
+        // and 24 hours have passed since that read timestamp.
         StoreNotification::query()
             ->whereIn('store_id', $storeIds)
             ->whereNotNull('read_at')
@@ -89,6 +91,14 @@ class StoreOwnerNotificationController extends Controller
         $storeIds = Store::query()->where('user_id', $request->user()->id)->pluck('id');
         if (! $storeIds->contains($notification->store_id)) {
             return $this->errorResponse('Not found.', 404);
+        }
+
+        if ($notification->read_at === null) {
+            return $this->errorResponse('Unread notifications cannot be deleted.', 422);
+        }
+
+        if ($notification->read_at->gt(now()->subHours(self::READ_TTL_HOURS))) {
+            return $this->errorResponse('Read notifications can be deleted only after 24 hours.', 422);
         }
 
         $notification->delete();

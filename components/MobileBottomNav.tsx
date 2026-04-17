@@ -94,10 +94,7 @@ const NavButton = ({ item }: { item: NavItem }) => {
   }
 
   return (
-    <Link
-      href={item.href ?? '#'}
-      className={baseClassName}
-    >
+    <Link href={item.href ?? '#'} prefetch className={baseClassName}>
       {innerContent}
     </Link>
   );
@@ -163,6 +160,7 @@ const Drawer = ({
           {storeSlug && isLoggedIn && (
             <Link
               href={`/store/${storeSlug}`}
+              prefetch
               className="flex items-center gap-3 rounded-2xl px-3 py-3 text-[17px] font-medium text-slate-800 transition hover:bg-slate-50"
               onClick={onClose}
             >
@@ -197,6 +195,7 @@ const Drawer = ({
             ) : (
               <Link
                 href={item.href as string}
+                prefetch
                 className={rowClassName}
                 onClick={onClose}
               >
@@ -355,6 +354,26 @@ export default function MobileBottomNav() {
     }
   }, []);
 
+  useEffect(() => {
+    const targets = [
+      '/',
+      '/products',
+      '/all-stores',
+      '/auth',
+      '/create-store',
+      '/dashboard',
+      '/dashboard/products',
+      '/dashboard/subscription',
+    ];
+    targets.forEach((href) => {
+      try {
+        router.prefetch(href);
+      } catch {
+        /* ignore */
+      }
+    });
+  }, [router]);
+
   const derivedStoreSlug = user?.storeSlug ?? legacyAuth.storeSlug;
   const isLoggedIn = authLoggedIn || legacyAuth.isAuthenticated;
   const storeShareUrl = derivedStoreSlug ? `${appOrigin}/store/${derivedStoreSlug}` : null;
@@ -499,14 +518,6 @@ export default function MobileBottomNav() {
     router.push('/');
   }, [closeDrawer, logout, router, showToast]);
 
-  const handleCreateStore = useCallback(() => {
-    if (isLoggedIn) {
-      router.push('/create-store');
-    } else {
-      router.push('/auth');
-    }
-  }, [isLoggedIn, router]);
-
   const loggedOutNavItems = useMemo<NavItem[]>(() => {
     const allStoresItem = { key: 'all-stores', href: '/all-stores', icon: Store, label: 'All Stores', isActive: pathname?.startsWith('/all-stores') };
 
@@ -533,10 +544,16 @@ export default function MobileBottomNav() {
       items.push({ key: 'products', href: '/products', icon: Grid3x3, label: 'Products', isActive: pathname?.startsWith('/products'), accent: '#6366f1' });
     }
 
-    items.push({ key: 'create', icon: PlusCircle, label: 'Create Store', action: handleCreateStore, accent: '#ec4899' });
+    items.push({
+      key: 'create',
+      href: isLoggedIn ? '/create-store' : '/auth',
+      icon: PlusCircle,
+      label: 'Create Store',
+      accent: '#ec4899',
+    });
 
     return items;
-  }, [handleCreateStore, isLoggedIn, onDashboardPage, ownerStoreView, pathname]);
+  }, [isLoggedIn, onDashboardPage, ownerStoreView, pathname]);
 
   const loggedInNavItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [
@@ -609,9 +626,9 @@ export default function MobileBottomNav() {
       { href: '/', icon: Home, label: 'Home' },
       { href: '/#stores', icon: Store, label: 'Stores' },
       { href: '/#products', icon: Grid3x3, label: 'Products' },
-      { icon: PlusCircle, label: 'Create Store', action: handleCreateStore },
+      { href: isLoggedIn ? '/create-store' : '/auth', icon: PlusCircle, label: 'Create Store' },
     ],
-    [handleCreateStore]
+    [isLoggedIn]
   );
 
   const activeDrawerItems = isLoggedIn ? drawerItems : publicDrawerItems;

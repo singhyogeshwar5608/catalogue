@@ -74,6 +74,10 @@ Route::middleware('auth:api')->group(function () {
         Route::put('admin/settings/free-trial', [AdminPlatformSettingController::class, 'updateFreeTrial']);
         Route::get('admin/settings/subscription-addons', [AdminPlatformSettingController::class, 'showSubscriptionAddons']);
         Route::put('admin/settings/subscription-addons', [AdminPlatformSettingController::class, 'updateSubscriptionAddons']);
+        Route::get('admin/settings/subscription-billing-discounts', [AdminPlatformSettingController::class, 'showSubscriptionBillingDiscounts']);
+        Route::put('admin/settings/subscription-billing-discounts', [AdminPlatformSettingController::class, 'updateSubscriptionBillingDiscounts']);
+        /** POST avoids some proxies/CDNs dropping JSON body on PUT. */
+        Route::post('admin/settings/subscription-billing-discounts', [AdminPlatformSettingController::class, 'updateSubscriptionBillingDiscounts']);
     });
 
     Route::prefix('subscription-plans')->group(function () {

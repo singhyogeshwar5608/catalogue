@@ -79,4 +79,34 @@ class AdminPlatformSettingController extends Controller
         return $this->successResponse('Subscription add-on charges updated.', PlatformSetting::subscriptionAddonChargesPayload());
     }
 
+    /** Global percent discounts by billing term (1 month / 3 months / 1 year). */
+    public function showSubscriptionBillingDiscounts()
+    {
+        return $this->successResponse('Subscription billing discounts retrieved.', PlatformSetting::subscriptionBillingDiscountsApiEnvelope());
+    }
+
+    public function updateSubscriptionBillingDiscounts(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'discount_1_month_pct' => 'required|integer|min:0|max:100',
+            'discount_3_months_pct' => 'required|integer|min:0|max:100',
+            'discount_1_year_pct' => 'required|integer|min:0|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->errorResponse('Validation failed.', 422, $validator->errors());
+        }
+
+        if (! Schema::hasTable('platform_settings')) {
+            return $this->errorResponse('Platform settings table is missing. Run migrations.', 503);
+        }
+
+        $d = $validator->validated();
+        PlatformSetting::setPercent0to100(PlatformSetting::KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_MONTH_PCT, (int) $d['discount_1_month_pct']);
+        PlatformSetting::setPercent0to100(PlatformSetting::KEY_SUBSCRIPTION_BILLING_DISCOUNT_3_MONTHS_PCT, (int) $d['discount_3_months_pct']);
+        PlatformSetting::setPercent0to100(PlatformSetting::KEY_SUBSCRIPTION_BILLING_DISCOUNT_1_YEAR_PCT, (int) $d['discount_1_year_pct']);
+
+        return $this->successResponse('Subscription billing discounts updated.', PlatformSetting::subscriptionBillingDiscountsApiEnvelope());
+    }
+
 }

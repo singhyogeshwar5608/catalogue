@@ -1,18 +1,26 @@
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import type { Store } from '@/types';
+import { perfLog } from '@/src/lib/perfLog';
+import {
+  serverFetchStoreWithRaw,
+  serverGetProductsForStoreBackend,
+  serverGetServicesForStoreBackend,
+  serverGetStoreReviews,
+} from '@/src/lib/serverApi';
 import StorePageClient from './StorePageClient';
 
 type StorePageProps = {
   params: Promise<{ username: string }>;
 };
 
+const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://larawans.com';
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   `${(process.env.NEXT_PUBLIC_BASE_URL ?? 'https://larawans.com').replace(/\/+$/, '')}/api/v1/v1`;
-const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://larawans.com';
 
-type ApiEnvelope<T> = { success: boolean; message: string; data: T };
 type StoreSeoPayload = Partial<Store> & {
   seo_keywords?: string | null;
   keywords?: string | null;
@@ -50,20 +58,25 @@ function toAbsoluteAssetUrl(input?: string | null): string | null {
   return `${apiOrigin}/${value.replace(/^\/+/, '')}`;
 }
 
-async function fetchStoreSeo(username: string): Promise<StoreSeoPayload | null> {
-  try {
-    const res = await fetch(`${API_BASE.replace(/\/+$/, '')}/store/${encodeURIComponent(username)}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      next: { revalidate: 120 },
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as ApiEnvelope<StoreSeoPayload>;
-    return json?.data ?? null;
-  } catch {
-    return null;
-  }
-}
+const getStorePageBundle = cache(async (username: string) => {
+  perfLog('store', `RSC bundle start ${username}`);
+  const row = await serverFetchStoreWithRaw(username);
+  if (!row) return null;
+  const [products, services, reviewsPayload] = await Promise.all([
+    serverGetProductsForStoreBackend(row.backend),
+    serverGetServicesForStoreBackend(row.backend),
+    serverGetStoreReviews(row.store.id, 1, 5),
+  ]);
+  perfLog('store', `RSC bundle ready ${username}`);
+  return {
+    store: row.store,
+    products,
+    services,
+    reviews: reviewsPayload?.reviews ?? [],
+    reviewSummary: reviewsPayload?.summary ?? null,
+    reviewPagination: reviewsPayload?.pagination ?? null,
+  };
+});
 
 function buildKeywords(store: StoreSeoPayload | null): string {
   if (!store) return 'store, online shopping, marketplace';
@@ -93,8 +106,8 @@ function buildSeoDescription(store: StoreSeoPayload): string {
 
 export async function generateMetadata({ params }: StorePageProps): Promise<Metadata> {
   const { username } = await params;
-  const store = await fetchStoreSeo(username);
-  if (!store) {
+  const bundle = await getStorePageBundle(username);
+  if (!bundle) {
     const canonical = `${SITE_URL.replace(/\/+$/, '')}/store/${encodeURIComponent(username)}`;
     return {
       title: 'Store Not Found',
@@ -115,6 +128,7 @@ export async function generateMetadata({ params }: StorePageProps): Promise<Meta
     };
   }
 
+  const store = bundle.store as StoreSeoPayload;
   const state = (store?.state ?? '').trim();
   const district = (store?.district ?? '').trim();
   const locPhrase =
@@ -135,6 +149,16 @@ export async function generateMetadata({ params }: StorePageProps): Promise<Meta
   const canonical = `${SITE_URL.replace(/\/+$/, '')}/store/${encodeURIComponent(username)}`;
   const keywords = buildKeywords(store);
   const logo = toAbsoluteAssetUrl(store.logo ?? null);
+  const faviconVersionRaw =
+    (store as { updated_at?: string })?.updated_at ??
+    (store as { updatedAt?: string })?.updatedAt ??
+    store.id ??
+    username;
+  const faviconVersion = String(faviconVersionRaw ?? username).trim() || username;
+  const faviconUrl =
+    logo
+      ? `${logo}${logo.includes('?') ? '&' : '?'}v=${encodeURIComponent(faviconVersion)}`
+      : null;
 
   return {
     title,
@@ -154,11 +178,14 @@ export async function generateMetadata({ params }: StorePageProps): Promise<Meta
       description,
       images: logo ? [logo] : undefined,
     },
-    icons: logo
+    icons: faviconUrl
       ? {
-          icon: [{ url: logo }],
-          shortcut: [{ url: logo }],
-          apple: [{ url: logo }],
+          icon: [
+            { url: faviconUrl, sizes: '32x32' },
+            { url: faviconUrl, sizes: '48x48' },
+          ],
+          shortcut: [{ url: faviconUrl }],
+          apple: [{ url: faviconUrl, sizes: '180x180' }],
         }
       : undefined,
     other: {
@@ -173,41 +200,43 @@ export async function generateMetadata({ params }: StorePageProps): Promise<Meta
 
 export default async function StorePage({ params }: StorePageProps) {
   const { username } = await params;
-  const store = await fetchStoreSeo(username);
-  if (!store) {
+  const bundle = await getStorePageBundle(username);
+  if (!bundle) {
     notFound();
   }
   const canonical = `${SITE_URL.replace(/\/+$/, '')}/store/${encodeURIComponent(username)}`;
-  const regionState = (store?.state ?? '').trim();
-  const regionDistrict = (store?.district ?? '').trim();
-  const jsonLd = store
-    ? {
-        '@context': 'https://schema.org',
-        '@type': 'Store',
-        name: store.name ?? 'Store',
-        url: canonical,
-        description: buildSeoDescription(store),
-        ...(regionState || regionDistrict
-          ? {
-              address: {
-                '@type': 'PostalAddress',
-                ...(regionDistrict ? { addressLocality: regionDistrict } : {}),
-                ...(regionState ? { addressRegion: regionState } : {}),
-              },
-            }
-          : {}),
-      }
-    : null;
+  const regionState = (bundle.store?.state ?? '').trim();
+  const regionDistrict = (bundle.store?.district ?? '').trim();
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Store',
+    name: bundle.store.name ?? 'Store',
+    url: canonical,
+    description: buildSeoDescription(bundle.store as StoreSeoPayload),
+    ...(regionState || regionDistrict
+      ? {
+          address: {
+            '@type': 'PostalAddress',
+            ...(regionDistrict ? { addressLocality: regionDistrict } : {}),
+            ...(regionState ? { addressRegion: regionState } : {}),
+          },
+        }
+      : {}),
+  };
 
   return (
     <>
-      {jsonLd ? (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-      ) : null}
-      <StorePageClient username={username} initialStore={(store as Store) ?? null} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <StorePageClient
+        username={username}
+        initialStore={bundle.store}
+        initialProducts={bundle.products}
+        initialServices={bundle.services}
+        initialReviews={bundle.reviews}
+        initialReviewSummary={bundle.reviewSummary}
+        initialReviewPagination={bundle.reviewPagination}
+        serverHydrated
+      />
     </>
   );
 }

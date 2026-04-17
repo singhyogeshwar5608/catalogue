@@ -1,6 +1,7 @@
+'use client';
+
 import { useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Store } from '@/types';
 import { MapPin, Phone, Star, Check } from 'lucide-react';
 import { getStoreBannerImage } from '@/utils/storeBanner';
@@ -12,7 +13,6 @@ interface StoreCardProps {
 }
 
 export default function StoreCard({ store, isCompact = false, categoryBannerIndex }: StoreCardProps) {
-  const router = useRouter();
   const initials = useMemo(
     () =>
       store.name
@@ -67,18 +67,11 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
     });
 
   return (
-    <div
+    <Link
+      href={`/store/${store.username}`}
+      prefetch
       className={`flex min-h-0 max-w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-slate-500 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] ${isCompact ? 'w-full' : 'mx-auto w-[90%]'}`}
-      role="link"
-      tabIndex={0}
       aria-label={`Open ${store.name} store page`}
-      onClick={() => router.push(`/store/${store.username}`)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          router.push(`/store/${store.username}`);
-        }
-      }}
     >
       <div className="relative z-10 h-[96px] w-full shrink-0 overflow-visible md:h-[160px]">
         {heroBannerImage ? (
@@ -154,15 +147,14 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
         </div>
 
         <div className={`${isCompact ? 'mt-1.5' : 'mt-2 md:mt-2.5'} grid grid-cols-1 gap-1.5`}>
-          <Link
-            href={`/store/${store.username}`}
+          <span
             className={`inline-flex items-center justify-center rounded-lg bg-slate-800 font-medium text-white ${isCompact ? 'px-1 py-0.5 text-[7px]' : 'px-1 py-1 text-[10px] md:px-2 md:py-1.5 md:text-xs'}`}
           >
             Visit
-          </Link>
+          </span>
         </div>
 
       </div>
-    </div>
+    </Link>
   );
 }

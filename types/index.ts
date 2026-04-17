@@ -302,6 +302,17 @@ export interface SubscriptionAddonCharges {
   payment_gateway_help_inr: number;
 }
 
+/** Super-admin: percent off (0–100) for 1-month, 3-month, and 1-year subscription terms (platform_settings). */
+export interface SubscriptionBillingDiscounts {
+  discount_1_month_pct: number;
+  discount_3_months_pct: number;
+  discount_1_year_pct: number;
+  /** Raw rows read from DB after save (super-admin API only). */
+  _persisted_rows?: Array<{ key: string; value: string | null; updated_at: string | null }>;
+  /** Which connection/driver/database Laravel used for that read (compare with phpMyAdmin). */
+  _laravel_database?: { connection: string; driver: string; database: string };
+}
+
 export interface StoreSubscription {
   id: string;
   storeId: string;

@@ -17,6 +17,7 @@ import type {
   AdminDashboardStats,
   SubscriptionPlan,
   SubscriptionAddonCharges,
+  SubscriptionBillingDiscounts,
   StoreSubscription,
   ProductCheckoutPublic,
 } from '@/types';
@@ -524,6 +525,19 @@ export const apiRequest = async <T>(
 
   if (!response.ok) {
     throw new ApiError(responseData?.message ?? 'Request failed', response.status, responseData);
+  }
+
+  if (
+    responseData !== null &&
+    typeof responseData === 'object' &&
+    'success' in responseData &&
+    (responseData as ApiEnvelope<unknown>).success === false
+  ) {
+    const msg =
+      typeof (responseData as ApiEnvelope<unknown>).message === 'string'
+        ? (responseData as ApiEnvelope<unknown>).message
+        : 'Request failed';
+    throw new ApiError(msg, response.status, responseData);
   }
 
   return responseData as ApiEnvelope<T>;
@@ -2060,6 +2074,68 @@ export const updateAdminSubscriptionAddonCharges = async (
     requiresAuth: true,
   });
   return parseSubscriptionAddonPayload(response.data);
+};
+
+const clampPercent0to100 = (v: unknown): number => {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, Math.floor(n)));
+};
+
+const parseSubscriptionBillingDiscountsPayload = (raw: unknown): SubscriptionBillingDiscounts => {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    discount_1_month_pct: clampPercent0to100(o.discount_1_month_pct),
+    discount_3_months_pct: clampPercent0to100(o.discount_3_months_pct),
+    discount_1_year_pct: clampPercent0to100(o.discount_1_year_pct),
+  };
+};
+
+const requireBillingDiscountsEnvelope = (
+  response: ApiEnvelope<SubscriptionBillingDiscounts>
+): SubscriptionBillingDiscounts => {
+  const raw = response.data;
+  if (raw === null || typeof raw !== 'object') {
+    throw new ApiError(
+      'Server returned no billing-discount data. Use the Laravel API host that has the latest backend code, and open the MySQL database named in that server’s DB_DATABASE (not a different DB with a similar name).',
+      502,
+      response
+    );
+  }
+  const o = raw as unknown as Record<string, unknown>;
+  for (const k of ['discount_1_month_pct', 'discount_3_months_pct', 'discount_1_year_pct'] as const) {
+    if (!(k in o)) {
+      throw new ApiError(
+        `API response is missing "${k}". Deploy the latest backend (subscription-billing-discounts routes + controller), then run: php artisan route:clear && php artisan config:clear`,
+        502,
+        response
+      );
+    }
+  }
+  return parseSubscriptionBillingDiscountsPayload(raw);
+};
+
+/** Super admin: global subscription billing-term discounts (% off). */
+export const getAdminSubscriptionBillingDiscounts = async (): Promise<SubscriptionBillingDiscounts> => {
+  const response = await apiRequest<SubscriptionBillingDiscounts>('/admin/settings/subscription-billing-discounts', {
+    requiresAuth: true,
+  });
+  return requireBillingDiscountsEnvelope(response);
+};
+
+export const updateAdminSubscriptionBillingDiscounts = async (
+  discounts: SubscriptionBillingDiscounts
+): Promise<SubscriptionBillingDiscounts> => {
+  const response = await apiRequest<SubscriptionBillingDiscounts>('/admin/settings/subscription-billing-discounts', {
+    method: 'POST',
+    body: {
+      discount_1_month_pct: clampPercent0to100(discounts.discount_1_month_pct),
+      discount_3_months_pct: clampPercent0to100(discounts.discount_3_months_pct),
+      discount_1_year_pct: clampPercent0to100(discounts.discount_1_year_pct),
+    },
+    requiresAuth: true,
+  });
+  return requireBillingDiscountsEnvelope(response);
 };
 
 /** Authenticated store owner: read global subscription add-on prices (same keys as admin). */

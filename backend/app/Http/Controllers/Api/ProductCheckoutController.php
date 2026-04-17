@@ -30,9 +30,7 @@ class ProductCheckoutController extends Controller
             return self::emptyCheckoutPayload();
         }
 
-        if ($request instanceof Request && self::bearerTokenUserOwnsStore($request, $store)) {
-            return self::emptyCheckoutPayload();
-        }
+        // Allow store owners to test-buy their own products (useful for QA / payment integration checks).
 
         $store->loadMissing('activeSubscription.plan');
 
@@ -146,9 +144,7 @@ class ProductCheckoutController extends Controller
             return $this->errorResponse('This product is not available for purchase.', 403);
         }
 
-        if (self::bearerTokenUserOwnsStore($request, $store)) {
-            return $this->errorResponse('You cannot purchase products from your own store.', 403);
-        }
+        // Allow store owners to purchase their own products (QA / testing).
 
         if (! self::storeHasPaidSubscriptionPeriod($store)) {
             return $this->errorResponse('Online payment is not available for this store.', 403);
@@ -245,9 +241,7 @@ class ProductCheckoutController extends Controller
             return $this->errorResponse('Verification failed.', 403);
         }
 
-        if (self::bearerTokenUserOwnsStore($request, $store)) {
-            return $this->errorResponse('You cannot verify payment for your own store.', 403);
-        }
+        // Allow store owners to verify payments for their own test purchases.
 
         $secret = $store->razorpay_key_secret;
         if (! is_string($secret) || $secret === '') {

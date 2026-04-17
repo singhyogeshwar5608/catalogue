@@ -19,9 +19,10 @@ import {
   Plug2,
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { getStoreBySlug, getStoreBySlugFromApi, isApiError } from '@/src/lib/api';
+import { getMyStoreNotifications, getStoreBySlug, getStoreBySlugFromApi, isApiError } from '@/src/lib/api';
 import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
+import faviconIcon from '@/assets/icon-512x512.svg';
 
 export default function Sidebar() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [myStore, setMyStore] = useState<Store | null>(null);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const loadStore = useCallback(async () => {
     const slug = user?.storeSlug?.trim();
@@ -69,6 +71,36 @@ export default function Sidebar() {
     return () => window.removeEventListener(STORE_PROFILE_REFRESH_EVENT, onRefresh);
   }, [loadStore]);
 
+  useEffect(() => {
+    if (!user?.storeSlug) {
+      setUnreadNotifications(0);
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadUnreadNotifications = async () => {
+      try {
+        const payload = await getMyStoreNotifications({ limit: 1 });
+        if (!isMounted) return;
+        setUnreadNotifications(payload.unread_count);
+      } catch {
+        if (!isMounted) return;
+        setUnreadNotifications(0);
+      }
+    };
+
+    void loadUnreadNotifications();
+    const id = window.setInterval(() => {
+      void loadUnreadNotifications();
+    }, 7000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(id);
+    };
+  }, [user?.storeSlug]);
+
   const businessType = myStore?.businessType || 'product';
   const showPaymentsHub = storeCanAccessPaymentIntegrationHub(myStore);
 
@@ -89,6 +121,26 @@ export default function Sidebar() {
       : []),
     { href: '/dashboard/referral', icon: Users, label: 'Referrals' },
   ];
+
+  useEffect(() => {
+    const paths = [
+      '/',
+      '/dashboard',
+      '/dashboard/notifications',
+      '/dashboard/products',
+      '/dashboard/services',
+      '/dashboard/subscription',
+      '/dashboard/payment-integration',
+      '/dashboard/referral',
+    ];
+    paths.forEach((href) => {
+      try {
+        router.prefetch(href);
+      } catch {
+        /* ignore */
+      }
+    });
+  }, [router]);
 
   const handleLogout = () => {
     logout();
@@ -155,6 +207,7 @@ export default function Sidebar() {
                     <li key={item.href}>
                       <Link
                         href={item.href}
+                        prefetch
                         onClick={() => setIsMobileMenuOpen(false)}
                         className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
                           isActive
@@ -162,7 +215,14 @@ export default function Sidebar() {
                             : 'text-gray-700 hover:bg-gray-100'
                         }`}
                       >
-                        <Icon className="w-5 h-5" />
+                        <div className="relative">
+                          <Icon className="w-5 h-5" />
+                          {item.href === '/dashboard/notifications' && unreadNotifications > 0 ? (
+                            <span className="absolute -right-2 -top-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                              {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                            </span>
+                          ) : null}
+                        </div>
                         <span className="font-medium">{item.label}</span>
                       </Link>
                     </li>
@@ -188,8 +248,18 @@ export default function Sidebar() {
       <div className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:w-64 md:border-r md:border-gray-200 md:bg-white">
         <div className="flex flex-col flex-1 overflow-y-auto">
           <div className="flex items-center gap-2 px-4 py-6 border-b border-gray-200">
-            <ShoppingBag className="w-8 h-8 text-primary" />
-            <span className="text-xl font-bold text-gray-900">Cateloge</span>
+            <Link href="/" className="flex min-w-0 items-center gap-2">
+              {/* Website logo (static) */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={faviconIcon.src}
+                alt="Cateloge"
+                className="h-8 w-8 rounded-lg object-contain"
+                loading="eager"
+                decoding="async"
+              />
+              <span className="truncate text-xl font-bold text-gray-900">Cateloge</span>
+            </Link>
           </div>
           <nav className="flex-1 p-4">
             <ul className="space-y-2">
@@ -201,13 +271,21 @@ export default function Sidebar() {
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      prefetch
                       className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
                         isActive
                           ? 'bg-primary text-white'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
                     >
-                      <Icon className="w-5 h-5" />
+                      <div className="relative">
+                        <Icon className="w-5 h-5" />
+                        {item.href === '/dashboard/notifications' && unreadNotifications > 0 ? (
+                          <span className="absolute -right-2 -top-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                            {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                          </span>
+                        ) : null}
+                      </div>
                       <span className="font-medium">{item.label}</span>
                     </Link>
                   </li>

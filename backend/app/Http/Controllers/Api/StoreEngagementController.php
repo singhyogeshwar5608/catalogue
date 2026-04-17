@@ -147,55 +147,59 @@ class StoreEngagementController extends Controller
             return $this->errorResponse('Store engagement is not available. Run database migrations.', 503);
         }
 
-        $actorKey = $this->resolveActorKey($request);
+        // Allow store owners to like/follow their own store once.
+        // We prefer the authenticated user id when the request carries a valid JWT, even if the JWT `sub`
+        // claim is non-numeric (in that case resolveActorKey may fall back to guest_token).
+        $ownerOneWay = false;
+        $actorKey = null;
+        if ($this->authenticatedUserOwnsStore($request, $store)) {
+            $actorKey = 'u:'.(int) $store->user_id;
+            $ownerOneWay = true;
+        } else {
+            $actorKey = $this->resolveActorKey($request);
+        }
         if ($actorKey === null) {
             return $this->errorResponse('Sign in or send guest_token (UUID v4) in the JSON body.', 422);
-        }
-
-        if ($this->actorOwnsStore($actorKey, $store)) {
-            return $this->errorResponse('You cannot follow or like your own store.', 400);
         }
 
         $modelClass = $kind === 'follow' ? StoreFollow::class : StoreLike::class;
 
         try {
-            $payload = DB::transaction(function () use ($modelClass, $store, $actorKey, $countColumn, $kind) {
+            $payload = DB::transaction(function () use ($modelClass, $store, $actorKey, $countColumn, $kind, $ownerOneWay) {
                 $storeRow = Store::query()->whereKey($store->id)->lockForUpdate()->first();
                 if (! $storeRow) {
                     return null;
                 }
 
-                $hadRow = $modelClass::query()
+                $existing = $modelClass::query()
                     ->where('store_id', $storeRow->id)
                     ->where('actor_key', $actorKey)
-                    ->exists();
+                    ->lockForUpdate()
+                    ->first();
 
-                if ($hadRow) {
-                    $modelClass::query()
-                        ->where('store_id', $storeRow->id)
-                        ->where('actor_key', $actorKey)
-                        ->delete();
-                    DB::table('stores')->where('id', $storeRow->id)->update([
-                        $countColumn => DB::raw('CASE WHEN '.$countColumn.' > 0 THEN '.$countColumn.' - 1 ELSE 0 END'),
-                    ]);
-                    $nowActive = false;
+                /** True only when this request newly created a follow/like row (not unfollow, not duplicate race). */
+                $activatedThisKind = false;
+
+                if ($existing !== null) {
+                    if (! $ownerOneWay) {
+                        $existing->delete();
+                        DB::table('stores')
+                            ->where('id', $storeRow->id)
+                            ->where($countColumn, '>', 0)
+                            ->decrement($countColumn);
+                    }
                 } else {
-                    $nowActive = false;
                     try {
                         $modelClass::query()->create([
                             'store_id' => $storeRow->id,
                             'actor_key' => $actorKey,
                         ]);
                         DB::table('stores')->where('id', $storeRow->id)->increment($countColumn);
-                        $nowActive = true;
+                        $activatedThisKind = true;
                     } catch (\Illuminate\Database\QueryException $e) {
                         if ($e->getCode() !== '23000' && ! str_contains(strtolower($e->getMessage()), 'unique')) {
                             throw $e;
                         }
-                        $nowActive = $modelClass::query()
-                            ->where('store_id', $storeRow->id)
-                            ->where('actor_key', $actorKey)
-                            ->exists();
                     }
                 }
 
@@ -204,8 +208,15 @@ class StoreEngagementController extends Controller
                 return [
                     'followers_count' => (int) ($fresh?->followers_count ?? 0),
                     'likes_count' => (int) ($fresh?->likes_count ?? 0),
-                    'viewer_following' => $kind === 'follow' ? $nowActive : null,
-                    'viewer_liked' => $kind === 'like' ? $nowActive : null,
+                    'viewer_following' => StoreFollow::query()
+                        ->where('store_id', $storeRow->id)
+                        ->where('actor_key', $actorKey)
+                        ->exists(),
+                    'viewer_liked' => StoreLike::query()
+                        ->where('store_id', $storeRow->id)
+                        ->where('actor_key', $actorKey)
+                        ->exists(),
+                    'activated_this_kind' => $activatedThisKind,
                 ];
             });
         } catch (\Throwable $e) {
@@ -218,29 +229,34 @@ class StoreEngagementController extends Controller
             return $this->errorResponse('Store not found.', 404);
         }
 
-        if ($kind === 'follow' && $payload['viewer_following']) {
+        $activatedThisKind = (bool) ($payload['activated_this_kind'] ?? false);
+        unset($payload['activated_this_kind']);
+
+        if ($kind === 'follow' && $activatedThisKind && $payload['viewer_following']) {
             StoreNotificationRecorder::follow($store, $actorKey, (int) $payload['followers_count']);
         }
-        if ($kind === 'like' && $payload['viewer_liked']) {
+        if ($kind === 'like' && $activatedThisKind && $payload['viewer_liked']) {
             StoreNotificationRecorder::like($store, $actorKey, (int) $payload['likes_count']);
         }
 
         if ($kind === 'follow') {
             return $this->successResponse(
-                $payload['viewer_following'] ? 'You are now following this store.' : 'You unfollowed this store.',
+                $payload['viewer_following'] ? 'You are following this store.' : 'You unfollowed this store.',
                 [
                     'followers_count' => $payload['followers_count'],
                     'likes_count' => $payload['likes_count'],
                     'viewer_following' => (bool) $payload['viewer_following'],
+                    'viewer_liked' => (bool) $payload['viewer_liked'],
                 ]
             );
         }
 
         return $this->successResponse(
-            $payload['viewer_liked'] ? 'Thanks for liking this store.' : 'Like removed.',
+            $payload['viewer_liked'] ? 'You liked this store.' : 'You removed your like.',
             [
                 'followers_count' => $payload['followers_count'],
                 'likes_count' => $payload['likes_count'],
+                'viewer_following' => (bool) $payload['viewer_following'],
                 'viewer_liked' => (bool) $payload['viewer_liked'],
             ]
         );

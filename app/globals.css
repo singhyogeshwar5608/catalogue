@@ -82,3 +82,23 @@ iframe.skiptranslate {
     animation: none !important;
   }
 }
+
+/* App Router: quick visual feedback on client-side navigations */
+@keyframes nav-route-progress-slide {
+  0% {
+    transform: translateX(-100%);
+    opacity: 1;
+  }
+  45% {
+    transform: translateX(-20%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+}
+
+.nav-route-progress-indeterminate {
+  animation: nav-route-progress-slide 0.55s ease-out forwards;
+}

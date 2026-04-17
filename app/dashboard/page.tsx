@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import useSWR from 'swr';
 import {
   BarChart3,
   Bell,
@@ -45,6 +46,7 @@ import {
   updateStore,
 } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
+import { perfLog } from '@/src/lib/perfLog';
 import { getDashboardExpiryWarningDaysRemaining, isPaidSubscriptionActive } from '@/src/lib/storeAccess';
 import type { Product, Store, StoreSubscription, SubscriptionPlan } from '@/types';
 import SubscriptionExpiryPopup from '@/components/SubscriptionExpiryPopup';
@@ -160,7 +162,6 @@ export default function DashboardPage() {
   const { isLoggedIn, user } = useAuth();
   const [myStore, setMyStore] = useState<Store | null>(null);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -190,75 +191,84 @@ export default function DashboardPage() {
   const storeUrl = myStore ? `https://cateloge.com/store/${myStore.username}` : '';
   const prettyUrl = storeUrl.replace(/^https?:\/\//, '');
 
-  const loadStoreData = useCallback(async () => {
-    if (!user?.storeSlug) {
-      setLoading(false);
-      setError('You need to create a store first.');
+  const dashboardSwrKey = isLoggedIn && user?.storeSlug ? user.storeSlug : null;
+
+  const { data: dashboardData, error: swrError, isLoading: swrLoading, mutate: mutateDashboard } = useSWR(
+    dashboardSwrKey,
+    async (slug: string) => {
+      perfLog('dashboard', 'SWR fetch start');
+      const store = await getStoreBySlugFromApi(slug);
+      const products = await getProductsByStore(store.id);
+      const subData = await getStoreSubscription(store.id);
+      perfLog('dashboard', 'SWR data ready');
+      return { store, products: products ?? [], activeSubscription: subData.activeSubscription };
+    },
+    { revalidateOnFocus: true, dedupingInterval: 5000 }
+  );
+
+  useEffect(() => {
+    if (!dashboardData) return;
+    const { store, products, activeSubscription } = dashboardData;
+    setMyStore(store);
+    setMyProducts(products);
+    setSubscription(activeSubscription);
+    setShowSubscriptionExpiry(false);
+    setShowProductLimit(false);
+    setShowBoostExpiry(false);
+    if (activeSubscription) {
+      const remainingDays = getDashboardExpiryWarningDaysRemaining(store, activeSubscription);
+      if (remainingDays != null && remainingDays <= 7 && remainingDays >= 0) {
+        setShowSubscriptionExpiry(true);
+      }
+      if (products && products.length >= activeSubscription.plan.maxProducts) {
+        setShowProductLimit(true);
+      }
+    }
+    if (store.activeBoost) {
+      const boostEndsAt = new Date(store.activeBoost.endsAt);
+      const remainingDays = Math.ceil((boostEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      if (store.activeBoost.status === 'expired' || remainingDays <= 3) {
+        setShowBoostExpiry(true);
+      }
+    }
+  }, [dashboardData]);
+
+  useEffect(() => {
+    if (!swrError) return;
+    if (isApiError(swrError) && swrError.status === 401) {
+      router.replace('/auth?redirect=/dashboard');
       return;
     }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const store = await getStoreBySlugFromApi(user.storeSlug);
-      const products = await getProductsByStore(store.id);
-      if (!store) {
-        setError('Store not found');
-        return;
-      }
-
-      setMyStore(store);
-      setMyProducts(products ?? []);
-
-      try {
-        const subData = await getStoreSubscription(store.id);
-        setSubscription(subData.activeSubscription);
-
-        if (subData.activeSubscription) {
-          const remainingDays = getDashboardExpiryWarningDaysRemaining(store, subData.activeSubscription);
-
-          if (remainingDays != null && remainingDays <= 7 && remainingDays >= 0) {
-            setShowSubscriptionExpiry(true);
-          }
-
-          if (products && products.length >= subData.activeSubscription.plan.maxProducts) {
-            setShowProductLimit(true);
-          }
-        }
-      } catch (subErr) {
-        console.error('Failed to load subscription:', subErr);
-      }
-
-      if (store.activeBoost) {
-        const boostEndsAt = new Date(store.activeBoost.endsAt);
-        const remainingDays = Math.ceil((boostEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-
-        if (store.activeBoost.status === 'expired' || remainingDays <= 3) {
-          setShowBoostExpiry(true);
-        }
-      }
-    } catch (err) {
-      if (isApiError(err)) {
-        if (err.status === 401) {
-          router.replace('/auth?redirect=/dashboard');
-          return;
-        }
-        setError(err.message || 'Unable to load store data');
-      } else {
-        setError(err instanceof Error ? err.message : 'Unable to load store data');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [router, user?.storeSlug]);
+    setError(swrError instanceof Error ? swrError.message : 'Unable to load store data');
+  }, [swrError, router]);
 
   useEffect(() => {
     if (!isLoggedIn) {
       router.replace('/auth?redirect=/dashboard');
       return;
     }
-    loadStoreData();
-  }, [isLoggedIn, loadStoreData, router]);
+    if (!user?.storeSlug) {
+      setError('You need to create a store first.');
+      setMyStore(null);
+      setMyProducts([]);
+      setSubscription(null);
+    } else {
+      setError(null);
+    }
+  }, [isLoggedIn, user?.storeSlug, router]);
+
+  const loading =
+    isLoggedIn && Boolean(user?.storeSlug) && swrLoading && !dashboardData && !swrError;
+
+  useEffect(() => {
+    try {
+      router.prefetch('/dashboard/subscription');
+      router.prefetch('/dashboard/notifications');
+      router.prefetch('/dashboard/products');
+    } catch {
+      /* ignore */
+    }
+  }, [router]);
 
   useEffect(() => {
     if (!myStore) return;
@@ -464,6 +474,7 @@ export default function DashboardPage() {
         linkedin_url: trimmed.linkedin || null,
       });
       setMyStore(store);
+      void mutateDashboard();
       setSocialLinks({
         facebook: store.socialLinks?.facebook?.trim() || trimmed.facebook,
         instagram: store.socialLinks?.instagram?.trim() || trimmed.instagram,
@@ -490,6 +501,7 @@ export default function DashboardPage() {
         show_phone: nextValue,
       });
       setMyStore(store);
+      void mutateDashboard();
     } catch (err) {
       setShowPhone(!nextValue);
     } finally {
@@ -593,13 +605,13 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => router.push('/dashboard/subscription')}
+          <Link
+            href="/dashboard/subscription"
+            prefetch
             className="shrink-0 rounded-[8px] bg-[#2dd4bf] px-3 py-1.5 text-[10px] font-medium leading-none text-[#0f2027]"
           >
             Upgrade
-          </button>
+          </Link>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-md:hidden">

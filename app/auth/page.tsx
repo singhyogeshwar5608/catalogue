@@ -151,7 +151,7 @@ export default function AuthPage() {
   ];
 
   return (
-    <div className="flex min-h-[calc(100dvh-8.5rem)] items-center justify-center bg-slate-100 px-2.5 py-2 md:min-h-[100dvh] md:py-6">
+    <div className="flex min-h-[calc(100dvh-68px-env(safe-area-inset-bottom,0px))] items-start justify-center overflow-y-auto bg-slate-100 px-2.5 py-3 md:min-h-dvh md:items-center md:px-4 md:py-6">
       <div className="mx-auto w-full max-w-[420px] md:max-w-5xl">
         <div className="grid overflow-hidden rounded-xl border border-gray-200 bg-white md:rounded-2xl md:grid-cols-2">
           <section className="px-3 pt-3 pb-2.5 md:border-r md:border-b-0 md:px-6 md:py-6">
@@ -184,7 +184,7 @@ export default function AuthPage() {
             </ul>
           </section>
 
-          <section className="mx-auto w-full max-w-[360px] px-2.5 pt-2 pb-3 space-y-3 md:max-w-none md:px-5 md:pt-5 md:pb-5 md:space-y-5">
+          <section className="mx-auto flex w-full max-w-[360px] flex-col justify-center px-2.5 pt-2 pb-3 space-y-3 md:max-w-none md:min-h-full md:px-5 md:pt-5 md:pb-5 md:space-y-5">
           <div className="space-y-4">
           <GoogleAuthButton
             redirectTo={redirectTarget ?? (view === 'signup' ? '/create-store' : undefined)}

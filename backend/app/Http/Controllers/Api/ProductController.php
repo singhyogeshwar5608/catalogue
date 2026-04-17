@@ -55,28 +55,29 @@ class ProductController extends Controller
             );
         }
 
+        // Dashboard product form is intentionally permissive: store owners may enter any values.
+        // We still normalize a couple of DB-required fields (title, price) before persistence.
         $validator = Validator::make($request->all(), [
-            'store_id' => 'nullable|integer|exists:stores,id',
-            'title' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
-            'original_price' => 'nullable|numeric|min:0',
-            'category' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'is_active' => 'nullable|boolean',
-            'unit_type' => 'nullable|string|max:50',
-            'unit_custom_label' => 'nullable|string|max:100',
-            'unit_quantity' => 'nullable|numeric|min:0',
-            'wholesale_enabled' => 'nullable|boolean',
-            'wholesale_price' => 'nullable|numeric|min:0',
-            'wholesale_min_qty' => 'nullable|integer|min:1',
-            'min_order_quantity' => 'nullable|integer|min:1',
-            'discount_enabled' => 'nullable|boolean',
-            'discount_price' => 'nullable|numeric|min:0',
-            'discount_schedule_enabled' => 'nullable|boolean',
-            'discount_starts_at' => 'nullable|date',
-            'discount_ends_at' => 'nullable|date|after_or_equal:discount_starts_at',
-            'images' => 'nullable|array',
-            'images.*' => 'nullable|string|max:4000000',
+            'store_id' => 'nullable',
+            'title' => 'nullable',
+            'price' => 'nullable',
+            'original_price' => 'nullable',
+            'category' => 'nullable',
+            'description' => 'nullable',
+            'is_active' => 'nullable',
+            'unit_type' => 'nullable',
+            'unit_custom_label' => 'nullable',
+            'unit_quantity' => 'nullable',
+            'wholesale_enabled' => 'nullable',
+            'wholesale_price' => 'nullable',
+            'wholesale_min_qty' => 'nullable',
+            'min_order_quantity' => 'nullable',
+            'discount_enabled' => 'nullable',
+            'discount_price' => 'nullable',
+            'discount_schedule_enabled' => 'nullable',
+            'discount_starts_at' => 'nullable',
+            'discount_ends_at' => 'nullable',
+            'images' => 'nullable',
         ]);
 
         if ($validator->fails()) {
@@ -103,6 +104,16 @@ class ProductController extends Controller
 
         $data = $validator->validated();
         unset($data['images']);
+
+        $titleRaw = $request->input('title');
+        $title = is_string($titleRaw) ? trim($titleRaw) : '';
+        $data['title'] = $title !== '' ? mb_substr($title, 0, 255) : 'Untitled product';
+
+        $priceRaw = $request->input('price');
+        $data['price'] = is_numeric($priceRaw) ? (float) $priceRaw : 0;
+
+        $origRaw = $request->input('original_price');
+        $data['original_price'] = is_numeric($origRaw) ? (float) $origRaw : null;
 
         $data['image'] = $this->resolveIncomingPrimaryImage($request, null);
         if ($request->has('images')) {
@@ -145,26 +156,25 @@ class ProductController extends Controller
         $previousImage = $product->getAttributes()['image'] ?? null;
 
         $validator = Validator::make($request->all(), [
-            'title' => 'sometimes|required|string|max:255',
-            'price' => 'sometimes|required|numeric|min:0',
-            'original_price' => 'nullable|numeric|min:0',
-            'category' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'is_active' => 'nullable|boolean',
-            'unit_type' => 'nullable|string|max:50',
-            'unit_custom_label' => 'nullable|string|max:100',
-            'unit_quantity' => 'nullable|numeric|min:0',
-            'wholesale_enabled' => 'nullable|boolean',
-            'wholesale_price' => 'nullable|numeric|min:0',
-            'wholesale_min_qty' => 'nullable|integer|min:1',
-            'min_order_quantity' => 'nullable|integer|min:1',
-            'discount_enabled' => 'nullable|boolean',
-            'discount_price' => 'nullable|numeric|min:0',
-            'discount_schedule_enabled' => 'nullable|boolean',
-            'discount_starts_at' => 'nullable|date',
-            'discount_ends_at' => 'nullable|date|after_or_equal:discount_starts_at',
-            'images' => 'nullable|array',
-            'images.*' => 'nullable|string|max:4000000',
+            'title' => 'sometimes|nullable',
+            'price' => 'sometimes|nullable',
+            'original_price' => 'nullable',
+            'category' => 'nullable',
+            'description' => 'nullable',
+            'is_active' => 'nullable',
+            'unit_type' => 'nullable',
+            'unit_custom_label' => 'nullable',
+            'unit_quantity' => 'nullable',
+            'wholesale_enabled' => 'nullable',
+            'wholesale_price' => 'nullable',
+            'wholesale_min_qty' => 'nullable',
+            'min_order_quantity' => 'nullable',
+            'discount_enabled' => 'nullable',
+            'discount_price' => 'nullable',
+            'discount_schedule_enabled' => 'nullable',
+            'discount_starts_at' => 'nullable',
+            'discount_ends_at' => 'nullable',
+            'images' => 'nullable',
         ]);
 
         if ($validator->fails()) {
@@ -190,6 +200,20 @@ class ProductController extends Controller
         }
 
         $data = $validator->validated();
+
+        if (array_key_exists('title', $data)) {
+            $raw = $request->input('title');
+            $t = is_string($raw) ? trim($raw) : '';
+            $data['title'] = $t !== '' ? mb_substr($t, 0, 255) : 'Untitled product';
+        }
+        if (array_key_exists('price', $data)) {
+            $raw = $request->input('price');
+            $data['price'] = is_numeric($raw) ? (float) $raw : 0;
+        }
+        if (array_key_exists('original_price', $data)) {
+            $raw = $request->input('original_price');
+            $data['original_price'] = is_numeric($raw) ? (float) $raw : null;
+        }
 
         if (array_key_exists('images', $data)) {
             $data['images'] = $this->normalizeImagesArrayForPersistence($request->input('images', []));

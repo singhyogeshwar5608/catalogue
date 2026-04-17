@@ -11,6 +11,8 @@ import {
   updateAdminFreeTrialDays,
   getAdminSubscriptionAddonCharges,
   updateAdminSubscriptionAddonCharges,
+  getAdminSubscriptionBillingDiscounts,
+  updateAdminSubscriptionBillingDiscounts,
   isApiError,
   parseApiValidationErrors,
 } from '@/src/lib/api';
@@ -36,6 +38,14 @@ export default function AdminPlansPage() {
   const [addonSaving, setAddonSaving] = useState(false);
   const [addonMessage, setAddonMessage] = useState<string | null>(null);
   const [addonError, setAddonError] = useState<string | null>(null);
+  const [disc1m, setDisc1m] = useState<string>('');
+  const [disc3m, setDisc3m] = useState<string>('');
+  const [disc1y, setDisc1y] = useState<string>('');
+  const [discLoading, setDiscLoading] = useState(true);
+  const [discSaving, setDiscSaving] = useState(false);
+  const [discMessage, setDiscMessage] = useState<string | null>(null);
+  const [discAudit, setDiscAudit] = useState<string | null>(null);
+  const [discError, setDiscError] = useState<string | null>(null);
 
   const fetchPlans = async () => {
     try {
@@ -103,6 +113,32 @@ export default function AdminPlansPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setDiscLoading(true);
+        setDiscError(null);
+        setDiscAudit(null);
+        const d = await getAdminSubscriptionBillingDiscounts();
+        if (!cancelled) {
+          setDisc1m(String(d.discount_1_month_pct));
+          setDisc3m(String(d.discount_3_months_pct));
+          setDisc1y(String(d.discount_1_year_pct));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setDiscError(e instanceof Error ? e.message : 'Could not load billing discounts');
+        }
+      } finally {
+        if (!cancelled) setDiscLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const parseNonNegativeInt = (s: string): number | null => {
     const t = s.trim();
     if (t === '') return null;
@@ -137,6 +173,57 @@ export default function AdminPlansPage() {
       setAddonError(e instanceof Error ? e.message : 'Save failed');
     } finally {
       setAddonSaving(false);
+    }
+  };
+
+  const parsePercent0to100 = (s: string): number | null => {
+    const t = s.trim();
+    if (t === '') return null;
+    const n = parseInt(t, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+    return n;
+  };
+
+  const handleSaveBillingDiscounts = async () => {
+    const a = parsePercent0to100(disc1m);
+    const b = parsePercent0to100(disc3m);
+    const c = parsePercent0to100(disc1y);
+    if (a === null || b === null || c === null) {
+      setDiscMessage(null);
+      setDiscAudit(null);
+      setDiscError('Enter a whole percent from 0 to 100 for each term.');
+      return;
+    }
+    try {
+      setDiscSaving(true);
+      setDiscError(null);
+      setDiscMessage(null);
+      setDiscAudit(null);
+      const saved = await updateAdminSubscriptionBillingDiscounts({
+        discount_1_month_pct: a,
+        discount_3_months_pct: b,
+        discount_1_year_pct: c,
+      });
+      setDisc1m(String(saved.discount_1_month_pct));
+      setDisc3m(String(saved.discount_3_months_pct));
+      setDisc1y(String(saved.discount_1_year_pct));
+      setDiscMessage(
+        `Saved: 1 mo ${saved.discount_1_month_pct}%, 3 mo ${saved.discount_3_months_pct}%, 1 yr ${saved.discount_1_year_pct}%. Compare the box below with phpMyAdmin (same DB name + row values).`
+      );
+      if (saved._laravel_database != null || saved._persisted_rows != null) {
+        setDiscAudit(
+          JSON.stringify(
+            { laravel_database: saved._laravel_database, platform_settings_rows: saved._persisted_rows },
+            null,
+            2
+          )
+        );
+      }
+    } catch (e) {
+      setDiscError(e instanceof Error ? e.message : 'Save failed');
+      setDiscAudit(null);
+    } finally {
+      setDiscSaving(false);
     }
   };
 
@@ -367,6 +454,10 @@ export default function AdminPlansPage() {
               {addonSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Save add-on charges
             </button>
+            <p className="mt-2 text-xs text-gray-500">
+              Network: <code className="rounded bg-slate-100 px-1">PUT …/admin/settings/subscription-addons</code> — only
+              the three ₹ fields above (not billing % discounts).
+            </p>
           </div>
         )}
         {addonError && (
@@ -378,6 +469,111 @@ export default function AdminPlansPage() {
           <p className="mt-3 text-sm font-medium text-emerald-700" role="status">
             {addonMessage}
           </p>
+        )}
+      </section>
+
+      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <h2 className="text-lg font-semibold text-gray-900">Billing-term discounts (% off)</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Set how much discount applies when a merchant pays for a one-month, three-month, or one-year subscription term.
+          Each value is a percent from 0–100. Rows are stored in the same <code className="text-xs">platform_settings</code>{' '}
+          table as the free trial and add-on prices, using keys{' '}
+          <code className="text-xs">subscription_billing_discount_1_month_pct</code>,{' '}
+          <code className="text-xs">subscription_billing_discount_3_months_pct</code>,{' '}
+          <code className="text-xs">subscription_billing_discount_1_year_pct</code>.
+        </p>
+        {discLoading ? (
+          <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading discounts…
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div>
+              <label htmlFor="disc-1m" className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                1 month
+              </label>
+              <div className="mt-1.5 flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <input
+                  id="disc-1m"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={disc1m}
+                  onChange={(e) => setDisc1m(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-gray-900 outline-none focus:ring-0"
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="disc-3m" className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                3 months
+              </label>
+              <div className="mt-1.5 flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <input
+                  id="disc-3m"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={disc3m}
+                  onChange={(e) => setDisc3m(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-gray-900 outline-none focus:ring-0"
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="disc-1y" className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                1 year
+              </label>
+              <div className="mt-1.5 flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <input
+                  id="disc-1y"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={disc1y}
+                  onChange={(e) => setDisc1y(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-gray-900 outline-none focus:ring-0"
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+            </div>
+          </div>
+        )}
+        {!discLoading && (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={handleSaveBillingDiscounts}
+              disabled={discSaving}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {discSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Save billing discounts
+            </button>
+            <p className="mt-2 text-xs text-gray-500">
+              Network: <code className="rounded bg-slate-100 px-1">POST …/admin/settings/subscription-billing-discounts</code>{' '}
+              — response <code className="rounded bg-slate-100 px-1">data</code> will show{' '}
+              <code className="rounded bg-slate-100 px-1">discount_1_month_pct</code> etc. (separate from add-on ₹).
+            </p>
+          </div>
+        )}
+        {discError && (
+          <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+            {discError}
+          </p>
+        )}
+        {discMessage && (
+          <p className="mt-3 text-sm font-medium text-emerald-700" role="status">
+            {discMessage}
+          </p>
+        )}
+        {discAudit && (
+          <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] leading-snug text-slate-800">
+            {discAudit}
+          </pre>
         )}
       </section>
 

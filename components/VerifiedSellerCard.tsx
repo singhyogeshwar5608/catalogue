@@ -1,4 +1,5 @@
-import { useRouter } from 'next/navigation';
+'use client';
+
 import Link from 'next/link';
 import { MapPin, Star, Phone, Check } from 'lucide-react';
 import type { Store } from '@/types';
@@ -11,7 +12,6 @@ type VerifiedSellerCardProps = {
 };
 
 export default function VerifiedSellerCard({ store, categoryBannerIndex, isMobileFeatured = false }: VerifiedSellerCardProps) {
-  const router = useRouter();
   const initials = store.name
     .split(/\s+/)
     .filter(Boolean)
@@ -53,18 +53,11 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex, isMobil
     });
 
   return (
-    <div
+    <Link
+      href={`/store/${store.username}`}
+      prefetch
       className={`mx-auto flex min-h-0 max-w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-slate-500 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] ${isMobileFeatured ? 'w-full' : 'w-[90%]'}`}
-      role="link"
-      tabIndex={0}
       aria-label={`Open ${store.name} store page`}
-      onClick={() => router.push(`/store/${store.username}`)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          router.push(`/store/${store.username}`);
-        }
-      }}
     >
       <div className={`relative z-10 w-full shrink-0 overflow-visible md:h-[160px] ${isMobileFeatured ? 'h-[144px]' : 'h-[96px]'}`}>
         {heroImage ? (
@@ -139,15 +132,12 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex, isMobil
         </div>
 
         <div className="mt-2 grid grid-cols-1 gap-1.5 md:mt-2.5 md:gap-2">
-          <Link
-            href={`/store/${store.username}`}
-            className="inline-flex items-center justify-center rounded-lg bg-slate-800 px-1 py-1 text-[10px] font-medium text-white md:px-2 md:py-1.5 md:text-xs"
-          >
+          <span className="inline-flex items-center justify-center rounded-lg bg-slate-800 px-1 py-1 text-[10px] font-medium text-white md:px-2 md:py-1.5 md:text-xs">
             Visit
-          </Link>
+          </span>
         </div>
 
       </div>
-    </div>
+    </Link>
   );
 }

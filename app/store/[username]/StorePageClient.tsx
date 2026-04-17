@@ -16,6 +16,7 @@ import {
   toggleStoreLike,
   isApiError,
 } from '@/src/lib/api';
+import { perfLog } from '@/src/lib/perfLog';
 import { useAuth } from '@/src/context/AuthContext';
 
 type StorePageClientProps = {
@@ -26,6 +27,8 @@ type StorePageClientProps = {
   initialReviews?: Review[];
   initialReviewSummary?: RatingSummary | null;
   initialReviewPagination?: ReviewPagination | null;
+  /** When true, store/catalog payload came from the server; client refresh won’t block the shell. */
+  serverHydrated?: boolean;
 };
 
 export default function StorePageClient({
@@ -36,6 +39,7 @@ export default function StorePageClient({
   initialReviews = [],
   initialReviewSummary = null,
   initialReviewPagination = null,
+  serverHydrated = false,
 }: StorePageClientProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -50,7 +54,7 @@ export default function StorePageClient({
   const [reviewsError, setReviewsError] = useState<string | null>(null);
   const [followBusy, setFollowBusy] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
-  const [loading, setLoading] = useState(initialStore === null);
+  const [loading, setLoading] = useState(!serverHydrated && initialStore === null);
   const [error, setError] = useState<string | null>(null);
   const [seenSyncedForStore, setSeenSyncedForStore] = useState<string | null>(null);
   const seenRequestInFlightRef = useRef<Set<string>>(new Set());
@@ -111,29 +115,47 @@ export default function StorePageClient({
     [store]
   );
 
+  const applyEngagementTogglePayload = useCallback(
+    (
+      previous: Store,
+      payload: {
+        followers_count?: number;
+        likes_count?: number;
+        viewer_following?: boolean;
+        viewer_liked?: boolean;
+        viewerFollowing?: boolean;
+        viewerLiked?: boolean;
+      }
+    ): Store => {
+      const vfRaw = payload.viewer_following ?? payload.viewerFollowing;
+      const vlRaw = payload.viewer_liked ?? payload.viewerLiked;
+      return {
+        ...previous,
+        followersCount:
+          typeof payload.followers_count === 'number' ? payload.followers_count : previous.followersCount,
+        likesCount: typeof payload.likes_count === 'number' ? payload.likes_count : previous.likesCount,
+        // Only overwrite when the API sends an explicit boolean (missing keys stay as-is so one toggle
+        // cannot clear the other when proxies/old payloads omit a field).
+        viewerFollowing: typeof vfRaw === 'boolean' ? vfRaw : previous.viewerFollowing,
+        viewerLiked: typeof vlRaw === 'boolean' ? vlRaw : previous.viewerLiked,
+      };
+    },
+    []
+  );
+
   const handleToggleFollow = useCallback(async () => {
     if (!store?.id || followBusy) return;
     setFollowBusy(true);
     try {
       const response = await toggleStoreFollow(store.id);
       const payload = response.data;
-      setStore((previous) =>
-        previous
-          ? {
-              ...previous,
-              followersCount: payload.followers_count,
-              likesCount: payload.likes_count,
-              viewerFollowing: Boolean(payload.viewer_following),
-              viewerLiked: Boolean(payload.viewer_liked),
-            }
-          : previous
-      );
+      setStore((previous) => (previous ? applyEngagementTogglePayload(previous, payload) : previous));
     } catch (err) {
       console.warn('Unable to toggle follow', err);
     } finally {
       setFollowBusy(false);
     }
-  }, [followBusy, store?.id]);
+  }, [applyEngagementTogglePayload, followBusy, store?.id]);
 
   const handleToggleLike = useCallback(async () => {
     if (!store?.id || likeBusy) return;
@@ -141,23 +163,13 @@ export default function StorePageClient({
     try {
       const response = await toggleStoreLike(store.id);
       const payload = response.data;
-      setStore((previous) =>
-        previous
-          ? {
-              ...previous,
-              followersCount: payload.followers_count,
-              likesCount: payload.likes_count,
-              viewerFollowing: Boolean(payload.viewer_following),
-              viewerLiked: Boolean(payload.viewer_liked),
-            }
-          : previous
-      );
+      setStore((previous) => (previous ? applyEngagementTogglePayload(previous, payload) : previous));
     } catch (err) {
       console.warn('Unable to toggle like', err);
     } finally {
       setLikeBusy(false);
     }
-  }, [likeBusy, store?.id]);
+  }, [applyEngagementTogglePayload, likeBusy, store?.id]);
 
   useEffect(() => {
     if (!store?.id) return;
@@ -212,7 +224,10 @@ export default function StorePageClient({
   useEffect(() => {
     let isMounted = true;
     const fetchStore = async () => {
-      setLoading(true);
+      const blockingSpinner = !serverHydrated;
+      if (blockingSpinner) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const fetchedStore = await getStoreBySlugFromApi(username);
@@ -237,6 +252,9 @@ export default function StorePageClient({
           setReviewSummary(null);
           setReviewPagination(null);
         }
+        if (serverHydrated) {
+          perfLog('store', 'client refresh merged (RSC + guest token)');
+        }
       } catch (err) {
         if (!isMounted) return;
         if (isApiError(err)) {
@@ -248,14 +266,16 @@ export default function StorePageClient({
         } else {
           setError(err instanceof Error ? err.message : 'Unable to load store');
         }
-        setStore(null);
-        setProducts([]);
-        setServices([]);
-        setReviews([]);
-        setReviewSummary(null);
-        setReviewPagination(null);
+        if (!serverHydrated) {
+          setStore(null);
+          setProducts([]);
+          setServices([]);
+          setReviews([]);
+          setReviewSummary(null);
+          setReviewPagination(null);
+        }
       } finally {
-        if (isMounted) {
+        if (isMounted && blockingSpinner) {
           setLoading(false);
         }
       }
@@ -266,7 +286,13 @@ export default function StorePageClient({
     return () => {
       isMounted = false;
     };
-  }, [username, router, fetchStoreReviews]);
+  }, [username, router, fetchStoreReviews, serverHydrated]);
+
+  useEffect(() => {
+    if (store && !loading) {
+      perfLog('store', 'shell ready');
+    }
+  }, [store, loading]);
 
   if (loading) {
     return (

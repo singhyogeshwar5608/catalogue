@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/src/context/AuthContext';
+import { lookupPinCode } from '@/src/lib/location';
 import {
   createStore,
   formatValidationErrorsForDisplay,
@@ -84,6 +86,9 @@ export default function CreateStorePage() {
   const [state, setState] = useState('');
   const [city, setCity] = useState('');
   const [pincode, setPincode] = useState('');
+  const [pinLookupLoading, setPinLookupLoading] = useState(false);
+  const [pinLookupMessage, setPinLookupMessage] = useState<string | null>(null);
+  const pinLookupRequestIdRef = useRef(0);
   const [formData, setFormData] = useState({
     categoryId: 0,
     storeName: '',
@@ -124,6 +129,53 @@ export default function CreateStorePage() {
 
     fetchCategories();
   }, [isLoggedIn, router, user?.email]);
+
+  useEffect(() => {
+    if (pincode.length !== 6) {
+      setPinLookupLoading(false);
+      return;
+    }
+
+    const requestId = ++pinLookupRequestIdRef.current;
+    const timer = window.setTimeout(async () => {
+      setPinLookupLoading(true);
+      setPinLookupMessage(null);
+      try {
+        const result = await lookupPinCode(pincode);
+        if (requestId !== pinLookupRequestIdRef.current) return;
+        if (!result) {
+          setPinLookupMessage('PIN not found. You can still choose state / district manually.');
+          return;
+        }
+        const countryName = (result.country || 'India').trim();
+        const stateName = (result.state || '').trim();
+        const districtName = (result.district || result.city || '').trim();
+        const cityLine = (result.locality || result.city || districtName).trim();
+
+        setCountry(countryName);
+        setState(stateName);
+        setCity(districtName);
+        setFormData((prev) => ({
+          ...prev,
+          pinCode: pincode,
+          country: countryName,
+          state: stateName,
+          district: districtName,
+          city: cityLine || districtName,
+        }));
+      } finally {
+        if (requestId === pinLookupRequestIdRef.current) {
+          setPinLookupLoading(false);
+        }
+      }
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timer);
+      pinLookupRequestIdRef.current += 1;
+      setPinLookupLoading(false);
+    };
+  }, [pincode]);
 
   const locationTree = locationData as Record<string, Record<string, Record<string, string>>>;
   const countries = Object.keys(locationTree);
@@ -169,6 +221,16 @@ export default function CreateStorePage() {
       district: value,
       pinCode: nextPin,
     }));
+    setPinLookupMessage(null);
+  };
+
+  const handlePinCodeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 6);
+    setPincode(digits);
+    setFormData((prev) => ({ ...prev, pinCode: digits }));
+    if (digits.length < 6) {
+      setPinLookupMessage(null);
+    }
   };
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -283,9 +345,17 @@ export default function CreateStorePage() {
   }
 
   return (
-    <div className="create-store-page h-[calc(100dvh-8.5rem)] min-h-[calc(100dvh-8.5rem)] bg-gray-50 overflow-y-auto px-2 py-0 md:min-h-[100dvh] md:h-auto md:max-h-none md:overflow-y-auto md:px-4 md:pt-6 md:pb-8">
-      <div className="create-store-shell flex h-full w-full items-center px-2 py-0 max-[700px]:px-1.5 md:h-auto md:px-0 md:py-0">
-        <div className="create-store-container mx-auto flex h-full w-full max-w-md flex-1 flex-col justify-center">
+    <div className="create-store-page min-h-[calc(100dvh-68px-env(safe-area-inset-bottom,0px))] bg-gray-50 overflow-y-auto px-2 pt-3 pb-1 md:min-h-[100dvh] md:h-auto md:max-h-none md:overflow-y-auto md:px-4 md:pt-6 md:pb-8">
+      <div className="create-store-shell flex w-full items-start px-2 py-0 max-[700px]:px-1.5 md:h-auto md:px-0 md:py-0">
+        <div className="create-store-container mx-auto flex w-full max-w-md flex-1 flex-col justify-start">
+          <div className="mb-2 flex items-center justify-end md:mb-4">
+            <Link
+              href="/login"
+              className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 md:px-4 md:py-2 md:text-sm"
+            >
+              Back to login
+            </Link>
+          </div>
         <form onSubmit={handleSubmit} className="create-store-form bg-white rounded-xl border border-gray-200 shadow-sm px-2 py-2.5 space-y-2.5 max-[700px]:space-y-2 max-[700px]:px-1.5 max-[700px]:py-2 md:rounded-2xl md:px-4 md:py-5 md:space-y-5">
           <div className="create-store-logo-block space-y-2 max-[700px]:space-y-1.5 md:space-y-3">
             <div className="flex items-center justify-between gap-1.5 md:justify-center md:gap-4">
@@ -445,12 +515,19 @@ export default function CreateStorePage() {
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
+                maxLength={6}
                 value={pincode}
+                onChange={handlePinCodeInput}
                 placeholder="PIN code"
                 required
-                readOnly
+                autoComplete="postal-code"
                 className="h-[34px] w-full rounded-xl border border-gray-200 px-2 py-1 text-[11px] focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 max-[700px]:h-8 max-[700px]:py-0.5 md:px-4 md:py-3 md:text-sm"
               />
+              {pinLookupLoading ? (
+                <p className="text-[10px] text-slate-500 md:text-xs">Fetching district and state…</p>
+              ) : pinLookupMessage ? (
+                <p className="text-[10px] text-amber-700 md:text-xs">{pinLookupMessage}</p>
+              ) : null}
             </div>
             <div className="space-y-1.5 max-[700px]:space-y-1">
               <label htmlFor="district" className="text-[11px] font-medium text-gray-700 md:text-sm">

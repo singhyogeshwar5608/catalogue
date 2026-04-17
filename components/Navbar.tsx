@@ -50,6 +50,18 @@ export default function Navbar() {
   const desktopSearchWrapperRef = useRef<HTMLDivElement>(null);
   const suggestionControllerRef = useRef<AbortController | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    const targets = ['/', '/products', '/all-stores', '/auth', '/create-store', '/dashboard'];
+    targets.forEach((href) => {
+      try {
+        router.prefetch(href);
+      } catch {
+        /* ignore */
+      }
+    });
+  }, [router]);
+
   const {
     location,
     isLoading: locationLoading,

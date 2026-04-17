@@ -106,7 +106,6 @@ const initialServiceForm: ServiceFormState = {
 };
 
 const MAX_PRODUCT_IMAGE_DIMENSION = 800;
-const MAX_PRODUCT_IMAGE_SIZE_BYTES = 3_500_000;
 
 const compressImageToDataUrl = async (file: File): Promise<string> => {
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -144,10 +143,6 @@ const compressImageToDataUrl = async (file: File): Promise<string> => {
       resolve(result);
     }, 'image/jpeg', 0.8);
   });
-
-  if (blob.size > MAX_PRODUCT_IMAGE_SIZE_BYTES) {
-    throw new Error('Product image is too large. Please use a smaller image.');
-  }
 
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -376,42 +371,51 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       return;
     }
 
-    if (!formState.name.trim() || !formState.price.trim()) {
-      setFormError('Product name and price are required.');
-      return;
-    }
-
     setFormError(null);
     setFormSubmitting(true);
 
     try {
       const unitQuantityValue = Number(formState.unitQuantity);
+      const priceValue = Number(formState.price);
+      const originalPriceValue = Number(formState.originalPrice);
+      const wholesalePriceValue = Number(formState.wholesalePrice);
+      const wholesaleMinQtyValue = Number(formState.wholesaleMinQty);
+      const minOrderQtyValue = Number(formState.minOrderQuantity);
+      const discountPriceValue = Number(formState.discountPrice);
+      const parsedUnitQty =
+        Number.isFinite(unitQuantityValue) ? unitQuantityValue : Number(formState.unitQuantity.trim());
+      const parsedWholesalePrice =
+        Number.isFinite(wholesalePriceValue) ? wholesalePriceValue : Number(formState.wholesalePrice.trim());
+      const parsedWholesaleMin =
+        Number.isFinite(wholesaleMinQtyValue) ? wholesaleMinQtyValue : Number(formState.wholesaleMinQty.trim());
+      const parsedMinOrder =
+        Number.isFinite(minOrderQtyValue) ? minOrderQtyValue : Number(formState.minOrderQuantity.trim());
+      const parsedDiscount =
+        Number.isFinite(discountPriceValue) ? discountPriceValue : Number(formState.discountPrice.trim());
       const payload = {
-        title: formState.name.trim(),
-        price: Number(formState.price),
-        original_price: formState.originalPrice ? Number(formState.originalPrice) : undefined,
-        description: formState.description.trim() || undefined,
+        title: formState.name,
+        price: Number.isFinite(priceValue) ? priceValue : Number(formState.price.trim()),
+        original_price: Number.isFinite(originalPriceValue)
+          ? originalPriceValue
+          : formState.originalPrice.trim()
+            ? Number(formState.originalPrice.trim())
+            : undefined,
+        description: formState.description,
         image: imagePreview ?? undefined,
         is_active: formState.stockStatus === 'inStock',
         unit_type: formState.unitType,
-        unit_custom_label: formState.unitType === 'custom' ? formState.unitCustomLabel.trim() || null : null,
-        unit_quantity: Number.isFinite(unitQuantityValue) && unitQuantityValue > 0 ? unitQuantityValue : null,
+        unit_custom_label: formState.unitType === 'custom' ? (formState.unitCustomLabel || null) : null,
+        unit_quantity: Number.isFinite(parsedUnitQty) ? parsedUnitQty : null,
         wholesale_enabled: Boolean(formState.wholesalePrice || formState.wholesaleMinQty),
-        wholesale_price:
-          formState.wholesalePrice
-            ? Number(formState.wholesalePrice)
-            : null,
-        wholesale_min_qty:
-          formState.wholesaleMinQty
-            ? Number(formState.wholesaleMinQty)
-            : null,
-        min_order_quantity: formState.minOrderQuantity ? Number(formState.minOrderQuantity) : undefined,
+        wholesale_price: Number.isFinite(parsedWholesalePrice) ? parsedWholesalePrice : null,
+        wholesale_min_qty: Number.isFinite(parsedWholesaleMin) ? parsedWholesaleMin : null,
+        min_order_quantity: Number.isFinite(parsedMinOrder) ? parsedMinOrder : null,
         discount_enabled: formState.discountEnabled,
-        discount_price: formState.discountPrice ? Number(formState.discountPrice) : undefined,
+        discount_price: Number.isFinite(parsedDiscount) ? parsedDiscount : null,
         discount_schedule_enabled: formState.discountScheduleEnabled,
         discount_starts_at: formState.discountStartsAt || undefined,
         discount_ends_at: formState.discountEndsAt || undefined,
-      } as const;
+      };
 
       if (editingProduct) {
         await updateProduct({
@@ -691,18 +695,6 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                       </div>
                     </label>
                   </div>
-
-                  <div style={{ marginTop: '50px' }}>
-                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Name *</label>
-                  <input
-                    type="text"
-                    value={formState.name}
-                    onChange={(event) => setFormState({ ...formState, name: event.target.value })}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                    placeholder="e.g., Modern Wooden Chair"
-                    required
-                  />
-                  </div>
                 </div>
                 <input
                   id="product-image-input"
@@ -716,28 +708,35 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               </div>
 
               <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Name</label>
+                  <input
+                    type="text"
+                    value={formState.name}
+                    onChange={(event) => setFormState({ ...formState, name: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                    placeholder="e.g., Modern Wooden Chair"
+                  />
+                </div>
                 <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Price (₹) *</label>
+                        <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Price (₹)</label>
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           value={formState.price}
                           onChange={(event) => setFormState({ ...formState, price: event.target.value })}
                           className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
                           placeholder="0.00"
-                          required
                         />
                       </div>
 
                       <div>
                         <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Original price</label>
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           value={formState.originalPrice}
                           onChange={(event) => setFormState({ ...formState, originalPrice: event.target.value })}
                           className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
@@ -750,7 +749,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
 
                 <div className="grid grid-cols-2 items-end gap-2">
                     <div ref={unitDropdownRef} className="relative">
-                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Sell by *</label>
+                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Sell by</label>
                       <button
                         type="button"
                         onClick={() => setUnitDropdownOpen((previous) => !previous)}
@@ -791,11 +790,10 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Units *</label>
+                      <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Units</label>
                       <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
+                        type="text"
+                        inputMode="decimal"
                         value={formState.unitQuantity}
                         onChange={(event) => setFormState({ ...formState, unitQuantity: event.target.value })}
                         className="h-[34px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[8px] text-left text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
@@ -805,7 +803,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
 
                     {formState.unitType === 'custom' && (
                       <div className="col-span-2">
-                        <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Custom unit label *</label>
+                        <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Custom unit label</label>
                         <input
                           type="text"
                           value={formState.unitCustomLabel}
@@ -822,9 +820,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                   <div>
                     <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Wholesale price</label>
                     <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="text"
+                      inputMode="decimal"
                       value={formState.wholesalePrice}
                       onChange={(event) => setFormState({ ...formState, wholesalePrice: event.target.value })}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
@@ -834,9 +831,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                   <div>
                     <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Min qty</label>
                     <input
-                      type="number"
-                      min="1"
-                      step="1"
+                      type="text"
+                      inputMode="numeric"
                       value={formState.wholesaleMinQty}
                       onChange={(event) => setFormState({ ...formState, wholesaleMinQty: event.target.value })}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
