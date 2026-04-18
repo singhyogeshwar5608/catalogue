@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\ProvisionDefaultFreeStoreSubscription;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Store;
 use App\Support\NextCatalogCacheInvalidate;
 use App\Support\ProductImageStorage;
+use App\Support\SubscriptionPlanProductLimit;
+use App\Support\UserFollowNotificationRecorder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
@@ -40,9 +43,13 @@ class ProductController extends Controller
     {
         $user = $request->user();
         $requestedStoreId = $request->input('store_id');
-        $store = $user->stores()
-            ->when(is_numeric($requestedStoreId), fn ($query) => $query->whereKey((int) $requestedStoreId))
-            ->first();
+
+        if (is_numeric($requestedStoreId)) {
+            $store = $user->stores()->whereKey((int) $requestedStoreId)->first();
+        } else {
+            // Without `store_id`, `first()` is ambiguous for multi-store accounts; prefer the most recently updated store.
+            $store = $user->stores()->orderByDesc('updated_at')->orderByDesc('id')->first();
+        }
 
         if (! $store) {
             return $this->errorResponse('You must create a store before adding products.', 409);
@@ -55,25 +62,47 @@ class ProductController extends Controller
             );
         }
 
+        if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+            $store->loadMissing('activeSubscription.plan');
+            $activeSub = $store->activeSubscription;
+            if (! $activeSub || ! $activeSub->plan) {
+                ProvisionDefaultFreeStoreSubscription::run($store, (int) $user->id);
+                $store->loadMissing('activeSubscription.plan');
+                $activeSub = $store->activeSubscription;
+            }
+            if ($activeSub && $activeSub->plan) {
+                $maxProducts = SubscriptionPlanProductLimit::resolve($activeSub->plan);
+                $currentCount = $store->products()->count();
+                if ($maxProducts < SubscriptionPlanProductLimit::UNLIMITED && $currentCount >= $maxProducts) {
+                    return $this->errorResponse(
+                        "You have reached your plan limit ({$maxProducts} products). Upgrade your subscription to add more products.",
+                        403
+                    );
+                }
+            }
+        }
+
         // Dashboard product form is intentionally permissive: store owners may enter any values.
         // We still normalize a couple of DB-required fields (title, price) before persistence.
+        $money = 'nullable|numeric|min:0|max:9999999999.99';
+
         $validator = Validator::make($request->all(), [
             'store_id' => 'nullable',
             'title' => 'nullable',
-            'price' => 'nullable',
-            'original_price' => 'nullable',
+            'price' => $money,
+            'original_price' => $money,
             'category' => 'nullable',
             'description' => 'nullable',
             'is_active' => 'nullable',
             'unit_type' => 'nullable',
             'unit_custom_label' => 'nullable',
-            'unit_quantity' => 'nullable',
+            'unit_quantity' => 'nullable|numeric|min:0|max:999999.99',
             'wholesale_enabled' => 'nullable',
-            'wholesale_price' => 'nullable',
-            'wholesale_min_qty' => 'nullable',
-            'min_order_quantity' => 'nullable',
+            'wholesale_price' => $money,
+            'wholesale_min_qty' => 'nullable|integer|min:0|max:2147483647',
+            'min_order_quantity' => 'nullable|integer|min:0|max:2147483647',
             'discount_enabled' => 'nullable',
-            'discount_price' => 'nullable',
+            'discount_price' => $money,
             'discount_schedule_enabled' => 'nullable',
             'discount_starts_at' => 'nullable',
             'discount_ends_at' => 'nullable',
@@ -122,6 +151,8 @@ class ProductController extends Controller
 
         $product = $store->products()->create($data);
 
+        UserFollowNotificationRecorder::newProduct($store, $product);
+
         $this->bumpStoreProductListCache((int) $store->id);
         NextCatalogCacheInvalidate::products();
 
@@ -155,22 +186,24 @@ class ProductController extends Controller
 
         $previousImage = $product->getAttributes()['image'] ?? null;
 
+        $money = 'nullable|numeric|min:0|max:9999999999.99';
+
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|nullable',
-            'price' => 'sometimes|nullable',
-            'original_price' => 'nullable',
+            'price' => 'sometimes|nullable|numeric|min:0|max:9999999999.99',
+            'original_price' => $money,
             'category' => 'nullable',
             'description' => 'nullable',
             'is_active' => 'nullable',
             'unit_type' => 'nullable',
             'unit_custom_label' => 'nullable',
-            'unit_quantity' => 'nullable',
+            'unit_quantity' => 'nullable|numeric|min:0|max:999999.99',
             'wholesale_enabled' => 'nullable',
-            'wholesale_price' => 'nullable',
-            'wholesale_min_qty' => 'nullable',
-            'min_order_quantity' => 'nullable',
+            'wholesale_price' => $money,
+            'wholesale_min_qty' => 'nullable|integer|min:0|max:2147483647',
+            'min_order_quantity' => 'nullable|integer|min:0|max:2147483647',
             'discount_enabled' => 'nullable',
-            'discount_price' => 'nullable',
+            'discount_price' => $money,
             'discount_schedule_enabled' => 'nullable',
             'discount_starts_at' => 'nullable',
             'discount_ends_at' => 'nullable',

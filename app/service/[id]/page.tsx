@@ -17,11 +17,13 @@ import {
 import type { RatingSummary, Review, ReviewPagination, Service, Store } from "@/types";
 import { getServiceById, getStoreReviews, isApiError } from "@/src/lib/api";
 import PublicStorefrontAccessGate from "@/components/PublicStorefrontAccessGate";
+import { useStorefrontTrialLock } from "@/components/StorefrontTrialLockContext";
 import RatingStars from "@/components/RatingStars";
 import ReviewCard from "@/components/ReviewCard";
 import { useAuth } from "@/src/context/AuthContext";
 import { buildReviewColors, getThemeForCategory } from "@/src/lib/reviewTheme";
 import { ratingBreakdownFromSummaryOrReviews } from "@/src/lib/reviewRatingBreakdown";
+import { isStoreTrialExpiredWithoutPaidPlan } from "@/src/lib/storeAccess";
 
 interface ServicePageProps {
   params: Promise<{ id: string }>;
@@ -96,6 +98,31 @@ export default function ServiceDetailPage({ params }: ServicePageProps) {
     [ratingBreakdown]
   );
   const aggregateRating = reviewSummary?.rating ?? store?.rating ?? 0;
+
+  const viewerOwnsStore = useMemo(
+    () =>
+      Boolean(
+        user?.id &&
+          store &&
+          ((store.userId && String(user.id) === String(store.userId)) ||
+            (user.storeSlug &&
+              store.username &&
+              user.storeSlug.toLowerCase() === store.username.toLowerCase())),
+      ),
+    [user?.id, user?.storeSlug, store],
+  );
+
+  const trialLock = useStorefrontTrialLock();
+  const blockVisitorCommerce = Boolean(
+    store && !viewerOwnsStore && isStoreTrialExpiredWithoutPaidPlan(store),
+  );
+
+  const tryOpenTrialCommerceLock = () => {
+    if (!blockVisitorCommerce) return false;
+    trialLock?.openVisitorTrialLock();
+    return true;
+  };
+
   const highlights = useMemo(() => {
     const clampScore = (value: number) => Math.min(5, Math.max(1, Number(value.toFixed(1))));
     return [
@@ -247,6 +274,9 @@ export default function ServiceDetailPage({ params }: ServicePageProps) {
                   href={`${whatsappLink}?text=${encodeURIComponent(wishlistCopy)}`}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={(e) => {
+                    if (tryOpenTrialCommerceLock()) e.preventDefault();
+                  }}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_15px_45px_rgba(16,185,129,0.45)]"
                 >
                   <MessageCircle className="h-4 w-4" />

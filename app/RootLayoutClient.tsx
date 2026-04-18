@@ -43,7 +43,7 @@ export default function RootLayoutClient({
   const mainBottomPaddingClass = hideBottomNav
     ? ''
     : isAuthLikePage
-      ? 'pb-0 md:pb-0'
+      ? 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+12px)] md:pb-0'
     : isAllStoresPage
       ? 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+0.375rem)] md:pb-0'
       : 'pb-[calc(68px+env(safe-area-inset-bottom,0px)+0.8rem)] md:pb-0';
@@ -127,7 +127,7 @@ export default function RootLayoutClient({
                   <Navbar />
                 </div>
               )}
-              <main className={`min-h-screen ${mainPaddingClass}`}>{children}</main>
+              <main className={`min-h-screen w-full min-w-0 ${mainPaddingClass}`}>{children}</main>
               {!hideFooter && (
                 <div className={isCreateStorePage || isAuthPage ? 'hidden md:block' : ''}>
                   <Footer />

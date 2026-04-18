@@ -22,7 +22,6 @@ import {
   Phone,
   Package,
   Plus,
-  Printer,
   QrCode,
   Star,
   Store as StoreIcon,
@@ -36,15 +35,18 @@ import {
 } from 'lucide-react';
 import {
   getApiRequestBaseUrl,
+  getMyFollowNotifications,
   getMyStoreNotifications,
   getProductsByStore,
+  markFollowNotificationRead,
   markStoreNotificationRead,
   getStoreBySlugFromApi,
   getStoreSubscription,
   isApiError,
-  type StoreOwnerNotification,
   updateStore,
 } from '@/src/lib/api';
+import type { CombinedNotificationItem } from '@/src/lib/combinedNotifications';
+import { mergeNotifications } from '@/src/lib/combinedNotifications';
 import { useAuth } from '@/src/context/AuthContext';
 import { perfLog } from '@/src/lib/perfLog';
 import { getDashboardExpiryWarningDaysRemaining, isPaidSubscriptionActive } from '@/src/lib/storeAccess';
@@ -182,14 +184,31 @@ export default function DashboardPage() {
   const [showPhone, setShowPhone] = useState(true);
   const [savingPhoneVisibility, setSavingPhoneVisibility] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<StoreOwnerNotification[]>([]);
+  const [notifications, setNotifications] = useState<CombinedNotificationItem[]>([]);
   const [notificationsUnread, setNotificationsUnread] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const notificationsPanelRef = useRef<HTMLDivElement>(null);
 
   const hasProducts = myProducts.length > 0;
-  const storeUrl = myStore ? `https://cateloge.com/store/${myStore.username}` : '';
-  const prettyUrl = storeUrl.replace(/^https?:\/\//, '');
+
+  /** Public URL for this store’s page — same as “View Store”, never hardcoded to another domain. */
+  const storeUrl = useMemo(() => {
+    if (!myStore?.username) return '';
+    const path = `/store/${encodeURIComponent(myStore.username)}`;
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}${path}`;
+    }
+    const base = (
+      process.env.NEXT_PUBLIC_BASE_URL ??
+      process.env.NEXT_PUBLIC_SITE_URL ??
+      'https://larawans.com'
+    )
+      .trim()
+      .replace(/\/+$/, '');
+    return `${base}${path}`;
+  }, [myStore?.username]);
+
+  const prettyUrl = useMemo(() => storeUrl.replace(/^https?:\/\//, ''), [storeUrl]);
 
   const dashboardSwrKey = isLoggedIn && user?.storeSlug ? user.storeSlug : null;
 
@@ -310,17 +329,6 @@ export default function DashboardPage() {
     link.download = 'store-qr-code.png';
     link.href = url;
     link.click();
-  };
-
-  const handlePrint = () => {
-    if (!canvasRef.current) return;
-    const dataUrl = canvasRef.current.toDataURL('image/png');
-    const newWindow = window.open('about:blank', '_blank');
-    if (!newWindow) return;
-    newWindow.document.write(`<img src="${dataUrl}" style="width:100%;max-width:480px;" />`);
-    newWindow.document.close();
-    newWindow.focus();
-    newWindow.print();
   };
 
   const hasActivePaidSubscription = useMemo(() => isPaidSubscriptionActive(subscription), [subscription]);
@@ -513,9 +521,12 @@ export default function DashboardPage() {
     if (!isLoggedIn) return;
     setNotificationsLoading(true);
     try {
-      const payload = await getMyStoreNotifications({ limit: 12 });
-      setNotifications(payload.notifications);
-      setNotificationsUnread(payload.unread_count);
+      const [owner, follower] = await Promise.all([
+        getMyStoreNotifications({ limit: 24 }),
+        getMyFollowNotifications({ limit: 24 }),
+      ]);
+      setNotifications(mergeNotifications(owner.notifications, follower.notifications));
+      setNotificationsUnread(owner.unread_count + follower.unread_count);
     } catch {
       // keep dashboard stable if notification endpoint fails
     } finally {
@@ -544,14 +555,24 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [notificationsOpen]);
 
-  const handleNotificationClick = async (notification: StoreOwnerNotification) => {
+  const handleNotificationClick = async (row: CombinedNotificationItem) => {
+    const notification = row.notification;
     if (!notification.read_at) {
       try {
-        await markStoreNotificationRead(notification.id);
+        if (row.source === 'owner') {
+          await markStoreNotificationRead(notification.id);
+        } else {
+          await markFollowNotificationRead(notification.id);
+        }
+        const ts = new Date().toISOString();
         setNotifications((prev) =>
-          prev.map((row) =>
-            row.id === notification.id ? { ...row, read_at: new Date().toISOString() } : row
-          )
+          prev.map((item): CombinedNotificationItem => {
+            if (item.source !== row.source || item.notification.id !== notification.id) return item;
+            if (item.source === 'owner') {
+              return { source: 'owner', notification: { ...item.notification, read_at: ts } };
+            }
+            return { source: 'follower', notification: { ...item.notification, read_at: ts } };
+          })
         );
         setNotificationsUnread((prev) => Math.max(0, prev - 1));
       } catch {
@@ -559,6 +580,14 @@ export default function DashboardPage() {
       }
     }
     setNotificationsOpen(false);
+    const pid =
+      row.source === 'follower' && typeof notification.meta?.product_id === 'number'
+        ? notification.meta.product_id
+        : null;
+    if (pid != null) {
+      router.push(`/product/${pid}`);
+      return;
+    }
     router.push('/dashboard/notifications');
   };
 
@@ -708,19 +737,24 @@ export default function DashboardPage() {
                       ) : notifications.length === 0 ? (
                         <p className="px-3 py-4 text-sm text-slate-500">No notifications yet.</p>
                       ) : (
-                        notifications.slice(0, 6).map((n) => (
-                          <button
-                            key={n.id}
-                            type="button"
-                            onClick={() => void handleNotificationClick(n)}
-                            className={`block w-full border-b border-slate-100 px-3 py-2 text-left transition hover:bg-slate-50 ${
-                              n.read_at ? 'bg-white' : 'bg-primary/[0.04]'
-                            }`}
-                          >
-                            <p className="truncate text-sm font-semibold text-slate-900">{n.title || 'Notification'}</p>
-                            {n.body ? <p className="truncate text-xs text-slate-600">{n.body}</p> : null}
-                          </button>
-                        ))
+                        notifications.slice(0, 6).map((row) => {
+                          const n = row.notification;
+                          return (
+                            <button
+                              key={`${row.source}-${n.id}`}
+                              type="button"
+                              onClick={() => void handleNotificationClick(row)}
+                              className={`block w-full border-b border-slate-100 px-3 py-2 text-left transition hover:bg-slate-50 ${
+                                n.read_at ? 'bg-white' : 'bg-primary/[0.04]'
+                              }`}
+                            >
+                              <p className="truncate text-sm font-semibold text-slate-900">
+                                {n.title || 'Notification'}
+                              </p>
+                              {n.body ? <p className="truncate text-xs text-slate-600">{n.body}</p> : null}
+                            </button>
+                          );
+                        })
                       )}
                     </div>
                     <div className="px-3 py-2">
@@ -927,22 +961,14 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-5">
               <button
                 type="button"
                 onClick={handleDownloadPNG}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
               >
                 <Download className="h-4 w-4" />
                 Save
-              </button>
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900"
-              >
-                <Printer className="h-4 w-4" />
-                Print
               </button>
             </div>
           </div>

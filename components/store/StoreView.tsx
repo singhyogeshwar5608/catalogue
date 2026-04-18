@@ -76,6 +76,8 @@ import {
 import { loadRazorpayCheckoutScript } from '@/src/lib/razorpayCheckoutScript';
 import { checkoutQrImageSrc } from '@/src/lib/checkoutAssetUrl';
 import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
+import { useStorefrontTrialLock } from '@/components/StorefrontTrialLockContext';
+import { isStoreTrialExpiredWithoutPaidPlan } from '@/src/lib/storeAccess';
 // Demo catalog items removed: stores should show products only after upload.
 
 const FALLBACK_PRODUCT_IMAGE = '/fallback/product-placeholder.svg';
@@ -585,152 +587,6 @@ type CartEntry = {
   price: number;
   quantity: number;
   image: string;
-};
-
-const loadImageSafely = (src: string) =>
-  new Promise<HTMLImageElement | null>((resolve) => {
-    if (typeof window === 'undefined' || !src) {
-      resolve(null);
-      return;
-    }
-    const image = new window.Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
-    image.src = src;
-  });
-
-const drawRoundedRect = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-) => {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-};
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-
-const createCartSnapshotBlob = async (store: Store, entries: CartEntry[], cartTotal: number) => {
-  if (typeof document === 'undefined') {
-    throw new Error('Snapshot can only be created in the browser');
-  }
-  const width = 720;
-  const padding = 32;
-  const rowHeight = 110;
-  const headerHeight = 120;
-  const footerHeight = 120;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = padding * 2 + headerHeight + footerHeight + rowHeight * entries.length;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas not supported');
-
-  ctx.fillStyle = '#e2e8f0';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const cardX = padding;
-  const cardY = padding;
-  const cardWidth = width - padding * 2;
-  const cardHeight = canvas.height - padding * 2;
-  ctx.fillStyle = '#ffffff';
-  drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 28);
-  ctx.fill();
-
-  ctx.fillStyle = '#0f172a';
-  ctx.font = '600 24px "Inter", "Arial", sans-serif';
-  ctx.fillText('CART', cardX + 24, cardY + 40);
-  ctx.font = '400 14px "Inter", "Arial", sans-serif';
-  ctx.fillStyle = '#94a3b8';
-  ctx.fillText(`Saved items (${entries.length})`, cardX + 24, cardY + 66);
-
-  let currentY = cardY + headerHeight;
-
-  for (const entry of entries) {
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(cardX + 24, currentY - 12);
-    ctx.lineTo(cardX + cardWidth - 24, currentY - 12);
-    ctx.stroke();
-
-    const image = await loadImageSafely(entry.image);
-    const imageSize = 72;
-    const imageX = cardX + 24;
-    const imageY = currentY;
-    if (image) {
-      ctx.save();
-      drawRoundedRect(ctx, imageX, imageY, imageSize, imageSize, 16);
-      ctx.clip();
-      ctx.drawImage(image, imageX, imageY, imageSize, imageSize);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = '#cbd5f5';
-      drawRoundedRect(ctx, imageX, imageY, imageSize, imageSize, 16);
-      ctx.fill();
-    }
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = '600 18px "Inter", "Arial", sans-serif';
-    ctx.fillText(entry.name, imageX + imageSize + 16, imageY + 24);
-    ctx.font = '400 14px "Inter", "Arial", sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(`₹${formatCurrency(entry.price)} each`, imageX + imageSize + 16, imageY + 48);
-
-    ctx.fillStyle = '#475569';
-    ctx.fillText(`Qty: ${entry.quantity}`, imageX + imageSize + 16, imageY + 70);
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = '600 18px "Inter", "Arial", sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(`₹${formatCurrency(entry.price * entry.quantity)}`, cardX + cardWidth - 24, imageY + 40);
-    ctx.textAlign = 'left';
-
-    currentY += rowHeight;
-  }
-
-  ctx.fillStyle = '#e2e8f0';
-  ctx.beginPath();
-  ctx.moveTo(cardX + 24, currentY);
-  ctx.lineTo(cardX + cardWidth - 24, currentY);
-  ctx.stroke();
-
-  ctx.fillStyle = '#475569';
-  ctx.font = '500 16px "Inter", "Arial", sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('Cart total', cardX + 24, currentY + 40);
-  ctx.font = '700 24px "Inter", "Arial", sans-serif';
-  ctx.fillStyle = '#0f172a';
-  ctx.textAlign = 'right';
-  ctx.fillText(`₹${formatCurrency(cartTotal)}`, cardX + cardWidth - 24, currentY + 40);
-  ctx.textAlign = 'left';
-
-  return await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error('Unable to create cart snapshot'));
-      }
-    }, 'image/png');
-  });
 };
 
 type Theme = ReviewTheme;
@@ -1775,6 +1631,9 @@ type ProductGridProps = {
   isStoreOwner: boolean;
   cartEntries: CartEntry[];
   onAddToCart: (product: Product, quantity: number) => void;
+  /** Trial ended + no paid plan: block ordering until visitor contacts owner. */
+  blockVisitorCommerce?: boolean;
+  onBlockVisitorCommerce?: () => void;
 };
 
 type CombinedEntry =
@@ -1785,10 +1644,14 @@ const ServiceCard = ({
   service,
   whatsappLink,
   whatsappNumber,
+  blockVisitorCommerce = false,
+  onBlockVisitorCommerce,
 }: {
   service: Service;
   whatsappLink: string;
   whatsappNumber?: string | null;
+  blockVisitorCommerce?: boolean;
+  onBlockVisitorCommerce?: () => void;
 }) => {
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const hasServicePrice = service.price != null;
@@ -1847,6 +1710,12 @@ const ServiceCard = ({
             )}`}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => {
+              if (blockVisitorCommerce) {
+                e.preventDefault();
+                onBlockVisitorCommerce?.();
+              }
+            }}
             className="inline-flex items-center justify-center gap-1 rounded-full border border-[#1f9d55] bg-[#25D366] px-2 py-1 text-[8px] font-semibold text-white shadow-[0_6px_14px_rgba(37,211,102,0.35)] transition hover:-translate-y-0.5 hover:bg-[#1ebe5d] md:gap-1.5 md:px-3.5 md:py-1.5 md:text-xs"
           >
             <MessageCircle className="h-2.5 w-2.5 md:h-3.5 md:w-3.5" />
@@ -1899,6 +1768,8 @@ const ProductGrid = ({
   isStoreOwner,
   cartEntries,
   onAddToCart,
+  blockVisitorCommerce = false,
+  onBlockVisitorCommerce,
 }: ProductGridProps) => {
   const [filterType, setFilterType] = useState<'all' | 'products' | 'services'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -2208,6 +2079,8 @@ const ProductGrid = ({
                           service={service}
                           whatsappLink={whatsappLink}
                           whatsappNumber={storeWhatsapp}
+                          blockVisitorCommerce={blockVisitorCommerce}
+                          onBlockVisitorCommerce={onBlockVisitorCommerce}
                         />
                       </motion.div>
                     );
@@ -2230,6 +2103,10 @@ const ProductGrid = ({
                         cartQty={cartQuantities[product.id] ?? 0}
                         onAddToCart={() => onAddToCart(product, 1)}
                         onBuyNow={() => {
+                          if (blockVisitorCommerce) {
+                            onBlockVisitorCommerce?.();
+                            return;
+                          }
                           setBuyNowProduct(product);
                           setBuyNowQty(1);
                         }}
@@ -2481,6 +2358,9 @@ export default function StoreView({
         store.username &&
         user.storeSlug.toLowerCase() === store.username.toLowerCase())
   );
+  const trialLock = useStorefrontTrialLock();
+  const visitorTrialCommerceBlocked =
+    !viewerOwnsStore && isStoreTrialExpiredWithoutPaidPlan(store);
   const canEngage = Boolean(store.id);
   const cartStorageKey = useMemo(() => `storeCart-${store.username}`, [store.username]);
   const guestReviewsStorageKey = useMemo(() => `storeGuestReviews:${store.id}`, [store.id]);
@@ -2488,6 +2368,12 @@ export default function StoreView({
   const [cartNotice, setCartNotice] = useState<string | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isSharingCart, setIsSharingCart] = useState(false);
+  const [cartPaymentCheckout, setCartPaymentCheckout] = useState<ProductCheckoutPublic | null>(null);
+  const [cartPaymentLoading, setCartPaymentLoading] = useState(false);
+  const [cartPaymentLoadError, setCartPaymentLoadError] = useState<string | null>(null);
+  const [cartPayBusy, setCartPayBusy] = useState(false);
+  const [cartPayError, setCartPayError] = useState<string | null>(null);
+  const cartPaymentQrSectionRef = useRef<HTMLDivElement | null>(null);
   const [guestReviews, setGuestReviews] = useState<Review[]>([]);
   const [guestReviewNotice, setGuestReviewNotice] = useState<string | null>(null);
 
@@ -2551,6 +2437,70 @@ export default function StoreView({
   const cartTotal = useMemo(() => {
     return cartEntries.reduce((sum, entry) => sum + entry.price * entry.quantity, 0);
   }, [cartEntries]);
+
+  const cartProductIdsKey = useMemo(
+    () => [...new Set(cartEntries.map((e) => String(e.productId)))].sort().join(','),
+    [cartEntries],
+  );
+
+  const cartCanPayOnline = Boolean(cartPaymentCheckout?.onlinePaymentAvailable);
+  const cartCanPayQr = Boolean(
+    cartPaymentCheckout?.qrPaymentAvailable && cartPaymentCheckout?.paymentQrUrl,
+  );
+  const cartHasAnyPayment = cartCanPayOnline || cartCanPayQr;
+
+  const cartAllLinesInStock = useMemo(() => {
+    if (!cartEntries.length) return false;
+    return cartEntries.every((entry) => {
+      const p = products.find((x) => String(x.id) === String(entry.productId));
+      if (!p) return true;
+      return Boolean(p.inStock);
+    });
+  }, [cartEntries, products]);
+
+  useEffect(() => {
+    if (!isCartOpen || !cartProductIdsKey) {
+      setCartPaymentCheckout(null);
+      setCartPaymentLoadError(null);
+      setCartPaymentLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const ids = cartProductIdsKey.split(',').filter(Boolean);
+    setCartPaymentLoading(true);
+    setCartPaymentLoadError(null);
+    void Promise.all(ids.map((id) => getProductById(id)))
+      .then((results) => {
+        if (cancelled) return;
+        let online = false;
+        let qr = false;
+        let qrUrl: string | null = null;
+        for (const r of results) {
+          const c = r.checkout;
+          if (c.onlinePaymentAvailable) online = true;
+          if (c.qrPaymentAvailable && c.paymentQrUrl) {
+            qr = true;
+            qrUrl = qrUrl ?? c.paymentQrUrl;
+          }
+        }
+        setCartPaymentCheckout({
+          onlinePaymentAvailable: online,
+          qrPaymentAvailable: qr,
+          paymentQrUrl: qrUrl,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setCartPaymentLoadError(isApiError(err) ? err.message : 'Could not load payment options');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCartPaymentLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCartOpen, cartProductIdsKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2629,6 +2579,10 @@ export default function StoreView({
 
   const handleAddToCart = useCallback(
     (product: Product, quantity: number) => {
+      if (visitorTrialCommerceBlocked) {
+        trialLock?.openVisitorTrialLock();
+        return;
+      }
       setCartEntries((prev) => {
         const totalItems = prev.reduce((sum, entry) => sum + entry.quantity, 0);
         if (totalItems >= MAX_CART_ITEMS) {
@@ -2657,17 +2611,24 @@ export default function StoreView({
         ];
       });
     },
-    []
+    [visitorTrialCommerceBlocked, trialLock]
   );
 
   const handleUpdateQuantity = useCallback((productId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
+    if (visitorTrialCommerceBlocked) {
+      const entry = cartEntries.find((e) => e.productId === productId);
+      if (entry && newQuantity > entry.quantity) {
+        trialLock?.openVisitorTrialLock();
+        return;
+      }
+    }
     setCartEntries((prev) =>
       prev.map((entry) =>
         entry.productId === productId ? { ...entry, quantity: newQuantity } : entry
       )
     );
-  }, []);
+  }, [visitorTrialCommerceBlocked, trialLock, cartEntries]);
 
   const handleRemoveItem = useCallback((productId: string) => {
     setCartEntries((prev) => prev.filter((entry) => entry.productId !== productId));
@@ -2675,32 +2636,183 @@ export default function StoreView({
 
   const handleShareWhatsapp = useCallback(async () => {
     if (!cartEntries.length) return;
+    if (visitorTrialCommerceBlocked) {
+      trialLock?.openVisitorTrialLock();
+      return;
+    }
+    // Always open the store owner's WhatsApp chat (pre-filled message). Do not use Web Share API here —
+    // it would let users forward the cart snapshot to any contact, which is not desired for cart orders.
+    if (!whatsappLink || whatsappLink === '#') {
+      setCartNotice('This store has no WhatsApp number on file, so the cart cannot be shared.');
+      setTimeout(() => setCartNotice(null), 4000);
+      return;
+    }
     setIsSharingCart(true);
     try {
-      const blob = await createCartSnapshotBlob(store, cartEntries, cartTotal);
-      const file = new File([blob], 'cart-snapshot.png', { type: 'image/png' });
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Cart from ${store.name}`,
-          text: `My cart (${cartItemsCount} items, ₹${cartTotal})`,
-        });
-      } else {
-        const itemsList = cartEntries.map((entry) => `${entry.name} x${entry.quantity} = ₹${entry.price * entry.quantity}`).join('\n');
-        const message = `Hi ${store.name},\n\nMy Cart:\n${itemsList}\n\nTotal: ₹${cartTotal}`;
-        const url = `${whatsappLink}?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-      }
+      const itemsList = cartEntries
+        .map((entry) => `${entry.name} x${entry.quantity} = ₹${entry.price * entry.quantity}`)
+        .join('\n');
+      const catalogueUrl =
+        typeof window !== 'undefined' && window.location?.href
+          ? window.location.href.split('#')[0]
+          : '';
+      const message = `Hi ${store.name},\n\nMy cart (${cartItemsCount} items):\n${itemsList}\n\nTotal: ₹${cartTotal}${
+        catalogueUrl ? `\n\nStore: ${catalogueUrl}` : ''
+      }`;
+      const url = `${whatsappLink}?text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
     } catch (error) {
       console.error('Failed to share cart', error);
-      const itemsList = cartEntries.map((entry) => `${entry.name} x${entry.quantity} = ₹${entry.price * entry.quantity}`).join('\n');
-      const message = `Hi ${store.name},\n\nMy Cart:\n${itemsList}\n\nTotal: ₹${cartTotal}`;
-      const url = `${whatsappLink}?text=${encodeURIComponent(message)}`;
-      window.open(url, '_blank');
+      setCartNotice('Could not open WhatsApp. Please try again.');
+      setTimeout(() => setCartNotice(null), 4000);
     } finally {
       setIsSharingCart(false);
     }
-  }, [cartEntries, cartTotal, cartItemsCount, store, whatsappLink]);
+  }, [
+    cartEntries,
+    cartTotal,
+    cartItemsCount,
+    store.name,
+    whatsappLink,
+    visitorTrialCommerceBlocked,
+    trialLock,
+  ]);
+
+  const openRazorpayCheckoutForCartEntry = useCallback(
+    (entry: CartEntry, index: number, total: number) =>
+      new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finishOk = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        const finishErr = (err: unknown) => {
+          if (settled) return;
+          settled = true;
+          reject(err instanceof Error ? err : new Error('Payment failed'));
+        };
+
+        void (async () => {
+          try {
+            await loadRazorpayCheckoutScript();
+            const Razorpay = window.Razorpay as
+              | (new (options: Record<string, unknown>) => {
+                  open: () => void;
+                  on: (event: string, handler: (payload: unknown) => void) => void;
+                })
+              | undefined;
+            if (!Razorpay) {
+              finishErr(new Error('Razorpay failed to load.'));
+              return;
+            }
+            const order = await createProductCheckoutRazorpayOrder(entry.productId, 'single', {
+              quantity: entry.quantity,
+            });
+            const rzp = new Razorpay({
+              key: order.razorpay_key_id,
+              amount: order.amount,
+              currency: order.currency,
+              name: order.store_name,
+              description: `${order.product_name} × ${entry.quantity} (${index + 1}/${total})`,
+              order_id: order.razorpay_order_id,
+              handler: async (response: Record<string, string>) => {
+                try {
+                  await verifyProductCheckoutRazorpayPayment(entry.productId, {
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                  });
+                  finishOk();
+                } catch (err) {
+                  finishErr(err);
+                }
+              },
+              theme: { color: CATALOG_ACCENT },
+              modal: {
+                ondismiss: () => {
+                  finishErr(new Error('Payment cancelled'));
+                },
+              },
+            });
+            rzp.on('payment.failed', (r: unknown) => {
+              const desc =
+                r &&
+                typeof r === 'object' &&
+                'error' in r &&
+                r.error &&
+                typeof r.error === 'object' &&
+                'description' in r.error &&
+                typeof (r.error as { description?: unknown }).description === 'string'
+                  ? (r.error as { description: string }).description
+                  : null;
+              finishErr(new Error(desc ?? 'Payment failed'));
+            });
+            rzp.open();
+          } catch (err) {
+            finishErr(err);
+          }
+        })();
+      }),
+    [],
+  );
+
+  const handleCartPayNow = useCallback(async () => {
+    if (!cartEntries.length) return;
+    if (visitorTrialCommerceBlocked) {
+      trialLock?.openVisitorTrialLock();
+      return;
+    }
+    if (cartPaymentLoading) return;
+    setCartPayError(null);
+    if (!cartAllLinesInStock) {
+      setCartPayError('One or more items are out of stock. Remove them to continue.');
+      return;
+    }
+    if (cartCanPayOnline) {
+      setCartPayBusy(true);
+      try {
+        const snapshot = [...cartEntries];
+        for (let i = 0; i < snapshot.length; i += 1) {
+          await openRazorpayCheckoutForCartEntry(snapshot[i], i, snapshot.length);
+        }
+        setCartEntries([]);
+        window.alert('Payment successful. The seller will confirm your order.');
+        setIsCartOpen(false);
+      } catch (err) {
+        const msg = isApiError(err)
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Could not complete payment';
+        setCartPayError(
+          msg === 'Payment cancelled'
+            ? 'Payment was cancelled. If you already paid for some items, contact the seller with your receipt.'
+            : msg,
+        );
+      } finally {
+        setCartPayBusy(false);
+      }
+      return;
+    }
+    if (cartCanPayQr) {
+      setCartPayError('Scan the QR code below to pay the seller for your cart total.');
+      queueMicrotask(() => {
+        cartPaymentQrSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+    setCartPayError('This seller has not enabled payments on their plan yet.');
+  }, [
+    cartEntries,
+    cartPaymentLoading,
+    cartAllLinesInStock,
+    cartCanPayOnline,
+    cartCanPayQr,
+    visitorTrialCommerceBlocked,
+    trialLock,
+    openRazorpayCheckoutForCartEntry,
+  ]);
 
   const handleReviewFormChange = (partial: Partial<typeof reviewForm>) => {
     setReviewForm((previous) => ({ ...previous, ...partial }));
@@ -2811,6 +2923,8 @@ export default function StoreView({
           isStoreOwner={viewerOwnsStore}
           cartEntries={cartEntries}
           onAddToCart={handleAddToCart}
+          blockVisitorCommerce={visitorTrialCommerceBlocked}
+          onBlockVisitorCommerce={() => trialLock?.openVisitorTrialLock()}
         />
 
         {/* Reviews — friendly rate + summary card (compact on mobile; guest ratings = device-only, no API) */}
@@ -3097,20 +3211,69 @@ export default function StoreView({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(16,185,129,0.35)] disabled:opacity-50"
                 >
                   <MessageCircle className="h-4 w-4" />
-                  {isSharingCart ? 'Preparing snapshot…' : 'Share via WhatsApp'}
+                  {isSharingCart ? 'Opening WhatsApp…' : 'Share via WhatsApp'}
                 </button>
-                <div className="space-y-1.5">
+                {!cartAllLinesInStock && cartEntries.length > 0 ? (
+                  <p className="text-center text-xs text-rose-600">
+                    One or more items are out of stock. Remove them to pay online.
+                  </p>
+                ) : null}
+                <div className="space-y-3">
                   <button
                     type="button"
-                    disabled
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-400"
+                    onClick={() => void handleCartPayNow()}
+                    disabled={
+                      !cartEntries.length ||
+                      cartPaymentLoading ||
+                      cartPayBusy ||
+                      !cartHasAnyPayment ||
+                      !cartAllLinesInStock
+                    }
+                    className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold shadow-sm transition ${
+                      !cartEntries.length ||
+                      cartPaymentLoading ||
+                      cartPayBusy ||
+                      !cartHasAnyPayment ||
+                      !cartAllLinesInStock
+                        ? 'cursor-not-allowed border border-slate-300 bg-slate-100 text-slate-400'
+                        : 'border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
                   >
                     <CreditCard className="h-4 w-4" />
-                    Pay online (card / UPI)
+                    {cartPayBusy ? 'Processing payment…' : 'Pay & buy online'}
                   </button>
-                  <p className="text-center text-[11px] text-slate-500">
-                    Online payment appears here when the seller enables it with an active paid plan.
-                  </p>
+                  {cartEntries.length > 1 && cartCanPayOnline ? (
+                    <p className="text-center text-[11px] text-slate-500">
+                      Each product is paid separately in order (same as checkout from product details).
+                    </p>
+                  ) : null}
+                  {cartPaymentLoadError ? (
+                    <p className="text-center text-xs text-amber-600">{cartPaymentLoadError}</p>
+                  ) : null}
+                  {cartPayError ? <p className="text-center text-xs text-rose-600">{cartPayError}</p> : null}
+                  {cartPaymentLoading ? (
+                    <p className="text-center text-xs text-slate-500">Loading payment options…</p>
+                  ) : null}
+                  {cartCanPayQr && cartPaymentCheckout?.paymentQrUrl ? (
+                    <div ref={cartPaymentQrSectionRef} className="border-t border-slate-200 pt-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pay via QR</p>
+                      <p className="mt-1 text-xs leading-snug text-slate-600">
+                        Scan this QR code to pay the seller (mention your cart total: {formatCurrencyDisplay(cartTotal)}).
+                      </p>
+                      <div className="mt-2 flex justify-center">
+                        <div className="w-full max-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white p-2">
+                          <img
+                            src={checkoutQrImageSrc(cartPaymentCheckout.paymentQrUrl)}
+                            alt="Payment QR code"
+                            className="h-auto w-full object-contain"
+                            loading="lazy"
+                            decoding="async"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

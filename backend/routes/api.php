@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\StoreEngagementController;
 use App\Http\Controllers\Api\StorePaymentIntegrationController;
 use App\Http\Controllers\Api\StoreSubscriptionController;
 use App\Http\Controllers\Api\StoreOwnerNotificationController;
+use App\Http\Controllers\Api\UserNotificationController;
 use App\Http\Controllers\Api\StoreSubscriptionRazorpayController;
 use App\Http\Controllers\Api\SubscriptionPlanController;
 use App\Http\Controllers\Api\UtilityController;
@@ -38,6 +39,7 @@ Route::get('categories', [CategoryController::class, 'index']);
 Route::get('categories/hero-banners', [CategoryController::class, 'heroBanners']);
 Route::get('category/{slug}', [CategoryController::class, 'show']);
 Route::get('stores', [StoreController::class, 'listStores']);
+Route::get('stores/following', [StoreController::class, 'followingStores']);
 Route::get('stores/internal-links', [StoreController::class, 'publicStoreInternalLinks']);
 Route::get('stores/location-links', [StoreController::class, 'publicLocationLinks']);
 Route::get('search', [SearchController::class, 'search']);
@@ -123,6 +125,10 @@ Route::middleware('auth:api')->group(function () {
     Route::get('my/store-notifications', [StoreOwnerNotificationController::class, 'index']);
     Route::post('my/store-notifications/{notification}/read', [StoreOwnerNotificationController::class, 'markRead']);
     Route::delete('my/store-notifications/{notification}', [StoreOwnerNotificationController::class, 'destroy']);
+
+    Route::get('my/follow-notifications', [UserNotificationController::class, 'index']);
+    Route::post('my/follow-notifications/{notification}/read', [UserNotificationController::class, 'markRead']);
+    Route::delete('my/follow-notifications/{notification}', [UserNotificationController::class, 'destroy']);
     Route::put('store/{id}', [StoreController::class, 'updateStore']);
     Route::delete('store/{id}', [StoreController::class, 'deleteStore']);
 

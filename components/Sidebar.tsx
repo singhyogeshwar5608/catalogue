@@ -19,7 +19,14 @@ import {
   Plug2,
 } from 'lucide-react';
 import { useAuth } from '@/src/context/AuthContext';
-import { getMyStoreNotifications, getStoreBySlug, getStoreBySlugFromApi, isApiError } from '@/src/lib/api';
+import {
+  getMyFollowNotifications,
+  getMyStoreNotifications,
+  getMyStores,
+  getStoreBySlug,
+  getStoreBySlugFromApi,
+  isApiError,
+} from '@/src/lib/api';
 import { STORE_PROFILE_REFRESH_EVENT, storeCanAccessPaymentIntegrationHub } from '@/src/lib/storeSubscriptionAddons';
 import type { Store } from '@/types';
 import faviconIcon from '@/assets/icon-512x512.svg';
@@ -38,12 +45,37 @@ export default function Sidebar() {
       setMyStore(null);
       return;
     }
+
+    const loadByKey = async (key: string) => getStoreBySlugFromApi(key);
+
     try {
-      const store = await getStoreBySlugFromApi(slug);
+      const store = await loadByKey(slug);
       setMyStore(store);
+      return;
     } catch (error) {
-      // Laravel `/store/:slug` may intermittently fail (500); gracefully fallback to cached `/api/stores/:slug`.
       const apiStatus = isApiError(error) ? error.status : undefined;
+
+      if (apiStatus === 404) {
+        try {
+          const cached = await getStoreBySlug(slug);
+          setMyStore(cached);
+          return;
+        } catch {
+          /* continue */
+        }
+        try {
+          const owned = await getMyStores();
+          const canonical = owned[0]?.username?.trim();
+          if (canonical && canonical.toLowerCase() !== slug.toLowerCase()) {
+            const store = await loadByKey(canonical);
+            setMyStore(store);
+            return;
+          }
+        } catch {
+          /* continue */
+        }
+      }
+
       if (typeof apiStatus === 'number' && apiStatus >= 500) {
         try {
           const fallbackStore = await getStoreBySlug(slug);
@@ -52,9 +84,10 @@ export default function Sidebar() {
         } catch (fallbackError) {
           console.error('Failed to load store via both endpoints:', fallbackError);
         }
-      } else {
+      } else if (apiStatus !== 404) {
         console.error('Failed to load store:', error);
       }
+
       setMyStore(null);
     }
   }, [user?.storeSlug]);
@@ -72,7 +105,7 @@ export default function Sidebar() {
   }, [loadStore]);
 
   useEffect(() => {
-    if (!user?.storeSlug) {
+    if (!user) {
       setUnreadNotifications(0);
       return;
     }
@@ -81,9 +114,12 @@ export default function Sidebar() {
 
     const loadUnreadNotifications = async () => {
       try {
-        const payload = await getMyStoreNotifications({ limit: 1 });
+        const [owner, follower] = await Promise.all([
+          getMyStoreNotifications({ limit: 1 }),
+          getMyFollowNotifications({ limit: 1 }),
+        ]);
         if (!isMounted) return;
-        setUnreadNotifications(payload.unread_count);
+        setUnreadNotifications(owner.unread_count + follower.unread_count);
       } catch {
         if (!isMounted) return;
         setUnreadNotifications(0);
@@ -99,7 +135,7 @@ export default function Sidebar() {
       isMounted = false;
       window.clearInterval(id);
     };
-  }, [user?.storeSlug]);
+  }, [user]);
 
   const businessType = myStore?.businessType || 'product';
   const showPaymentsHub = storeCanAccessPaymentIntegrationHub(myStore);

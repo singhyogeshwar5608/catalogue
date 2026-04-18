@@ -151,9 +151,9 @@ export default function AuthPage() {
   ];
 
   return (
-    <div className="flex min-h-[calc(100dvh-68px-env(safe-area-inset-bottom,0px))] items-start justify-center overflow-y-auto bg-slate-100 px-2.5 py-3 md:min-h-dvh md:items-center md:px-4 md:py-6">
-      <div className="mx-auto w-full max-w-[420px] md:max-w-5xl">
-        <div className="grid overflow-hidden rounded-xl border border-gray-200 bg-white md:rounded-2xl md:grid-cols-2">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto overscroll-contain bg-slate-100 px-2.5 py-3 [-webkit-overflow-scrolling:touch] md:min-h-full md:justify-center md:overflow-visible md:px-4 md:py-6">
+      <div className="mx-auto flex w-full max-w-[420px] shrink-0 items-start justify-center md:max-w-5xl">
+        <div className="grid w-full overflow-hidden rounded-xl border border-gray-200 bg-white md:rounded-2xl md:grid-cols-2">
           <section className="px-3 pt-3 pb-2.5 md:border-r md:border-b-0 md:px-6 md:py-6">
             <div className="relative md:space-y-4">
               <div className="pr-32 pt-2 md:pr-0 md:pt-0 md:space-y-2">

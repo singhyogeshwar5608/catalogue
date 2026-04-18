@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\PlatformSetting;
 use App\Models\Store;
 use App\Models\StoreSubscription;
 use App\Support\StoreNotificationRecorder;
+use App\Support\StoreSubscriptionPeriod;
+use App\Support\SubscriptionCheckoutPricing;
 use App\Models\SubscriptionPlan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -81,8 +82,13 @@ class StoreSubscriptionRazorpayController extends Controller
             'payment_gateway_help' => $request->boolean('addon_payment_gateway_help'),
         ];
 
-        $totalRupees = $this->checkoutTotalRupees($plan, $addonsPayload);
-        $amountPaise = $totalRupees * 100;
+        $grossRupees = SubscriptionCheckoutPricing::grossSubtotalRupees($plan, $addonsPayload);
+        $discountPct = SubscriptionCheckoutPricing::billingDiscountPercentForPlan($plan);
+        $discountRupees = SubscriptionCheckoutPricing::discountRupeesFromGross($grossRupees, $discountPct);
+        $taxableRupees = max(0, $grossRupees - $discountRupees);
+        $gstRupees = SubscriptionCheckoutPricing::gstRupeesFromTaxableSubtotal($taxableRupees);
+        $totalRupees = SubscriptionCheckoutPricing::checkoutTotalRupees($plan, $addonsPayload);
+        $amountPaise = (int) ($totalRupees * 100);
 
         if ($amountPaise < 100) {
             return $this->errorResponse('Checkout amount is too small for Razorpay (minimum ₹1).', 400);
@@ -96,6 +102,8 @@ class StoreSubscriptionRazorpayController extends Controller
             'addon_pg' => $addonsPayload['payment_gateway'] ? '1' : '0',
             'addon_qr' => $addonsPayload['qr_code'] ? '1' : '0',
             'addon_help' => $addonsPayload['payment_gateway_help'] ? '1' : '0',
+            'discount_pct' => (string) $discountPct,
+            'discount_rupees' => (string) $discountRupees,
         ];
 
         $response = Http::withBasicAuth($keyId, $secret)
@@ -122,6 +130,14 @@ class StoreSubscriptionRazorpayController extends Controller
             'amount' => isset($order['amount']) ? (int) $order['amount'] : $amountPaise,
             'currency' => $order['currency'] ?? 'INR',
             'plan_name' => $plan->name,
+            'pricing' => [
+                'gross_subtotal_rupees' => $grossRupees,
+                'discount_percent' => $discountPct,
+                'discount_rupees' => $discountRupees,
+                'taxable_subtotal_rupees' => $taxableRupees,
+                'gst_rupees' => $gstRupees,
+                'total_rupees' => $totalRupees,
+            ],
         ]);
     }
 
@@ -183,7 +199,7 @@ class StoreSubscriptionRazorpayController extends Controller
             'payment_gateway_help' => ($notes['addon_help'] ?? '') === '1',
         ];
 
-        $expectedRupees = $this->checkoutTotalRupees($plan, $addonsPayload);
+        $expectedRupees = SubscriptionCheckoutPricing::checkoutTotalRupees($plan, $addonsPayload);
         $expectedPaise = $expectedRupees * 100;
         $orderAmountPaise = isset($order['amount']) ? (int) $order['amount'] : 0;
 
@@ -240,19 +256,14 @@ class StoreSubscriptionRazorpayController extends Controller
             }
 
             $startsAt = Carbon::now();
-
-            if (isset($plan->duration_days) && $plan->duration_days > 0) {
-                $endsAt = $startsAt->copy()->addDays($plan->duration_days);
-            } else {
-                $endsAt = $plan->billing_cycle === 'monthly'
-                    ? $startsAt->copy()->addMonth()
-                    : $startsAt->copy()->addYear();
-            }
+            $trialDaysCarried = StoreSubscriptionPeriod::freeTrialCarryoverCalendarDays($store, $existingActive);
+            $endsAt = StoreSubscriptionPeriod::endsAtForPaidActivation($store, $plan, $startsAt, $existingActive);
 
             $metadata = [
                 'addons' => $addonsPayload,
                 'razorpay_payment_id' => $paymentId,
                 'razorpay_order_id' => $orderId,
+                'trial_days_carried_over' => $trialDaysCarried,
             ];
 
             $subscription = StoreSubscription::create([
@@ -358,14 +369,8 @@ class StoreSubscriptionRazorpayController extends Controller
             }
 
             $startsAt = Carbon::now();
-
-            if (isset($plan->duration_days) && $plan->duration_days > 0) {
-                $endsAt = $startsAt->copy()->addDays($plan->duration_days);
-            } else {
-                $endsAt = $plan->billing_cycle === 'monthly'
-                    ? $startsAt->copy()->addMonth()
-                    : $startsAt->copy()->addYear();
-            }
+            $trialDaysCarried = StoreSubscriptionPeriod::freeTrialCarryoverCalendarDays($store, $existingActive);
+            $endsAt = StoreSubscriptionPeriod::endsAtForPaidActivation($store, $plan, $startsAt, $existingActive);
 
             $metadata = [
                 'addons' => $addonsPayload,
@@ -373,6 +378,7 @@ class StoreSubscriptionRazorpayController extends Controller
                 'razorpay_order_id' => $orderId,
                 'mock_payment' => true,
                 'mock_completed_at' => Carbon::now()->toIso8601String(),
+                'trial_days_carried_over' => $trialDaysCarried,
             ];
 
             $subscription = StoreSubscription::create([
@@ -418,18 +424,4 @@ class StoreSubscriptionRazorpayController extends Controller
         return [trim($keyId), trim($secret)];
     }
 
-    /**
-     * @param  array{payment_gateway: bool, qr_code: bool, payment_gateway_help: bool}  $addonsPayload
-     */
-    private function checkoutTotalRupees(SubscriptionPlan $plan, array $addonsPayload): int
-    {
-        $base = (int) $plan->price;
-        $charges = PlatformSetting::subscriptionAddonChargesPayload();
-        $addonSum =
-            ($addonsPayload['payment_gateway'] ? $charges['payment_gateway_integration_inr'] : 0)
-            + ($addonsPayload['qr_code'] ? $charges['qr_code_inr'] : 0)
-            + ($addonsPayload['payment_gateway_help'] ? $charges['payment_gateway_help_inr'] : 0);
-
-        return $base + $addonSum;
-    }
 }

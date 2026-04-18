@@ -674,6 +674,7 @@ function PlanModal({ plan, onClose, onSave }: { plan: SubscriptionPlan | null; o
     price: plan != null ? String(plan.price) : '',
     billing_cycle: plan?.billingCycle === 'yearly' ? 'yearly' : 'monthly',
     duration_days: plan?.durationDays || 30,
+    billing_discount_tier: plan?.billingDiscountTier ?? '',
     max_products: plan?.maxProducts || 10,
     is_popular: plan?.isPopular || false,
     is_active: plan?.isActive !== false,
@@ -694,6 +695,7 @@ function PlanModal({ plan, onClose, onSave }: { plan: SubscriptionPlan | null; o
       await onSave({
         ...formData,
         price: priceParsed,
+        billing_discount_tier: formData.billing_discount_tier || null,
         features: formData.features.split('\n').filter((f) => f.trim()),
       });
     } finally {
@@ -767,6 +769,27 @@ function PlanModal({ plan, onClose, onSave }: { plan: SubscriptionPlan | null; o
                 placeholder="e.g., 7 for trial, 30 for monthly"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Checkout billing discount</label>
+            <select
+              value={formData.billing_discount_tier}
+              onChange={(e) =>
+                setFormData({ ...formData, billing_discount_tier: e.target.value })
+              }
+              className="w-full max-w-xl px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
+            >
+              <option value="">Auto (from duration:1–59 days → 1 mo, 60–329 → 3 mo, 330+ or yearly → 1 yr)</option>
+              <option value="one_month">Force 1-month % (platform setting)</option>
+              <option value="three_months">Force 3-month %</option>
+              <option value="one_year">Force 1-year %</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Merchants see this % in the subscription confirmation popup. Use <strong>Auto</strong> only if duration
+              matches the term (e.g. 90 days for a quarterly plan). If every plan uses 30-day duration, pick the matching
+              force option so 5% / 10% discounts apply.
+            </p>
           </div>
 
           <div>

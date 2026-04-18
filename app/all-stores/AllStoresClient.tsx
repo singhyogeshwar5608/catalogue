@@ -244,19 +244,8 @@ export default function AllStoresClient({ initialStores }: { initialStores: Stor
   const renderResponsiveStoreGrid = (list: Store[], bannerIndexMap?: Map<number | string, number>) => (
     <>
       <div className="grid grid-cols-2 gap-4 sm:hidden">
-        {list.map((store, index) => {
-          const chunkIndex = index % 7;
-          const isFullWidth = chunkIndex === 0;
+        {list.map((store) => {
           const categoryBannerIndex = bannerIndexMap?.get(store.id) ?? 0;
-
-          if (isFullWidth) {
-            return (
-              <div key={store.id} className="col-span-2 min-h-0 w-full">
-                <VerifiedSellerCard store={store} categoryBannerIndex={categoryBannerIndex} />
-              </div>
-            );
-          }
-
           return (
             <div key={store.id} className="col-span-1 min-h-0 min-w-0 w-full">
               <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />

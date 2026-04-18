@@ -45,7 +45,6 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
     { label: 'Likes', value: store.likesCount ?? 0 },
     { label: 'Views', value: store.seenCount ?? 0 },
   ];
-  const visibleToday = Math.max(0, Math.round((store.seenCount ?? 0) * 0.12) || 0);
 
   const renderRatingStars = (rating: number) =>
     Array.from({ length: 5 }, (_, index) => {
@@ -139,14 +138,7 @@ export default function StoreCard({ store, isCompact = false, categoryBannerInde
           ))}
         </div>
 
-        <div className={`${isCompact ? '' : 'mt-2 border-t border-slate-200 pt-1.5 md:mt-2.5 md:pt-2'}`}>
-          <p className={`inline-flex items-center gap-1 text-slate-500 ${isCompact ? 'm-0 p-0 leading-none text-[7px]' : 'text-[10px] md:text-[11px]'}`}>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {visibleToday} people viewed today
-          </p>
-        </div>
-
-        <div className={`${isCompact ? 'mt-1.5' : 'mt-2 md:mt-2.5'} grid grid-cols-1 gap-1.5`}>
+        <div className={`${isCompact ? 'mt-1.5' : 'mt-2 border-t border-slate-200 pt-1.5 md:mt-2.5 md:pt-2'} grid grid-cols-1 gap-1.5`}>
           <span
             className={`inline-flex items-center justify-center rounded-lg bg-slate-800 font-medium text-white ${isCompact ? 'px-1 py-0.5 text-[7px]' : 'px-1 py-1 text-[10px] md:px-2 md:py-1.5 md:text-xs'}`}
           >

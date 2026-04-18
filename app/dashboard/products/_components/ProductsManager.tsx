@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X, Search, ChevronDown, Check } from 'lucide-react';
 import type { Product, Service, Store } from '@/types';
 import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlugFromApi, isApiError, updateProduct } from '@/src/lib/api';
@@ -154,6 +155,7 @@ const compressImageToDataUrl = async (file: File): Promise<string> => {
 
 export default function ProductsManager({ defaultShowForm = false }: ProductsManagerProps) {
   const router = useRouter();
+  const { mutate } = useSWRConfig();
   const { isLoggedIn, user } = useAuth();
   const { searchQuery: globalSearchQuery, setSearchQuery: setGlobalSearchQuery } = useSearch();
   const [localSearchQuery, setLocalSearchQuery] = useState('');
@@ -204,48 +206,57 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
   const hasStore = Boolean(user?.storeSlug);
   const newCatalogLocked = useMemo(() => isStoreTrialExpiredWithoutPaidPlan(ownerStore), [ownerStore]);
 
-  const loadProducts = useCallback(async () => {
-    if (!user?.storeSlug) {
-      setProducts([]);
-      setServices([]);
-      setLoading(false);
-      setError('You need to create a store before adding products.');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const store = await getStoreBySlugFromApi(user.storeSlug);
-      setOwnerStore(store ?? null);
-      setStoreId(store?.id ?? null);
-
-      // Load products directly using getProductsByStore
-      if (store?.id) {
-        const storeProducts = await getProductsByStore(store.id);
-        setProducts(storeProducts ?? []);
-
-        const storeServices = await getServicesByStore(store.id);
-        setServices(storeServices ?? []);
-      } else {
+  const loadProducts = useCallback(
+    async (syncDashboard = false) => {
+      if (!user?.storeSlug) {
         setProducts([]);
         setServices([]);
-        setOwnerStore(null);
+        setLoading(false);
+        setError('You need to create a store before adding products.');
+        return;
       }
-    } catch (err) {
-      if (isApiError(err)) {
-        if (err.status === 401) {
-          router.replace('/login');
-          return;
+
+      setLoading(true);
+      setError(null);
+      // Drop stale “plan limit” / API messages once the catalog is refreshed (e.g. after delete).
+      setFormError(null);
+      try {
+        const store = await getStoreBySlugFromApi(user.storeSlug);
+        setOwnerStore(store ?? null);
+        setStoreId(store?.id ?? null);
+
+        // Load products directly using getProductsByStore
+        if (store?.id) {
+          const storeProducts = await getProductsByStore(store.id);
+          setProducts(storeProducts ?? []);
+
+          const storeServices = await getServicesByStore(store.id);
+          setServices(storeServices ?? []);
+        } else {
+          setProducts([]);
+          setServices([]);
+          setOwnerStore(null);
         }
-        setError(err.message || 'Unable to load products');
-      } else {
-        setError(err instanceof Error ? err.message : 'Unable to load products');
+
+        if (syncDashboard && user.storeSlug) {
+          void mutate(user.storeSlug);
+        }
+      } catch (err) {
+        if (isApiError(err)) {
+          if (err.status === 401) {
+            router.replace('/login');
+            return;
+          }
+          setError(err.message || 'Unable to load products');
+        } else {
+          setError(err instanceof Error ? err.message : 'Unable to load products');
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.storeSlug, router]);
+    },
+    [user?.storeSlug, router, mutate],
+  );
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -335,7 +346,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
         handleResetProductForm();
         setShowAddForm(false);
       }
-      await loadProducts();
+      await loadProducts(true);
     } catch (err) {
       if (isApiError(err)) {
         setError(err.message || 'Unable to delete product');
@@ -393,6 +404,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       const parsedDiscount =
         Number.isFinite(discountPriceValue) ? discountPriceValue : Number(formState.discountPrice.trim());
       const payload = {
+        ...(storeId ? { store_id: storeId } : {}),
         title: formState.name,
         price: Number.isFinite(priceValue) ? priceValue : Number(formState.price.trim()),
         original_price: Number.isFinite(originalPriceValue)
@@ -428,7 +440,8 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
 
       handleResetProductForm();
       setShowAddForm(false);
-      await loadProducts();
+      setFormError(null);
+      await loadProducts(true);
     } catch (err) {
       if (isApiError(err)) {
         if (err.status === 401) {
@@ -537,7 +550,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       setServiceImagePreview(null);
       setServiceImageError(null);
       setShowAddServiceForm(false);
-      await loadProducts();
+      await loadProducts(true);
     } catch (err) {
       if (isApiError(err)) {
         if (err.status === 401) {
@@ -595,10 +608,15 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                 handleResetProductForm();
                 setShowAddServiceForm(false);
                 setShowAddForm(true);
+                setFormError(null);
                 return;
               }
               setShowAddServiceForm(false);
-              setShowAddForm((prev) => !prev);
+              setShowAddForm((prev) => {
+                const next = !prev;
+                if (next) setFormError(null);
+                return next;
+              });
             }}
             disabled={!hasStore || (newCatalogLocked && !editingProduct)}
             className={`flex items-center justify-center gap-1.5 w-full px-2.5 py-1.5 text-xs font-semibold rounded-xl text-white shadow-sm transition sm:w-auto sm:gap-2 sm:px-4 sm:py-2 sm:text-sm md:px-6 md:py-3 md:text-base ${

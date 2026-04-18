@@ -323,7 +323,7 @@ class StoreEngagementController extends Controller
         return false;
     }
 
-    private function resolveActorKey(Request $request): ?string
+    public function resolveActorKey(Request $request): ?string
     {
         $bearer = $request->bearerToken();
         if (is_string($bearer) && $bearer !== '') {

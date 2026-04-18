@@ -288,6 +288,11 @@ export interface SubscriptionPlan {
   price: number;
   billingCycle: 'monthly' | 'yearly';
   durationDays?: number;
+  /**
+   * Which platform_settings billing discount row applies (overrides duration-based guess).
+   * When omitted, tier is inferred from `billingCycle` + `durationDays` (see backend `SubscriptionCheckoutPricing`).
+   */
+  billingDiscountTier?: 'one_month' | 'three_months' | 'one_year' | null;
   features: string[];
   maxProducts: number;
   isPopular?: boolean;
@@ -312,6 +317,9 @@ export interface SubscriptionBillingDiscounts {
   /** Which connection/driver/database Laravel used for that read (compare with phpMyAdmin). */
   _laravel_database?: { connection: string; driver: string; database: string };
 }
+
+/** Merchant checkout: add-on ₹ plus billing-term discount % (`GET /subscription-plans/addon-prices`). */
+export type SubscriptionCheckoutPricing = SubscriptionAddonCharges & SubscriptionBillingDiscounts;
 
 export interface StoreSubscription {
   id: string;

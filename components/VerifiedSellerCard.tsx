@@ -31,7 +31,6 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex, isMobil
     { label: 'Likes', value: store.likesCount ?? 0 },
     { label: 'Views', value: store.seenCount ?? 0 },
   ];
-  const visibleToday = Math.max(0, Math.round((store.seenCount ?? 0) * 0.12) || 0);
 
   const renderRatingStars = (rating: number) =>
     Array.from({ length: 5 }, (_, index) => {
@@ -124,14 +123,7 @@ export default function VerifiedSellerCard({ store, categoryBannerIndex, isMobil
           ))}
         </div>
 
-        <div className="mt-2 border-t border-slate-200 pt-1.5 md:mt-2.5 md:pt-2">
-          <p className="inline-flex items-center gap-1 text-[10px] text-slate-500 md:text-[11px]">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {visibleToday} people viewed today
-          </p>
-        </div>
-
-        <div className="mt-2 grid grid-cols-1 gap-1.5 md:mt-2.5 md:gap-2">
+        <div className="mt-2 grid grid-cols-1 gap-1.5 border-t border-slate-200 pt-1.5 md:mt-2.5 md:gap-2 md:pt-2">
           <span className="inline-flex items-center justify-center rounded-lg bg-slate-800 px-1 py-1 text-[10px] font-medium text-white md:px-2 md:py-1.5 md:text-xs">
             Visit
           </span>

@@ -35,7 +35,9 @@ import { checkoutQrImageSrc } from '@/src/lib/checkoutAssetUrl';
 import RatingStars from '@/components/RatingStars';
 import ReviewCard from '@/components/ReviewCard';
 import PublicStorefrontAccessGate from '@/components/PublicStorefrontAccessGate';
+import { useStorefrontTrialLock } from '@/components/StorefrontTrialLockContext';
 import { useAuth } from '@/src/context/AuthContext';
+import { isStoreTrialExpiredWithoutPaidPlan } from '@/src/lib/storeAccess';
 import { buildReviewColors, getThemeForCategory } from '@/src/lib/reviewTheme';
 import { ratingBreakdownFromSummaryOrReviews } from '@/src/lib/reviewRatingBreakdown';
 
@@ -87,6 +89,17 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
       ),
     [user?.id, user?.storeSlug, store?.userId, store?.username]
   );
+
+  const trialLock = useStorefrontTrialLock();
+  const blockVisitorCommerce = Boolean(
+    store && !viewerOwnsProductStore && isStoreTrialExpiredWithoutPaidPlan(store),
+  );
+
+  const tryOpenTrialCommerceLock = () => {
+    if (!blockVisitorCommerce) return false;
+    trialLock?.openVisitorTrialLock();
+    return true;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -295,6 +308,7 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
 
   const handlePayOnline = async () => {
     if (!product || !checkout?.onlinePaymentAvailable) return;
+    if (tryOpenTrialCommerceLock()) return;
     if (viewerOwnsProductStore) {
       setPayError('You cannot purchase products from your own store.');
       return;
@@ -856,6 +870,9 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                     href={`${whatsappLink}?text=Hi%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (tryOpenTrialCommerceLock()) e.preventDefault();
+                    }}
                     className="inline-flex w-full flex-1 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-teal-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_-12px_rgba(13,148,136,0.55)] transition hover:brightness-110"
                   >
                     <MessageCircle className="h-4 w-4" />
@@ -1082,6 +1099,9 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                     href={`${whatsappLink}?text=Hi%2C%20I'm%20interested%20in%20${encodeURIComponent(product.name)}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (tryOpenTrialCommerceLock()) e.preventDefault();
+                    }}
                     className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(15,118,110,0.25)]"
                   >
                     <MessageCircle className="h-4 w-4" />

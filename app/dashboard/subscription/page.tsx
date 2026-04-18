@@ -14,6 +14,7 @@ import {
   QrCode,
   CreditCard,
   Building2,
+  Download,
 } from 'lucide-react';
 import {
   getSubscriptionPlanCatalog,
@@ -31,7 +32,7 @@ import {
 import type {
   SubscriptionPlan,
   StoreSubscription,
-  SubscriptionAddonCharges,
+  SubscriptionCheckoutPricing,
   StoreSubscriptionAddons,
 } from '@/types';
 import { dispatchStoreProfileRefresh } from '@/src/lib/storeSubscriptionAddons';
@@ -45,6 +46,105 @@ import faviconIcon from '@/assets/icon-512x512.svg';
  */
 const SUBSCRIPTION_MOCK_PAYMENT_UI =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SUBSCRIPTION_MOCK_PAYMENT !== 'false';
+
+/**
+ * GST on subscription checkout taxable amount (after billing-term discount, on plan + add-ons gross).
+ * Must match backend `SubscriptionCheckoutPricing::GST_PERCENT`.
+ */
+const SUBSCRIPTION_CHECKOUT_GST_PERCENT = 18;
+
+/**
+ * Same rules as `App\Support\SubscriptionCheckoutPricing`: explicit tier → price-rank (3+ similar plans) → duration.
+ * `catalog` should be the loaded plan list (e.g. dashboard catalog).
+ */
+const subscriptionBillingDiscountPercentForPlan = (
+  plan: SubscriptionPlan,
+  pricing: SubscriptionCheckoutPricing | null,
+  catalog: SubscriptionPlan[]
+): number => {
+  if (!pricing) return 0;
+  const t = plan.billingDiscountTier;
+  if (t === 'one_month') return pricing.discount_1_month_pct;
+  if (t === 'three_months') return pricing.discount_3_months_pct;
+  if (t === 'one_year') return pricing.discount_1_year_pct;
+
+  const rankPct = billingDiscountPercentFromPaidPlanPriceRank(plan, pricing, catalog);
+  if (rankPct !== null) return rankPct;
+
+  const d = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 0;
+  const cycle = plan.billingCycle ?? 'monthly';
+  if (cycle === 'yearly' || d >= 330) return pricing.discount_1_year_pct;
+  if (d >= 60 && d < 330) return pricing.discount_3_months_pct;
+  return pricing.discount_1_month_pct;
+};
+
+/** Mirrors backend `SubscriptionCheckoutPricing::billingDiscountPercentFromPaidPlanPriceRank`. */
+const billingDiscountPercentFromPaidPlanPriceRank = (
+  plan: SubscriptionPlan,
+  pricing: SubscriptionCheckoutPricing,
+  catalog: SubscriptionPlan[]
+): number | null => {
+  if (Number(plan.price) <= 0 || plan.isActive === false) return null;
+  if ((plan.billingCycle ?? 'monthly') === 'yearly') return null;
+  const d = plan.durationDays != null && plan.durationDays > 0 ? plan.durationDays : 0;
+  if (d > 45) return null;
+
+  const candidates = catalog
+    .filter(
+      (p) =>
+        p.isActive !== false &&
+        Number(p.price) > 0 &&
+        (p.billingCycle ?? 'monthly') !== 'yearly' &&
+        (() => {
+          const pd = p.durationDays != null && p.durationDays > 0 ? p.durationDays : 0;
+          return pd <= 45;
+        })()
+    )
+    .sort((a, b) => Number(a.price) - Number(b.price) || String(a.id).localeCompare(String(b.id)));
+
+  const n = candidates.length;
+  if (n < 2) return null;
+  const idx = candidates.findIndex((p) => p.id === plan.id);
+  if (idx < 0) return null;
+  if (n === 2) {
+    return idx === 0 ? pricing.discount_1_month_pct : pricing.discount_1_year_pct;
+  }
+  if (idx === 0) return pricing.discount_1_month_pct;
+  if (idx === 1) return pricing.discount_3_months_pct;
+  return pricing.discount_1_year_pct;
+};
+
+const sumSelectedAddonRupees = (
+  addons: StoreSubscriptionAddons,
+  pricing: SubscriptionCheckoutPricing | null
+): number => {
+  if (!pricing) return 0;
+  return (
+    (addons.paymentGateway ? pricing.payment_gateway_integration_inr : 0) +
+    (addons.qrCode ? pricing.qr_code_inr : 0) +
+    (addons.paymentGatewayHelp ? pricing.payment_gateway_help_inr : 0)
+  );
+};
+
+/** Same math as the confirm modal and Laravel `StoreSubscriptionRazorpayController::createOrder`. */
+const computeSubscriptionCheckoutTotals = (
+  plan: SubscriptionPlan,
+  addons: StoreSubscriptionAddons,
+  pricing: SubscriptionCheckoutPricing | null,
+  catalog: SubscriptionPlan[]
+) => {
+  if (!pricing) return null;
+  const base = Number(plan.price) || 0;
+  const addonSum = sumSelectedAddonRupees(addons, pricing);
+  const grossSubtotal = base + addonSum;
+  const discountPct = subscriptionBillingDiscountPercentForPlan(plan, pricing, catalog);
+  const discountRupees =
+    grossSubtotal > 0 && discountPct > 0 ? Math.round(grossSubtotal * (discountPct / 100)) : 0;
+  const taxableSubtotal = Math.max(0, grossSubtotal - discountRupees);
+  const gstAmount = Math.round(taxableSubtotal * (SUBSCRIPTION_CHECKOUT_GST_PERCENT / 100));
+  const grandTotal = taxableSubtotal + gstAmount;
+  return { grossSubtotal, discountPct, discountRupees, taxableSubtotal, gstAmount, grandTotal };
+};
 
 const formatPlanDuration = (durationDays?: number, billingCycle?: string) => {
   if (!durationDays || durationDays <= 0) {
@@ -67,6 +167,262 @@ const formatPlanDuration = (durationDays?: number, billingCycle?: string) => {
 
   return `${durationDays} days`;
 };
+
+type InvoiceStoreSnapshot = {
+  name: string;
+  username: string;
+  location: string;
+  state?: string | null;
+  district?: string | null;
+  phone?: string;
+  email?: string;
+  whatsapp?: string;
+};
+
+type SubscriptionCheckoutTotals = NonNullable<ReturnType<typeof computeSubscriptionCheckoutTotals>>;
+
+type PaymentSuccessInvoiceSnapshot = {
+  subscription: StoreSubscription;
+  plan: SubscriptionPlan;
+  addons: StoreSubscriptionAddons;
+  totals: SubscriptionCheckoutTotals;
+  method: 'razorpay' | 'mock';
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  paidAtIso: string;
+};
+
+const escapeHtml = (s: string) =>
+  s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const addonInvoiceRows = (
+  addons: StoreSubscriptionAddons,
+  pricing: SubscriptionCheckoutPricing | null
+): { label: string; amount: number }[] => {
+  if (!pricing) return [];
+  const rows: { label: string; amount: number }[] = [];
+  if (addons.paymentGateway && pricing.payment_gateway_integration_inr > 0) {
+    rows.push({ label: 'Payment gateway integration', amount: pricing.payment_gateway_integration_inr });
+  }
+  if (addons.qrCode && pricing.qr_code_inr > 0) {
+    rows.push({ label: 'QR code', amount: pricing.qr_code_inr });
+  }
+  if (addons.paymentGatewayHelp && pricing.payment_gateway_help_inr > 0) {
+    rows.push({ label: 'Payment gateway — company help', amount: pricing.payment_gateway_help_inr });
+  }
+  return rows;
+};
+
+function triggerHtmlInvoiceDownload(filename: string, html: string) {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function buildSubscriptionInvoiceHtml(args: {
+  store: InvoiceStoreSnapshot | null;
+  subscription: StoreSubscription;
+  plan: SubscriptionPlan;
+  addons: StoreSubscriptionAddons;
+  totals: SubscriptionCheckoutTotals;
+  pricing: SubscriptionCheckoutPricing | null;
+  method: 'razorpay' | 'mock';
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  paidAtIso: string;
+}): string {
+  const {
+    store,
+    subscription,
+    plan,
+    addons,
+    totals,
+    pricing,
+    method,
+    razorpayPaymentId,
+    razorpayOrderId,
+    paidAtIso,
+  } = args;
+  const base = Number(plan.price) || 0;
+  const addonRows = addonInvoiceRows(addons, pricing);
+  const paid = new Date(paidAtIso);
+  const paidStr = Number.isNaN(paid.getTime()) ? paidAtIso : paid.toLocaleString('en-IN');
+  const region = [store?.district, store?.state].filter(Boolean).join(', ');
+  const ynBadge = (on: boolean) =>
+    on
+      ? '<span class="badge badge-yes" aria-label="Enabled">Yes</span>'
+      : '<span class="badge badge-no" aria-label="Not enabled">No</span>';
+
+  const storeLeft: string[] = [];
+  const storeRight: string[] = [];
+  if (store?.name) {
+    storeLeft.push(
+      `<div class="kv"><span class="k">Store</span><span class="v">${escapeHtml(store.name)}</span></div>`
+    );
+  }
+  if (store?.username) {
+    storeLeft.push(
+      `<div class="kv"><span class="k">Store URL</span><span class="v">/${escapeHtml(store.username)}</span></div>`
+    );
+  }
+  if (store?.location) {
+    storeLeft.push(
+      `<div class="kv"><span class="k">Location</span><span class="v">${escapeHtml(store.location)}</span></div>`
+    );
+  }
+  if (region) {
+    storeLeft.push(`<div class="kv"><span class="k">Area</span><span class="v">${escapeHtml(region)}</span></div>`);
+  }
+  if (store?.phone) {
+    storeRight.push(
+      `<div class="kv"><span class="k">Phone</span><span class="v">${escapeHtml(store.phone)}</span></div>`
+    );
+  }
+  if (store?.whatsapp) {
+    storeRight.push(
+      `<div class="kv"><span class="k">WhatsApp</span><span class="v">${escapeHtml(store.whatsapp)}</span></div>`
+    );
+  }
+  if (store?.email) {
+    storeRight.push(
+      `<div class="kv"><span class="k">Email</span><span class="v">${escapeHtml(store.email)}</span></div>`
+    );
+  }
+  const hasStoreBlock = storeLeft.length > 0 || storeRight.length > 0;
+  const storeGridClass =
+    storeLeft.length > 0 && storeRight.length > 0 ? 'store-grid' : 'store-grid store-grid-single';
+  const storeSectionHtml = hasStoreBlock
+    ? `<div class="box store-box">
+    <p class="box-h">Store details</p>
+    <div class="${storeGridClass}">
+      <div class="store-col">${storeLeft.join('')}</div>
+      <div class="store-col">${storeRight.join('')}</div>
+    </div>
+  </div>`
+    : '';
+
+  const addonRowsHtml = addonRows
+    .map(
+      (r) =>
+        `<tr><td>${escapeHtml(r.label)}</td><td style="text-align:right">₹${escapeHtml(String(Math.round(r.amount)))}</td></tr>`
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Larawans — Subscription payment receipt</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;}
+  body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:10px 12px;color:#0f172a;max-width:640px;margin-left:auto;margin-right:auto;line-height:1.35;font-size:13px;}
+  .doc-header{margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid #d97706;}
+  .doc-heading{margin:0;font-weight:normal;line-height:1.2;}
+  .brand{display:block;font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:#b45309;}
+  .doc-title{display:block;font-size:0.95rem;font-weight:600;color:#1e293b;margin-top:4px;}
+  .doc-tagline{font-size:0.7rem;color:#64748b;margin:4px 0 0 0;}
+  .muted{color:#64748b;font-size:0.72rem;margin:6px 0 0 0;}
+  .box-h{margin:0 0 6px 0;font-size:0.65rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;}
+  .box{border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin:6px 0;background:#f8fafc;}
+  .plan-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;font-size:0.8rem;}
+  @media (max-width:480px){.plan-grid{grid-template-columns:1fr;}}
+  .kv{display:flex;flex-direction:column;gap:1px;}
+  .kv .k{font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#64748b;}
+  .kv .v{font-size:0.78rem;color:#0f172a;word-break:break-word;}
+  .store-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;align-items:start;}
+  .store-grid-single{grid-template-columns:1fr;}
+  @media (max-width:480px){.store-grid:not(.store-grid-single){grid-template-columns:1fr;}}
+  .store-col{display:flex;flex-direction:column;gap:6px;min-width:0;}
+  table{width:100%;border-collapse:collapse;margin:6px 0;}
+  th,td{padding:3px 4px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:0.78rem;}
+  th{border-bottom:2px solid #cbd5e1;padding-bottom:4px;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;color:#64748b;}
+  .total td{font-weight:700;font-size:0.85rem;border-bottom:none;padding-top:6px;}
+  .addons-list{display:flex;flex-direction:column;gap:5px;margin-top:4px;}
+  .addon-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:0.78rem;min-height:1.5em;}
+  .addon-name{color:#334155;flex:1;min-width:0;}
+  .badge{display:inline-flex;align-items:center;justify-content:center;min-width:2.5rem;padding:2px 8px;border-radius:999px;font-size:0.65rem;font-weight:700;letter-spacing:0.02em;text-transform:uppercase;flex-shrink:0;}
+  .badge-yes{background:linear-gradient(180deg,#dcfce7,#bbf7d0);color:#14532d;border:1px solid #86efac;}
+  .badge-no{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;}
+  .foot{margin:8px 0 0 0;}
+  @media print{
+    body{padding:8px;font-size:11pt;max-width:none;}
+    .doc-header{border-bottom-color:#94a3b8;}
+  }
+</style>
+</head>
+<body>
+  <header class="doc-header">
+    <h1 class="doc-heading">
+      <span class="brand">Larawans</span>
+      <span class="doc-title">Subscription payment receipt</span>
+    </h1>
+    <p class="doc-tagline">Official summary of your store subscription payment on the Larawans platform.</p>
+    <p class="muted">Paid: ${escapeHtml(paidStr)} · ${method === 'mock' ? 'Mock payment (test)' : 'Razorpay'}</p>
+  </header>
+  <div class="box">
+    <p class="box-h">Subscription</p>
+    <div class="plan-grid">
+      <div class="kv"><span class="k">Plan</span><span class="v">${escapeHtml(plan.name)}</span></div>
+      <div class="kv"><span class="k">Period</span><span class="v">${escapeHtml(new Date(subscription.startsAt).toLocaleDateString('en-IN'))} → ${escapeHtml(new Date(subscription.endsAt).toLocaleDateString('en-IN'))}</span></div>
+      <div class="kv"><span class="k">Subscription ID</span><span class="v">${escapeHtml(subscription.id)}</span></div>
+    </div>
+  </div>
+  ${storeSectionHtml}
+  <table>
+    <thead><tr><th>Description</th><th style="text-align:right">Amount (INR)</th></tr></thead>
+    <tbody>
+      <tr><td>Plan (${escapeHtml(formatPlanDuration(plan.durationDays, plan.billingCycle))})</td><td style="text-align:right">₹${escapeHtml(String(Math.round(base)))}</td></tr>
+      ${addonRowsHtml}
+      <tr><td>Subtotal (base + add-ons)</td><td style="text-align:right">₹${escapeHtml(String(Math.round(totals.grossSubtotal)))}</td></tr>
+      <tr><td>Billing discount (${totals.discountPct}%)</td><td style="text-align:right">${totals.discountRupees > 0 ? '−' : ''}₹${escapeHtml(String(Math.round(totals.discountRupees)))}</td></tr>
+      <tr><td>Amount before GST</td><td style="text-align:right">₹${escapeHtml(String(Math.round(totals.taxableSubtotal)))}</td></tr>
+      <tr><td>GST (${SUBSCRIPTION_CHECKOUT_GST_PERCENT}%)</td><td style="text-align:right">₹${escapeHtml(String(Math.round(totals.gstAmount)))}</td></tr>
+      <tr class="total"><td>Total paid</td><td style="text-align:right">₹${escapeHtml(String(Math.round(totals.grandTotal)))}</td></tr>
+    </tbody>
+  </table>
+  <div class="box">
+    <p class="box-h">Add-ons</p>
+    <div class="addons-list">
+      <div class="addon-row">
+        <span class="addon-name">Payment gateway integration</span>
+        ${ynBadge(addons.paymentGateway)}
+      </div>
+      <div class="addon-row">
+        <span class="addon-name">QR code</span>
+        ${ynBadge(addons.qrCode)}
+      </div>
+      <div class="addon-row">
+        <span class="addon-name">Payment gateway — company help</span>
+        ${ynBadge(addons.paymentGatewayHelp)}
+      </div>
+    </div>
+  </div>
+  ${
+    method === 'razorpay' && (razorpayPaymentId || razorpayOrderId)
+      ? `<div class="box">
+          <p class="box-h">Razorpay</p>
+          ${razorpayPaymentId ? `<div class="kv" style="margin-top:4px"><span class="k">Payment ID</span><span class="v" style="font-size:0.72rem">${escapeHtml(razorpayPaymentId)}</span></div>` : ''}
+          ${razorpayOrderId ? `<div class="kv" style="margin-top:4px"><span class="k">Order ID</span><span class="v" style="font-size:0.72rem">${escapeHtml(razorpayOrderId)}</span></div>` : ''}
+        </div>`
+      : ''
+  }
+  <p class="muted foot">Print → Save as PDF from your browser for a PDF copy.</p>
+</body>
+</html>`;
+}
 
 /** Whole calendar days from local midnight today to the subscription end date (date part of `endsAt` ISO). */
 const getCalendarDaysRemaining = (endsAtIso: string): number => {
@@ -166,7 +522,7 @@ export default function SubscriptionPage() {
   /** Plan chosen via “Choose plan” — checkout summary + add-on toggles. */
   const [checkoutPlan, setCheckoutPlan] = useState<SubscriptionPlan | null>(null);
   const [checkoutConfirmOpen, setCheckoutConfirmOpen] = useState(false);
-  const [addonPrices, setAddonPrices] = useState<SubscriptionAddonCharges | null>(null);
+  const [addonPrices, setAddonPrices] = useState<SubscriptionCheckoutPricing | null>(null);
   const [addonPricesLoading, setAddonPricesLoading] = useState(false);
   /** Add-on selection is per-plan card (so toggling one card doesn't toggle all). */
   const [addonsByPlanId, setAddonsByPlanId] = useState<Record<string, StoreSubscriptionAddons>>({});
@@ -186,6 +542,9 @@ export default function SubscriptionPage() {
   const paymentGatewayPromptCloseRef = useRef<HTMLButtonElement>(null);
   /** Prevents Mock + Razorpay flows from running together if clicks fire close together. */
   const subscriptionCheckoutLockRef = useRef(false);
+  const [invoiceStoreSnapshot, setInvoiceStoreSnapshot] = useState<InvoiceStoreSnapshot | null>(null);
+  const [paymentSuccessInvoice, setPaymentSuccessInvoice] = useState<PaymentSuccessInvoiceSnapshot | null>(null);
+  const paymentSuccessCloseRef = useRef<HTMLButtonElement>(null);
 
   const openPlanModal = (plan: SubscriptionPlan) => {
     setSelectedPlan(plan);
@@ -253,6 +612,22 @@ export default function SubscriptionPage() {
   }, [paymentGatewaySuggestOpen]);
 
   useEffect(() => {
+    if (!paymentSuccessInvoice) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setPaymentSuccessInvoice(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const t = window.setTimeout(() => paymentSuccessCloseRef.current?.focus(), 0);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = prevOverflow;
+      window.clearTimeout(t);
+    };
+  }, [paymentSuccessInvoice]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       setAddonPricesLoading(true);
@@ -265,6 +640,9 @@ export default function SubscriptionPage() {
             payment_gateway_integration_inr: 0,
             qr_code_inr: 0,
             payment_gateway_help_inr: 0,
+            discount_1_month_pct: 0,
+            discount_3_months_pct: 0,
+            discount_1_year_pct: 0,
           });
         }
       } finally {
@@ -351,6 +729,16 @@ export default function SubscriptionPage() {
       }
 
       setStoreId(store.id);
+      setInvoiceStoreSnapshot({
+        name: store.name,
+        username: store.username,
+        location: store.location ?? '',
+        state: store.state ?? null,
+        district: store.district ?? null,
+        phone: store.phone ?? '',
+        email: store.email ?? '',
+        whatsapp: store.whatsapp ?? '',
+      });
       const { activeSubscription: activeSub } = await getStoreSubscription(store.id);
       setActiveSubscription(activeSub);
       setError(null);
@@ -370,6 +758,38 @@ export default function SubscriptionPage() {
     if (!id) return hydratedStoreAddons;
     return addonsByPlanId[id] ?? hydratedStoreAddons;
   };
+
+  const showPaidSubscriptionSuccess = useCallback(
+    (
+      subscription: StoreSubscription,
+      plan: SubscriptionPlan,
+      addons: StoreSubscriptionAddons,
+      method: 'razorpay' | 'mock',
+      razorpay?: { paymentId?: string; orderId?: string }
+    ) => {
+      const totals = computeSubscriptionCheckoutTotals(plan, addons, addonPrices, plans);
+      if (totals) {
+        setPaymentSuccessInvoice({
+          subscription,
+          plan,
+          addons,
+          totals,
+          method,
+          razorpayPaymentId: razorpay?.paymentId,
+          razorpayOrderId: razorpay?.orderId,
+          paidAtIso: new Date().toISOString(),
+        });
+        setSuccessMessage(null);
+      } else {
+        setSuccessMessage(
+          method === 'mock'
+            ? `✅ Mock payment successful! You are now on the ${subscription.plan.name} plan.`
+            : `✅ Payment successful! You are now on the ${subscription.plan.name} plan.`
+        );
+      }
+    },
+    [addonPrices, plans]
+  );
 
   const handleActivatePlan = async (plan: SubscriptionPlan, addons?: StoreSubscriptionAddons) => {
     if (!storeId) return;
@@ -435,6 +855,21 @@ export default function SubscriptionPage() {
       dispatchStoreProfileRefresh();
 
       const order = await createStoreSubscriptionRazorpayOrder(storeId, { planId: plan.id, addons });
+
+      const localTotals = computeSubscriptionCheckoutTotals(plan, addons, addonPrices, plans);
+      if (localTotals) {
+        const serverRupees = order.pricing?.totalRupees ?? Math.round(Number(order.amount) / 100);
+        if (serverRupees !== localTotals.grandTotal) {
+          throw new Error(
+            'Payment amount (server Rs. ' +
+              serverRupees +
+              ') does not match the page total (Rs. ' +
+              localTotals.grandTotal +
+              '). Deploy the latest Laravel backend for subscription checkout (billing discount + GST), restart PHP, then try again.'
+          );
+        }
+      }
+
       await loadRazorpayCheckoutScript();
 
       const RazorpayCtor = window.Razorpay;
@@ -454,6 +889,7 @@ export default function SubscriptionPage() {
 
         const rzp = new RazorpayCtor({
           key: order.keyId,
+          /** Omit `amount`: Razorpay loads rupees from the order created on the server (avoids client/server drift). */
           order_id: order.orderId,
           currency: order.currency,
           name: 'Larawans',
@@ -479,7 +915,10 @@ export default function SubscriptionPage() {
                 setPaymentGatewaySuggestOpen(false);
                 setCheckoutPlan(null);
                 dispatchStoreProfileRefresh();
-                setSuccessMessage(`✅ Payment successful! You are now on the ${subscription.plan.name} plan.`);
+                showPaidSubscriptionSuccess(subscription, plan, addons, 'razorpay', {
+                  paymentId: response.razorpay_payment_id,
+                  orderId: response.razorpay_order_id,
+                });
               } catch (verifyErr) {
                 setActivationError(
                   verifyErr instanceof Error
@@ -547,7 +986,7 @@ export default function SubscriptionPage() {
       setSubscriptionNotice(null);
       setPaymentGatewaySuggestOpen(false);
       setCheckoutPlan(null);
-      setSuccessMessage(`✅ Mock payment successful! You are now on the ${subscription.plan.name} plan.`);
+      showPaidSubscriptionSuccess(subscription, plan, addons, 'mock');
     } catch (err) {
       setActivationError(
         isApiError(err)
@@ -561,16 +1000,6 @@ export default function SubscriptionPage() {
       subscriptionCheckoutLockRef.current = false;
     }
   };
-
-  const checkoutAddons = checkoutAddonPayload(checkoutPlan?.id ?? null);
-  const addonSum =
-    addonPrices != null
-      ? (checkoutAddons.paymentGateway ? addonPrices.payment_gateway_integration_inr : 0) +
-        (checkoutAddons.qrCode ? addonPrices.qr_code_inr : 0) +
-        (checkoutAddons.paymentGatewayHelp ? addonPrices.payment_gateway_help_inr : 0)
-      : 0;
-  const checkoutBase = checkoutPlan ? Number(checkoutPlan.price) : 0;
-  const checkoutTotal = checkoutBase + addonSum;
 
   /** Paid subscription period is running (used for contextual copy; checkout on plan cards stays available). */
   const planChangeLockedByPaidPeriod =
@@ -833,6 +1262,23 @@ export default function SubscriptionPage() {
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                   >
+                    {Number(plan.price) > 0 ? (
+                      <div className="mb-3 rounded-lg border border-emerald-200/90 bg-emerald-50/90 px-2.5 py-2 md:px-3 md:py-2.5">
+                        {addonPricesLoading || !addonPrices ? (
+                          <p className="text-[10px] font-medium text-emerald-900/80 md:text-xs">
+                            <Loader2 className="mr-1 inline h-3 w-3 animate-spin align-middle" aria-hidden />
+                            Loading billing discount from settings…
+                          </p>
+                        ) : (
+                          <p className="text-[11px] font-bold text-emerald-950 md:text-xs">
+                            Billing discount on checkout:{' '}
+                            <span className="tabular-nums">
+                              {subscriptionBillingDiscountPercentForPlan(plan, addonPrices, plans)}%
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Optional add-ons</p>
                       <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
@@ -1173,19 +1619,60 @@ export default function SubscriptionPage() {
                         (addons.paymentGatewayHelp ? addonPrices.payment_gateway_help_inr : 0)
                       : 0;
                   const base = Number(checkoutPlan.price) || 0;
-                  const total = base + addonSumLocal;
+                  const grossSubtotal = base + addonSumLocal;
+                  const discountPct = subscriptionBillingDiscountPercentForPlan(checkoutPlan, addonPrices, plans);
+                  const discountRupees =
+                    grossSubtotal > 0 && discountPct > 0
+                      ? Math.round(grossSubtotal * (discountPct / 100))
+                      : 0;
+                  const taxableSubtotal = Math.max(0, grossSubtotal - discountRupees);
+                  const gstAmount = Math.round(taxableSubtotal * (SUBSCRIPTION_CHECKOUT_GST_PERCENT / 100));
+                  const grandTotal = taxableSubtotal + gstAmount;
                   return (
                     <div className="space-y-4">
                       <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:p-4">
                         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">Summary</p>
-                        <div className="mt-2 flex flex-wrap items-end justify-between gap-2">
-                          <p className="text-xs font-semibold text-slate-900 sm:text-sm">
-                            ₹{formatInr(base)} / {formatPlanDuration(checkoutPlan.durationDays, checkoutPlan.billingCycle)}
-                          </p>
-                          <p className="text-xs font-semibold text-slate-900 sm:text-sm">Total: ₹{formatInr(total)}</p>
+                        <p className="mt-2 text-xs font-semibold text-slate-900 sm:text-sm">
+                          ₹{formatInr(base)} / {formatPlanDuration(checkoutPlan.durationDays, checkoutPlan.billingCycle)}
+                        </p>
+                        <div className="mt-3 space-y-2 border-t border-slate-200/90 pt-3 text-[11px] text-slate-700 sm:text-xs">
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Subtotal (base + add-ons)</span>
+                            <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                              ₹{formatInr(grossSubtotal)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Billing discount ({discountPct}%)</span>
+                            <span className="shrink-0 font-semibold tabular-nums text-emerald-700">
+                              {discountRupees > 0
+                                ? `-\u20B9${formatInr(discountRupees)}`
+                                : `\u20B9${formatInr(0)}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Amount before GST</span>
+                            <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                              ₹{formatInr(taxableSubtotal)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>GST ({SUBSCRIPTION_CHECKOUT_GST_PERCENT}%)</span>
+                            <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                              ₹{formatInr(gstAmount)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 border-t border-slate-200/90 pt-2 text-xs font-bold text-slate-900 sm:text-sm">
+                            <span>Total payable</span>
+                            <span className="shrink-0 tabular-nums">
+                              ₹{formatInr(grandTotal)}
+                            </span>
+                          </div>
                         </div>
-                        <p className="mt-1 text-[11px] text-slate-500 sm:text-xs">
-                          Base ₹{formatInr(base)} + Add-ons ₹{formatInr(addonSumLocal)}
+                        <p className="mt-2 text-[10px] text-slate-500 sm:text-[11px]">
+                          Base ₹{formatInr(base)} + Add-ons ₹{formatInr(addonSumLocal)}. Billing discount {discountPct}% (from
+                          platform settings) is applied first; then {SUBSCRIPTION_CHECKOUT_GST_PERCENT}% GST on the amount
+                          before GST.
                         </p>
                       </div>
 
@@ -1341,10 +1828,18 @@ export default function SubscriptionPage() {
                         (current.paymentGatewayHelp ? addonPrices.payment_gateway_help_inr : 0)
                       : 0;
                   const base = Number(checkoutPlan.price) || 0;
-                  const total = base + addonSumLocal;
+                  const grossPg = base + addonSumLocal;
+                  const discPctPg = subscriptionBillingDiscountPercentForPlan(checkoutPlan, addonPrices, plans);
+                  const discPg =
+                    grossPg > 0 && discPctPg > 0 ? Math.round(grossPg * (discPctPg / 100)) : 0;
+                  const taxablePg = Math.max(0, grossPg - discPg);
+                  const gstPg = Math.round(taxablePg * (SUBSCRIPTION_CHECKOUT_GST_PERCENT / 100));
+                  const totalWithGstPg = taxablePg + gstPg;
                   return (
                     <p className="mt-2.5 rounded-lg border border-slate-100 bg-slate-50/80 px-2 py-1.5 text-[11px] text-slate-700">
-                      <span className="font-semibold text-slate-800">Checkout total: ₹{formatInr(total)}</span>
+                      <span className="font-semibold text-slate-800">
+                        Total payable (incl. {SUBSCRIPTION_CHECKOUT_GST_PERCENT}% GST): ₹{formatInr(totalWithGstPg)}
+                      </span>
                       {pgFee > 0 && !current.paymentGateway ? (
                         <span className="block text-slate-600">
                           Turn on gateway to add +₹{formatInr(pgFee)} (then continue to{' '}
@@ -1406,6 +1901,225 @@ export default function SubscriptionPage() {
           </div>,
           document.body
         )}
+
+      {mounted &&
+        paymentSuccessInvoice &&
+        (() => {
+          const inv = paymentSuccessInvoice;
+          const storeSnap = invoiceStoreSnapshot;
+          const t = inv.totals;
+          return createPortal(
+            <div
+              className="fixed inset-0 z-[105] flex items-end justify-center sm:items-center sm:p-4"
+              role="presentation"
+            >
+              <button
+                type="button"
+                className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+                aria-label="Close dialog"
+                onClick={() => setPaymentSuccessInvoice(null)}
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="payment-success-title"
+                className="relative z-10 flex max-h-[min(92dvh,900px)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:rounded-3xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-4 sm:px-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-sm">
+                        <Check className="h-5 w-5" aria-hidden />
+                      </span>
+                      <div className="min-w-0 pt-0.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+                          Payment successful
+                        </p>
+                        <h2
+                          id="payment-success-title"
+                          className="text-lg font-bold leading-tight text-slate-900 sm:text-xl"
+                        >
+                          {inv.plan.name} plan is active
+                        </h2>
+                        <p className="mt-1 text-xs text-slate-600 sm:text-sm">
+                          Valid until{' '}
+                          <span className="font-medium">
+                            {new Date(inv.subscription.endsAt).toLocaleDateString('en-IN')}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      ref={paymentSuccessCloseRef}
+                      type="button"
+                      onClick={() => setPaymentSuccessInvoice(null)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                      aria-label="Close"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+                  {storeSnap ? (
+                    <div className="mb-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Store</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">{storeSnap.name}</p>
+                      {storeSnap.username ? (
+                        <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">Store URL: /{storeSnap.username}</p>
+                      ) : null}
+                      {storeSnap.location ? (
+                        <p className="mt-1 text-xs text-slate-600 sm:text-sm">{storeSnap.location}</p>
+                      ) : null}
+                      {[storeSnap.district, storeSnap.state].filter(Boolean).length > 0 ? (
+                        <p className="mt-0.5 text-xs text-slate-600">
+                          {[storeSnap.district, storeSnap.state].filter(Boolean).join(', ')}
+                        </p>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                        {storeSnap.phone ? <span>Phone: {storeSnap.phone}</span> : null}
+                        {storeSnap.whatsapp ? <span>WhatsApp: {storeSnap.whatsapp}</span> : null}
+                        {storeSnap.email ? (
+                          <span className="min-w-0 max-w-full break-all">Email: {storeSnap.email}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Billing summary</p>
+                    <p className="mt-2 text-xs font-semibold text-slate-900 sm:text-sm">
+                      ₹{formatInr(Number(inv.plan.price) || 0)} / {formatPlanDuration(inv.plan.durationDays, inv.plan.billingCycle)}
+                    </p>
+                    <div className="mt-3 space-y-2 border-t border-slate-200/90 pt-3 text-[11px] text-slate-700 sm:text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>Subtotal (base + add-ons)</span>
+                        <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                          ₹{formatInr(t.grossSubtotal)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>Billing discount ({t.discountPct}%)</span>
+                        <span className="shrink-0 font-semibold tabular-nums text-emerald-700">
+                          {t.discountRupees > 0 ? `−₹${formatInr(t.discountRupees)}` : `₹${formatInr(0)}`}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>Amount before GST</span>
+                        <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                          ₹{formatInr(t.taxableSubtotal)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>GST ({SUBSCRIPTION_CHECKOUT_GST_PERCENT}%)</span>
+                        <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                          ₹{formatInr(t.gstAmount)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 border-t border-slate-200/90 pt-2 text-xs font-bold text-slate-900 sm:text-sm">
+                        <span>Total paid</span>
+                        <span className="shrink-0 tabular-nums">₹{formatInr(t.grandTotal)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-slate-100 bg-white p-3 sm:p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Add-ons</p>
+                    <ul className="mt-2 space-y-1.5 text-xs text-slate-700 sm:text-sm">
+                      <li className="flex justify-between gap-3">
+                        <span className="font-medium">Payment gateway integration</span>
+                        <span className={inv.addons.paymentGateway ? 'font-semibold text-emerald-700' : 'text-slate-500'}>
+                          {inv.addons.paymentGateway ? 'Yes' : 'No'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between gap-3">
+                        <span className="font-medium">QR code</span>
+                        <span className={inv.addons.qrCode ? 'font-semibold text-emerald-700' : 'text-slate-500'}>
+                          {inv.addons.qrCode ? 'Yes' : 'No'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between gap-3">
+                        <span className="font-medium">Payment gateway — company help</span>
+                        <span
+                          className={inv.addons.paymentGatewayHelp ? 'font-semibold text-emerald-700' : 'text-slate-500'}
+                        >
+                          {inv.addons.paymentGatewayHelp ? 'Yes' : 'No'}
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/80 p-3 sm:p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Payment</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {inv.method === 'mock' ? 'Mock payment (test)' : 'Razorpay'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Paid at {new Date(inv.paidAtIso).toLocaleString('en-IN')}
+                    </p>
+                    {inv.method === 'razorpay' && (inv.razorpayPaymentId || inv.razorpayOrderId) ? (
+                      <div className="mt-2 space-y-0.5 text-xs text-slate-600">
+                        {inv.razorpayPaymentId ? (
+                          <p className="break-all">
+                            <span className="font-medium text-slate-700">Payment ID: </span>
+                            {inv.razorpayPaymentId}
+                          </p>
+                        ) : null}
+                        {inv.razorpayOrderId ? (
+                          <p className="break-all">
+                            <span className="font-medium text-slate-700">Order ID: </span>
+                            {inv.razorpayOrderId}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3 sm:px-6 sm:py-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const html = buildSubscriptionInvoiceHtml({
+                          store: invoiceStoreSnapshot,
+                          subscription: inv.subscription,
+                          plan: inv.plan,
+                          addons: inv.addons,
+                          totals: inv.totals,
+                          pricing: addonPrices,
+                          method: inv.method,
+                          razorpayPaymentId: inv.razorpayPaymentId,
+                          razorpayOrderId: inv.razorpayOrderId,
+                          paidAtIso: inv.paidAtIso,
+                        });
+                        const slug = (invoiceStoreSnapshot?.username ?? 'store').replace(/[^a-zA-Z0-9_-]/g, '_');
+                        triggerHtmlInvoiceDownload(
+                          `subscription-invoice-${slug}-${inv.subscription.id.slice(0, 8)}.html`,
+                          html
+                        );
+                      }}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700 sm:w-auto sm:px-6"
+                    >
+                      <Download className="h-4 w-4" aria-hidden />
+                      Download invoice
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentSuccessInvoice(null)}
+                      className="w-full rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto sm:px-6"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          );
+        })()}
 
     </div>
   );

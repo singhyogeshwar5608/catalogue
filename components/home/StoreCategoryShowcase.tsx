@@ -98,24 +98,11 @@ export default function StoreCategoryShowcase({ stores, categories, activeCatego
       {stores.length ? (
         <div className="space-y-8">
           <div className="grid grid-cols-2 gap-4 sm:hidden">
-            {mobilePreviewStores.map((store, index) => {
-              const chunkIndex = index % 7;
-              const isFullWidth = chunkIndex === 0;
-
-              if (isFullWidth) {
-                return (
-                  <div key={store.id} className="col-span-2 min-h-0 w-full">
-                    <VerifiedSellerCard store={store} categoryBannerIndex={storeCategoryIndex.get(store.id) ?? 0} />
-                  </div>
-                );
-              }
-
-              return (
-                <div key={store.id} className="col-span-1 min-h-0 min-w-0 w-full">
-                  <StoreCard store={store} isCompact categoryBannerIndex={storeCategoryIndex.get(store.id) ?? 0} />
-                </div>
-              );
-            })}
+            {mobilePreviewStores.map((store) => (
+              <div key={store.id} className="col-span-1 min-h-0 min-w-0 w-full">
+                <StoreCard store={store} isCompact categoryBannerIndex={storeCategoryIndex.get(store.id) ?? 0} />
+              </div>
+            ))}
           </div>
 
           {hasMoreStores ? (

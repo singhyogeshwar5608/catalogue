@@ -345,8 +345,8 @@ export default function CreateStorePage() {
   }
 
   return (
-    <div className="create-store-page min-h-[calc(100dvh-68px-env(safe-area-inset-bottom,0px))] bg-gray-50 overflow-y-auto px-2 pt-3 pb-1 md:min-h-[100dvh] md:h-auto md:max-h-none md:overflow-y-auto md:px-4 md:pt-6 md:pb-8">
-      <div className="create-store-shell flex w-full items-start px-2 py-0 max-[700px]:px-1.5 md:h-auto md:px-0 md:py-0">
+    <div className="create-store-page flex w-full flex-col bg-gray-50 px-2 pt-3 pb-8 md:px-4 md:pt-6 md:pb-12">
+      <div className="create-store-shell flex w-full items-start px-2 py-0 max-[700px]:px-1.5 md:px-0 md:py-0">
         <div className="create-store-container mx-auto flex w-full max-w-md flex-1 flex-col justify-start">
           <div className="mb-2 flex items-center justify-end md:mb-4">
             <Link

@@ -12,7 +12,7 @@ import SectionHeader from '@/components/SectionHeader';
 import HeroBanner from '@/components/HeroBanner';
 import VerifiedSellerCard from '@/components/VerifiedSellerCard';
 import StoreExplorer, { createCategorySlug } from '@/components/home/StoreExplorer';
-import { getAllStores } from '@/src/lib/api';
+import { getAllStores, getFollowedStores } from '@/src/lib/api';
 import type { Product, Service, Store } from '@/types';
 import { useLocationContext } from '@/src/context/LocationContext';
 import { useSearch } from '@/src/context/SearchContext';
@@ -27,6 +27,7 @@ export default function HomePage() {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [fallbackQueryUsed, setFallbackQueryUsed] = useState<string | null>(null);
+  const [followedStores, setFollowedStores] = useState<Store[]>([]);
   const { location, isLoading: locationDetecting } = useLocationContext();
   const { searchQuery, setSearchQuery } = useSearch();
   const { user } = useAuth();
@@ -51,6 +52,19 @@ export default function HomePage() {
     };
     fetchStores();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const list = await getFollowedStores();
+      if (!cancelled) {
+        setFollowedStores(list);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   // Handle URL search parameters
   useEffect(() => {
@@ -153,12 +167,6 @@ export default function HomePage() {
     [nearbyStores, user]
   );
 
-  const verifiedStores = useMemo(
-    () =>
-      orderedStores.filter((s) => s.isVerified || s.isBoosted || s.activeSubscription).slice(0, 6),
-    [orderedStores]
-  );
-
   // Per-category position counters so each card in the same category shows a different banner image.
   const computeCategoryIndices = (list: Store[]) => {
     const counters: Record<string, number> = {};
@@ -171,6 +179,22 @@ export default function HomePage() {
     });
     return map;
   };
+
+  const verifiedStores = useMemo(
+    () =>
+      orderedStores.filter((s) => s.isVerified || s.isBoosted || s.activeSubscription).slice(0, 6),
+    [orderedStores]
+  );
+
+  const orderedFollowedStores = useMemo(
+    () => prioritizeCurrentUserStore(followedStores, user),
+    [followedStores, user]
+  );
+
+  const followedCatIdx = useMemo(
+    () => computeCategoryIndices(orderedFollowedStores),
+    [orderedFollowedStores]
+  );
 
   const nearbyCatIdx = useMemo(() => computeCategoryIndices(orderedNearbyStores), [orderedNearbyStores]);
   const verifiedCatIdx = useMemo(() => computeCategoryIndices(verifiedStores), [verifiedStores]);
@@ -244,28 +268,12 @@ export default function HomePage() {
   const renderResponsiveStoreGrid = (
     list: Store[],
     bannerIndexMap?: Map<number | string, number>,
-    showMobileAllStoresButton = false,
-    mobileFeaturedBanner = false
+    showMobileAllStoresButton = false
   ) => (
     <>
       <div className="grid grid-cols-2 gap-4 sm:hidden">
-        {list.slice(0, 7).map((store, index) => {
-          const chunkIndex = index % 7;
-          const isFullWidth = chunkIndex === 0;
+        {list.slice(0, 7).map((store) => {
           const categoryBannerIndex = bannerIndexMap?.get(store.id) ?? 0;
-
-          if (isFullWidth) {
-            return (
-              <div key={store.id} className="col-span-2 min-h-0 w-full">
-                <VerifiedSellerCard
-                  store={store}
-                  categoryBannerIndex={categoryBannerIndex}
-                  isMobileFeatured={mobileFeaturedBanner}
-                />
-              </div>
-            );
-          }
-
           return (
             <div key={store.id} className="col-span-1 min-h-0 min-w-0 w-full">
               <StoreCard store={store} isCompact categoryBannerIndex={categoryBannerIndex} />
@@ -484,6 +492,19 @@ export default function HomePage() {
         </div>
       </section>
 
+      {orderedFollowedStores.length > 0 ? (
+        <section className="border-t border-amber-100/80 bg-gradient-to-b from-amber-50/50 to-white px-4 pb-0 pt-8 sm:py-12">
+          <div className="mx-auto max-w-7xl">
+            <SectionHeader
+              title="Following"
+              compactOnMobile
+              subtitle="Stores you follow — quick access from your home feed"
+            />
+            {renderResponsiveStoreGrid(orderedFollowedStores, followedCatIdx, true)}
+          </div>
+        </section>
+      ) : null}
+
       <section className="px-4 pb-0 pt-[5%] sm:py-12">
         <div className="max-w-7xl mx-auto">
           <SectionHeader
@@ -510,7 +531,7 @@ export default function HomePage() {
             </p>
           )}
           {!nearbyLoading && orderedNearbyStores.length > 0 && (
-            renderResponsiveStoreGrid(orderedNearbyStores, nearbyCatIdx, true, true)
+            renderResponsiveStoreGrid(orderedNearbyStores, nearbyCatIdx, true)
           )}
           {fallbackQueryUsed && (
             <p className="text-xs text-gray-400 text-center mt-4">
@@ -526,7 +547,7 @@ export default function HomePage() {
             title="Verified Sellers"
             subtitle="Trusted stores with verified badges"
           />
-          {renderResponsiveStoreGrid(verifiedStores, verifiedCatIdx, true, false)}
+          {renderResponsiveStoreGrid(verifiedStores, verifiedCatIdx, true)}
         </div>
       </section>
 

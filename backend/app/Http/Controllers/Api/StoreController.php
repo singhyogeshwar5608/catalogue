@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\PlatformSetting;
 use App\Models\Product;
 use App\Models\Store;
+use App\Models\StoreFollow;
 use App\Support\ImageCompression;
 use App\Support\NextCatalogCacheInvalidate;
 use App\Support\ProductImageStorage;
@@ -316,6 +317,114 @@ class StoreController extends Controller
         }
     }
 
+    /**
+     * Active stores the viewer follows (Bearer JWT → u:id, or guest_token), most recently followed first.
+     */
+    public function followingStores(Request $request): \Illuminate\Http\JsonResponse
+    {
+        if (! Schema::hasTable('store_follows')) {
+            return $this->successResponse('Stores you follow', ['stores' => []]);
+        }
+
+        $actorKey = app(StoreEngagementController::class)->resolveActorKey($request);
+        if ($actorKey === null) {
+            return $this->successResponse('Stores you follow', ['stores' => []]);
+        }
+
+        $idsOrdered = StoreFollow::query()
+            ->where('actor_key', $actorKey)
+            ->orderByDesc('updated_at')
+            ->pluck('store_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($idsOrdered === []) {
+            return $this->successResponse('Stores you follow', ['stores' => []]);
+        }
+
+        $storeTable = (new Store)->getTable();
+        $hasCol = static fn (string $c): bool => Schema::hasColumn($storeTable, $c);
+
+        $q = Store::query()->whereIn('id', $idsOrdered);
+        if ($hasCol('is_active')) {
+            $q->where('is_active', true);
+        }
+
+        $hasProductsTable = Schema::hasTable('products');
+        $hasServicesTable = Schema::hasTable('services');
+        $productHasActive = $hasProductsTable && Schema::hasColumn('products', 'is_active');
+        $serviceHasActive = $hasServicesTable && Schema::hasColumn('services', 'is_active');
+
+        $eager = [];
+        if ($hasProductsTable) {
+            $eager['products'] = function ($q2) use ($productHasActive) {
+                $q2->orderBy('created_at', 'desc')->limit(3);
+                if ($productHasActive) {
+                    $q2->where('is_active', true);
+                }
+            };
+        }
+        if ($hasServicesTable) {
+            $eager['services'] = function ($q2) use ($serviceHasActive) {
+                $q2->orderBy('created_at', 'desc')->limit(3);
+                if ($serviceHasActive) {
+                    $q2->where('is_active', true);
+                }
+            };
+        }
+        if (Schema::hasTable('categories')) {
+            $eager['category'] = $this->categoryRelationWithBanners();
+        }
+        if (Schema::hasTable('store_boosts') && Schema::hasTable('boost_plans')) {
+            $eager[] = 'activeBoost.plan';
+        }
+        if (Schema::hasTable('store_subscriptions') && Schema::hasTable('subscription_plans')) {
+            $eager[] = 'activeSubscription.plan';
+        }
+
+        $countRelations = array_values(array_filter([
+            $hasProductsTable ? 'products' : null,
+            $hasServicesTable ? 'services' : null,
+        ]));
+
+        $stores = $q->with($eager)
+            ->when($countRelations !== [], fn ($b) => $b->withCount($countRelations))
+            ->get();
+
+        $byId = $stores->keyBy('id');
+        $ordered = collect($idsOrdered)
+            ->map(fn ($id) => $byId->get($id))
+            ->filter()
+            ->values();
+
+        try {
+            $ordered = $this->applyCategoryBannerData($ordered);
+        } catch (\Throwable $bannerEx) {
+            Log::warning('applyCategoryBannerData (followingStores) skipped', ['message' => $bannerEx->getMessage()]);
+        }
+
+        foreach ($ordered as $store) {
+            if ($store->relationLoaded('products')) {
+                foreach ($store->products as $product) {
+                    ProductImageStorage::decorateProductForResponse($product);
+                }
+            }
+        }
+
+        $this->trimHeavyPayloadForStoreListing($ordered);
+
+        foreach ($ordered as $store) {
+            if (Schema::hasColumn('stores', 'followers_count') && Schema::hasColumn('stores', 'likes_count')) {
+                $viewer = StoreEngagementController::viewerEngagementFor($store, $request);
+                $store->setAttribute('viewer_following', $viewer['viewer_following']);
+                $store->setAttribute('viewer_liked', $viewer['viewer_liked']);
+            }
+        }
+
+        return $this->successResponse('Stores you follow', $ordered);
+    }
+
     public function myStores(Request $request)
     {
         $user = $request->user();
@@ -601,9 +710,12 @@ class StoreController extends Controller
         try {
             \Log::info('getStoreBySlug called', ['slug' => $slug]);
 
+            $needle = mb_strtolower(trim(urldecode($slug)));
+
             $store = Store::query()
-                ->where(function ($q) use ($slug) {
-                    $q->where('slug', $slug)->orWhere('username', $slug);
+                ->where(function ($q) use ($needle) {
+                    $q->whereRaw('LOWER(slug) = ?', [$needle])
+                        ->orWhereRaw('LOWER(username) = ?', [$needle]);
                 })
                 ->first();
 

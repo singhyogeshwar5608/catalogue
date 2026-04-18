@@ -67,10 +67,15 @@ class SubscriptionPlanController extends Controller
         return $this->successResponse('Subscription plan catalog retrieved successfully.', $plans);
     }
 
-    /** Read-only add-on prices for checkout (any authenticated merchant). */
+    /** Read-only add-on prices + billing-term discount percents for checkout (any authenticated merchant). */
     public function publicAddonPrices()
     {
-        return $this->successResponse('Subscription add-on charges retrieved.', PlatformSetting::subscriptionAddonChargesPayload());
+        $payload = array_merge(
+            PlatformSetting::subscriptionAddonChargesPayload(),
+            PlatformSetting::subscriptionBillingDiscountsPayload()
+        );
+
+        return $this->successResponse('Subscription add-on charges retrieved.', $payload);
     }
 
     public function index()
@@ -87,6 +92,7 @@ class SubscriptionPlanController extends Controller
             'price' => 'required|integer|min:0',
             'billing_cycle' => 'nullable|in:monthly,yearly',
             'duration_days' => 'nullable|integer|min:1|max:365',
+            'billing_discount_tier' => 'nullable|in:one_month,three_months,one_year',
             'max_products' => 'required|integer|min:1',
             'is_popular' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',
@@ -125,6 +131,7 @@ class SubscriptionPlanController extends Controller
             'price' => 'sometimes|required|integer|min:0',
             'billing_cycle' => 'sometimes|nullable|in:monthly,yearly',
             'duration_days' => 'sometimes|nullable|integer|min:1|max:365',
+            'billing_discount_tier' => 'sometimes|nullable|in:one_month,three_months,one_year',
             'max_products' => 'sometimes|required|integer|min:1',
             'is_popular' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',

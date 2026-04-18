@@ -18,6 +18,7 @@ import type {
   SubscriptionPlan,
   SubscriptionAddonCharges,
   SubscriptionBillingDiscounts,
+  SubscriptionCheckoutPricing,
   StoreSubscription,
   ProductCheckoutPublic,
 } from '@/types';
@@ -228,6 +229,8 @@ export type UpdateStorePayload = {
 };
 
 export type AddProductPayload = {
+  /** Target store when the user owns more than one; avoids wrong-store plan limits. */
+  store_id?: number | string;
   title: string;
   price: number;
   original_price?: number;
@@ -567,8 +570,8 @@ const normalizeUser = (user: any): ApiUser => {
         .map((store: any) => ({
           id: String(store?.id ?? ''),
           name: store?.name ?? 'My Store',
-          // Laravel uses `username` as public store path; `slug` may be empty
-          slug: String(store?.slug ?? store?.username ?? '').trim(),
+          // Laravel public path is `username`; prefer it so dashboard fetches match `GET /store/:username`.
+          slug: String(store?.username ?? store?.slug ?? '').trim(),
         }))
         .filter((store: StoreSummary) => Boolean(store.id && store.slug))
     : [];
@@ -576,8 +579,8 @@ const normalizeUser = (user: any): ApiUser => {
   const fallbackStoreSlug =
     user?.storeSlug ??
     user?.store_slug ??
-    user?.store?.slug ??
     user?.store?.username ??
+    user?.store?.slug ??
     stores[0]?.slug ??
     null;
 
@@ -1363,6 +1366,22 @@ export type StoreOwnerNotificationsPayload = {
   unread_count: number;
 };
 
+/** Shoppers: notifications for followed stores (e.g. new product). */
+export type UserFollowNotification = {
+  id: number;
+  type: string;
+  title?: string | null;
+  body?: string | null;
+  meta?: { store_id?: number; product_id?: number; store_username?: string | null } | null;
+  read_at?: string | null;
+  created_at?: string | null;
+};
+
+export type UserFollowNotificationsPayload = {
+  notifications: UserFollowNotification[];
+  unread_count: number;
+};
+
 /** Record a store page visit (max 10 counted contributions per visitor per store on the server). */
 export const recordStoreView = async (storeId: string) => {
   const guest = getOrCreateStoreEngagementGuestToken();
@@ -1402,6 +1421,39 @@ export const markStoreNotificationRead = async (notificationId: number | string)
 export const deleteStoreNotification = async (notificationId: number | string) => {
   const response = await apiRequest<{ id: number }>(
     `/my/store-notifications/${encodeURIComponent(notificationId)}`,
+    {
+      method: 'DELETE',
+      requiresAuth: true,
+    }
+  );
+  return response.data;
+};
+
+export const getMyFollowNotifications = async (params?: { limit?: number }) => {
+  const qs = new URLSearchParams();
+  if (typeof params?.limit === 'number') qs.set('limit', String(params.limit));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const response = await apiRequest<UserFollowNotificationsPayload>(`/my/follow-notifications${suffix}`, {
+    method: 'GET',
+    requiresAuth: true,
+  });
+  return response.data;
+};
+
+export const markFollowNotificationRead = async (notificationId: number | string) => {
+  const response = await apiRequest<{ id: number; read_at: string | null }>(
+    `/my/follow-notifications/${encodeURIComponent(notificationId)}/read`,
+    {
+      method: 'POST',
+      requiresAuth: true,
+    }
+  );
+  return response.data;
+};
+
+export const deleteFollowNotification = async (notificationId: number | string) => {
+  const response = await apiRequest<{ id: number }>(
+    `/my/follow-notifications/${encodeURIComponent(notificationId)}`,
     {
       method: 'DELETE',
       requiresAuth: true,
@@ -1547,6 +1599,36 @@ export const getAllStores = async (params?: {
     return rows.map(adaptStoreListEntry);
   } catch (e) {
     console.error('[getAllStores] /api/stores failed — check Laravel logs and NEXT_PUBLIC_API_BASE_URL', e);
+    return [];
+  }
+};
+
+/** Stores the current viewer follows (logged-in or guest_token). Not cached. */
+export const getFollowedStores = async (): Promise<Store[]> => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const base = getApiRequestBaseUrl().replace(/\/+$/, '');
+    const qs = new URLSearchParams();
+    const guest = getOrCreateStoreEngagementGuestToken();
+    if (guest) qs.set('guest_token', guest);
+    ensureAuthToken();
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (authToken) {
+      headers[AUTH_TOKEN_HEADER] = `Bearer ${authToken}`;
+    }
+    const res = await fetch(`${base}/stores/following?${qs.toString()}`, {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const envelope = (await res.json()) as ApiEnvelope<unknown>;
+    const raw = envelope?.data as unknown;
+    const rows: unknown[] = Array.isArray(raw) ? raw : [];
+    return rows.map(adaptStoreListEntry);
+  } catch {
     return [];
   }
 };
@@ -1928,7 +2010,11 @@ const mapSubscriptionPlanRow = (plan: any): SubscriptionPlan => ({
   slug: plan.slug,
   price: Number(plan.price),
   billingCycle: plan.billing_cycle,
-  durationDays: plan.duration_days ? Number(plan.duration_days) : undefined,
+  durationDays:
+    plan.duration_days != null && plan.duration_days !== '' ? Number(plan.duration_days) : undefined,
+  billingDiscountTier: plan.billing_discount_tier
+    ? (plan.billing_discount_tier as NonNullable<SubscriptionPlan['billingDiscountTier']>)
+    : undefined,
   maxProducts: Number(plan.max_products),
   isPopular: Boolean(plan.is_popular),
   isActive: Boolean(plan.is_active),
@@ -2053,6 +2139,11 @@ const parseSubscriptionAddonPayload = (raw: unknown): SubscriptionAddonCharges =
   };
 };
 
+const parseSubscriptionCheckoutPricingPayload = (raw: unknown): SubscriptionCheckoutPricing => ({
+  ...parseSubscriptionAddonPayload(raw),
+  ...parseSubscriptionBillingDiscountsPayload(raw),
+});
+
 /** Super admin: global subscription checkout add-ons (₹). */
 export const getAdminSubscriptionAddonCharges = async (): Promise<SubscriptionAddonCharges> => {
   const response = await apiRequest<SubscriptionAddonCharges>('/admin/settings/subscription-addons', {
@@ -2138,12 +2229,12 @@ export const updateAdminSubscriptionBillingDiscounts = async (
   return requireBillingDiscountsEnvelope(response);
 };
 
-/** Authenticated store owner: read global subscription add-on prices (same keys as admin). */
-export const getSubscriptionAddonPrices = async (): Promise<SubscriptionAddonCharges> => {
-  const response = await apiRequest<SubscriptionAddonCharges>('/subscription-plans/addon-prices', {
+/** Authenticated store owner: read global subscription add-on prices and billing-term discount %. */
+export const getSubscriptionAddonPrices = async (): Promise<SubscriptionCheckoutPricing> => {
+  const response = await apiRequest<SubscriptionCheckoutPricing>('/subscription-plans/addon-prices', {
     requiresAuth: true,
   });
-  return parseSubscriptionAddonPayload(response.data);
+  return parseSubscriptionCheckoutPricingPayload(response.data);
 };
 
 export const getStoreSubscription = async (storeId: number | string) => {
@@ -2318,12 +2409,22 @@ export const saveStoreSubscriptionAddons = async (
   };
 };
 
+export type SubscriptionCheckoutPricingBreakdown = {
+  grossSubtotalRupees: number;
+  discountPercent: number;
+  discountRupees: number;
+  taxableSubtotalRupees: number;
+  gstRupees: number;
+  totalRupees: number;
+};
+
 export type SubscriptionRazorpayOrder = {
   keyId: string;
   orderId: string;
   amount: number;
   currency: string;
   planName: string;
+  pricing?: SubscriptionCheckoutPricingBreakdown;
 };
 
 /** Creates a Razorpay order for paid plan + selected add-ons (Laravel uses server-side keys). */
@@ -2337,6 +2438,14 @@ export const createStoreSubscriptionRazorpayOrder = async (
     amount: number;
     currency: string;
     plan_name: string;
+    pricing?: {
+      gross_subtotal_rupees?: number;
+      discount_percent?: number;
+      discount_rupees?: number;
+      taxable_subtotal_rupees?: number;
+      gst_rupees?: number;
+      total_rupees?: number;
+    };
   }>(`/stores/${storeId}/subscription/razorpay-order`, {
     method: 'POST',
     body: {
@@ -2349,12 +2458,25 @@ export const createStoreSubscriptionRazorpayOrder = async (
   });
 
   const d = response.data;
+  const rawP = d.pricing;
+  const pricing: SubscriptionCheckoutPricingBreakdown | undefined =
+    rawP && typeof rawP === 'object'
+      ? {
+          grossSubtotalRupees: Math.round(Number(rawP.gross_subtotal_rupees ?? 0)),
+          discountPercent: Math.round(Number(rawP.discount_percent ?? 0)),
+          discountRupees: Math.round(Number(rawP.discount_rupees ?? 0)),
+          taxableSubtotalRupees: Math.round(Number(rawP.taxable_subtotal_rupees ?? 0)),
+          gstRupees: Math.round(Number(rawP.gst_rupees ?? 0)),
+          totalRupees: Math.round(Number(rawP.total_rupees ?? 0)),
+        }
+      : undefined;
   return {
     keyId: String(d.key_id),
     orderId: String(d.order_id),
     amount: Number(d.amount),
     currency: String(d.currency ?? 'INR'),
     planName: String(d.plan_name ?? ''),
+    pricing,
   };
 };
 

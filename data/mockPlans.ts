@@ -76,7 +76,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     price: 499,
     billingCycle: 'monthly',
     features: [
-      'Up to 50 products',
+      'Up to 50 products (1 month term)',
       'Advanced customization',
       'Priority support',
       'Advanced analytics',
@@ -92,7 +92,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     price: 999,
     billingCycle: 'monthly',
     features: [
-      'Up to 200 products',
+      'Up to 100 products (3 month term)',
       'Premium customization',
       '24/7 priority support',
       'Advanced analytics & reports',
@@ -101,7 +101,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
       'SEO optimization',
       'Email marketing tools',
     ],
-    maxProducts: 200,
+    maxProducts: 100,
     isPopular: true,
   },
   {
@@ -111,7 +111,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     price: 2499,
     billingCycle: 'monthly',
     features: [
-      'Unlimited products',
+      'Unlimited products (1 year term)',
       'Full customization',
       'Dedicated account manager',
       'Advanced analytics & reports',
