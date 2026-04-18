@@ -4,7 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSWRConfig } from 'swr';
-import { Plus, Edit, Trash2, Image as ImageIcon, Briefcase, X, Search, ChevronDown, Check } from 'lucide-react';
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Image as ImageIcon,
+  Briefcase,
+  X,
+  Search,
+  ChevronDown,
+  Check,
+  ExternalLink,
+  Loader2,
+} from 'lucide-react';
 import type { Product, Service, Store } from '@/types';
 import { addProduct, addService, deleteProduct, getProductsByStore, getServicesByStore, getStoreBySlugFromApi, isApiError, updateProduct } from '@/src/lib/api';
 import { useAuth } from '@/src/context/AuthContext';
@@ -108,6 +120,40 @@ const initialServiceForm: ServiceFormState = {
 
 const MAX_PRODUCT_IMAGE_DIMENSION = 800;
 
+function ProductActiveSwitch({
+  active,
+  disabled,
+  busy,
+  onToggle,
+}: {
+  active: boolean;
+  disabled: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  /** ~10% smaller than prior h-5 w-9 / h-4 thumb (20×36px → 18×32.4px, thumb 14.4px). */
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      aria-label={active ? 'Product visible on store' : 'Product hidden from store'}
+      disabled={disabled || busy}
+      onClick={() => onToggle()}
+      className={`relative inline-flex h-[18px] w-[32.4px] shrink-0 items-center rounded-full p-[2px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 disabled:cursor-not-allowed disabled:opacity-40 ${
+        active ? 'justify-end bg-emerald-500' : 'justify-start bg-slate-300'
+      }`}
+    >
+      <span className="pointer-events-none block h-[14.4px] w-[14.4px] shrink-0 rounded-full bg-white shadow-sm ring-0" />
+      {busy ? (
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-white/55">
+          <Loader2 className="h-[10.8px] w-[10.8px] animate-spin text-slate-600" aria-hidden />
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 const compressImageToDataUrl = async (file: File): Promise<string> => {
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const reader = new FileReader();
@@ -183,6 +229,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [togglingProductId, setTogglingProductId] = useState<string | null>(null);
   const [unitDropdownOpen, setUnitDropdownOpen] = useState(false);
   const unitDropdownRef = useRef<HTMLDivElement | null>(null);
   const isEditingProduct = Boolean(editingProduct);
@@ -335,6 +382,34 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
     });
     setImagePreview(product.image || null);
     setFormError(null);
+  };
+
+  const handleToggleProductActive = async (product: Product) => {
+    if (newCatalogLocked) {
+      setError('Renew your plan to edit products.');
+      return;
+    }
+    setTogglingProductId(product.id);
+    setError(null);
+    try {
+      await updateProduct({
+        id: product.id,
+        is_active: !product.inStock,
+      });
+      await loadProducts(true);
+    } catch (err) {
+      if (isApiError(err)) {
+        if (err.status === 401) {
+          router.replace('/login');
+          return;
+        }
+        setError(err.message || 'Unable to update product status');
+      } else {
+        setError(err instanceof Error ? err.message : 'Unable to update product status');
+      }
+    } finally {
+      setTogglingProductId(null);
+    }
   };
 
   const handleDeleteProduct = async (productId: string) => {
@@ -597,6 +672,120 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       );
     });
   }, [services, localSearchQuery]);
+
+  const renderMobileProductCard = (product: Product) => (
+    <div
+      key={product.id}
+      className={`rounded-2xl border bg-white px-2 py-2 shadow-sm ${
+        product.inStock ? 'border border-gray-100' : 'border border-dashed border-slate-200 bg-slate-50/70'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-xl bg-gray-50">
+          {product.image ? (
+            <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-gray-400">
+              <ImageIcon className="w-3.5 h-3.5" />
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate text-[12px] font-semibold text-gray-900">{product.name}</h3>
+              <p className="text-[9px] text-gray-500">{product.category || 'Uncategorized'}</p>
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-1">
+              <ProductActiveSwitch
+                active={product.inStock}
+                disabled={newCatalogLocked}
+                busy={togglingProductId === product.id}
+                onToggle={() => void handleToggleProductActive(product)}
+              />
+              <button
+                type="button"
+                onClick={() => handleEditClick(product)}
+                disabled={newCatalogLocked}
+                className="rounded-full border border-gray-200 p-1 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Edit product"
+              >
+                <Edit className="h-[10.56px] w-[10.56px]" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm({ id: product.id, name: product.name })}
+                className="rounded-full border border-gray-200 p-1 text-red-500 hover:bg-red-50"
+                aria-label="Delete product"
+              >
+                <Trash2 className="h-[10.56px] w-[10.56px]" aria-hidden />
+              </button>
+            </div>
+          </div>
+
+          <p className="mt-0.5 text-[10px] font-semibold text-gray-900">₹{product.price}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderDesktopProductRow = (product: Product) => (
+    <div
+      key={product.id}
+      className={`grid grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto] items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-b-0 ${
+        product.inStock ? '' : 'bg-slate-50/60'
+      }`}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-gray-50">
+          {product.image ? (
+            <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-gray-400">
+              <ImageIcon className="h-5 w-5" />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-gray-900">{product.name}</p>
+          <p className="truncate text-xs text-gray-500">{product.description || 'No description'}</p>
+        </div>
+      </div>
+
+      <p className="truncate text-sm text-gray-700">{product.category || 'Uncategorized'}</p>
+      <p className="text-sm font-semibold text-gray-900">₹{product.price}</p>
+      <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${product.inStock ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>
+        {product.inStock ? 'Live' : 'Hidden'}
+      </span>
+
+      <div className="flex items-center justify-end gap-2">
+        <ProductActiveSwitch
+          active={product.inStock}
+          disabled={newCatalogLocked}
+          busy={togglingProductId === product.id}
+          onToggle={() => void handleToggleProductActive(product)}
+        />
+        <button
+          type="button"
+          onClick={() => handleEditClick(product)}
+          disabled={newCatalogLocked}
+          className="rounded-full border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="Edit product"
+        >
+          <Edit className="h-[21.12px] w-[21.12px]" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDeleteConfirm({ id: product.id, name: product.name })}
+          className="rounded-full border border-gray-200 p-2 text-red-500 hover:bg-red-50"
+          aria-label="Delete product"
+        >
+          <Trash2 className="h-[21.12px] w-[21.12px]" aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6 md:space-y-8 pb-24">
@@ -1107,16 +1296,29 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
       )}
 
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            {products.length} total products
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-            {liveCount} live
-          </span>
-          <span className="hidden items-center gap-1 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 md:inline-flex">
-            {services.length} services
-          </span>
+        <div className="flex w-full justify-center px-1">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              {products.length} total products
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              {liveCount} live
+            </span>
+            <span className="hidden items-center gap-1 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 md:inline-flex">
+              {services.length} services
+            </span>
+            {hasStore && user?.storeSlug ? (
+              <Link
+                href={`/store/${encodeURIComponent(user.storeSlug)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+              >
+                View store
+                <ExternalLink className="h-3.5 w-3.5 opacity-90" aria-hidden />
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         {/* Search Input */}
@@ -1164,54 +1366,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
                 {localSearchQuery ? 'No products found matching your search.' : 'No products yet. Add your first product to see it here.'}
               </div>
             ) : (
-              filteredProducts.map((product) => (
-                <div key={product.id} className="rounded-2xl border border-gray-100 bg-white px-1.5 py-1.5 shadow-sm">
-                  <div className="flex gap-1.5">
-                    <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-xl bg-gray-50">
-                      {product.image ? (
-                        <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-gray-400">
-                          <ImageIcon className="w-3.5 h-3.5" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="min-w-0">
-                          <h3 className="truncate text-[12px] font-semibold text-gray-900">{product.name}</h3>
-                          <p className="text-[9px] text-gray-500">{product.category || 'Uncategorized'}</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className={`text-[7px] font-semibold ${product.inStock ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            {product.inStock ? 'Live' : 'Hidden'}
-                          </span>
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              onClick={() => handleEditClick(product)}
-                              disabled={newCatalogLocked}
-                              className="rounded-full border border-gray-200 p-0.5 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                              aria-label="Edit product"
-                            >
-                              <Edit className="w-2 h-2" />
-                            </button>
-                            <button
-                              onClick={() => setShowDeleteConfirm({ id: product.id, name: product.name })}
-                              className="rounded-full border border-gray-200 p-0.5 text-red-500 hover:bg-red-50"
-                              aria-label="Delete product"
-                            >
-                              <Trash2 className="w-2 h-2" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="mt-0 text-[10px] font-semibold text-gray-900">₹{product.price}</p>
-                    </div>
-                  </div>
-                </div>
-              ))
+              <>{filteredProducts.map((product) => renderMobileProductCard(product))}</>
             )}
           </div>
         ) : (
@@ -1282,52 +1437,7 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
               {localSearchQuery ? 'No products found matching your search.' : 'No products yet. Add your first product to see it here.'}
             </div>
           ) : (
-            filteredProducts.map((product) => (
-            <div
-              key={product.id}
-              className="grid grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto] items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-b-0"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-gray-50">
-                  {product.image ? (
-                    <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-gray-400">
-                      <ImageIcon className="h-5 w-5" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">{product.name}</p>
-                  <p className="truncate text-xs text-gray-500">{product.description || 'No description'}</p>
-                </div>
-              </div>
-
-              <p className="truncate text-sm text-gray-700">{product.category || 'Uncategorized'}</p>
-              <p className="text-sm font-semibold text-gray-900">₹{product.price}</p>
-              <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${product.inStock ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>
-                {product.inStock ? 'Live' : 'Hidden'}
-              </span>
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={() => handleEditClick(product)}
-                  disabled={newCatalogLocked}
-                  className="rounded-full border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Edit product"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setShowDeleteConfirm({ id: product.id, name: product.name })}
-                  className="rounded-full border border-gray-200 p-2 text-red-500 hover:bg-red-50"
-                  aria-label="Delete product"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))
+            <>{filteredProducts.map((product) => renderDesktopProductRow(product))}</>
           )}
         </div>
         {!products.length && !loading && (

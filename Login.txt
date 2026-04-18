@@ -1,0 +1,3 @@
+super admin ID and Password 
+admin@test.com
+password : admin123

@@ -13,6 +13,7 @@ import { useLocationContext } from '@/src/context/LocationContext';
 import { useSearch } from '@/src/context/SearchContext';
 import { extractCityTokens } from '@/src/lib/location';
 import { prioritizeCurrentUserStore } from '@/src/lib/prioritize-user-store';
+import { storeSearchMatchesId } from '@/src/lib/storeSearchMatch';
 import type { Store } from '@/types';
 
 const createSlug = (value: string) =>
@@ -147,6 +148,7 @@ export default function AllStoresClient({ initialStores }: { initialStores: Stor
 
   const storeMatchesQuery = (store: Store, query: string) => {
     if (!query) return true;
+    if (storeSearchMatchesId(store, query)) return true;
     const categoryLabel = store.categoryName ?? store.businessType;
     return [
       store.name,

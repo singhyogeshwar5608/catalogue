@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import DashboardNotificationsBell from '@/components/dashboard/DashboardNotificationsBell';
 import {
   LayoutDashboard,
   Package,
@@ -191,32 +192,37 @@ export default function Sidebar() {
         className="md:hidden fixed top-0 left-0 right-0 z-50 flex min-h-[3.75rem] items-center justify-between border-b border-gray-200 bg-white px-4 pb-3"
         style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
       >
-        <Link href="/" className="flex min-w-0 items-center gap-2">
+        <Link href="/" className="flex min-w-0 flex-1 items-center gap-2 pr-2">
           {myStore?.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={myStore.logo}
               alt={myStore.name || 'Store logo'}
-              className="h-8 w-8 rounded-full object-cover"
+              className="h-8 w-8 shrink-0 rounded-full object-cover"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <ShoppingBag className="h-6 w-6 text-primary" />
+            <ShoppingBag className="h-6 w-6 shrink-0 text-primary" />
           )}
           <span className="truncate text-lg font-bold text-gray-900">
             {myStore?.name?.trim() ? myStore.name : 'Cateloge'}
           </span>
         </Link>
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 hover:bg-gray-100 rounded-lg transition"
-        >
-          {isMobileMenuOpen ? (
-            <X className="w-6 h-6 text-gray-700" />
-          ) : (
-            <Menu className="w-6 h-6 text-gray-700" />
-          )}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {user && pathname.startsWith('/dashboard') ? <DashboardNotificationsBell /> : null}
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition"
+            aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+          >
+            {isMobileMenuOpen ? (
+              <X className="w-6 h-6 text-gray-700" />
+            ) : (
+              <Menu className="w-6 h-6 text-gray-700" />
+            )}
+          </button>
+        </div>
       </header>
 
       {/* Mobile Sidebar Overlay */}
@@ -282,21 +288,26 @@ export default function Sidebar() {
 
       {/* Desktop Sidebar */}
       <div className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:w-64 md:border-r md:border-gray-200 md:bg-white">
-        <div className="flex flex-col flex-1 overflow-y-auto">
-          <div className="flex items-center gap-2 px-4 py-6 border-b border-gray-200">
-            <Link href="/" className="flex min-w-0 items-center gap-2">
-              {/* Website logo (static) */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={faviconIcon.src}
-                alt="Cateloge"
-                className="h-8 w-8 rounded-lg object-contain"
-                loading="eager"
-                decoding="async"
-              />
-              <span className="truncate text-xl font-bold text-gray-900">Cateloge</span>
-            </Link>
-          </div>
+        <div className="relative z-20 flex shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-4 py-6">
+          <Link href="/" className="flex min-w-0 flex-1 items-center gap-2">
+            {/* Website logo (static) */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={faviconIcon.src}
+              alt="Cateloge"
+              className="h-8 w-8 shrink-0 rounded-lg object-contain"
+              loading="eager"
+              decoding="async"
+            />
+            <span className="truncate text-xl font-bold text-gray-900">Cateloge</span>
+          </Link>
+          {user && pathname.startsWith('/dashboard') ? (
+            <div className="shrink-0">
+              <DashboardNotificationsBell />
+            </div>
+          ) : null}
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <nav className="flex-1 p-4">
             <ul className="space-y-2">
               {menuItems.map((item) => {
@@ -330,10 +341,10 @@ export default function Sidebar() {
             </ul>
           </nav>
 
-          <div className="p-4 border-t border-gray-200">
+          <div className="border-t border-gray-200 p-4">
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50 rounded-lg transition"
+              className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-red-600 transition hover:bg-red-50"
             >
               <LogOut className="w-5 h-5" />
               <span className="font-medium">Logout</span>

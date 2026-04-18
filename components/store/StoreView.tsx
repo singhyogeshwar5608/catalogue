@@ -640,6 +640,7 @@ const HeroSection = ({
 }: HeroSectionProps) => {
   const socialLinks = buildSocialLinks(store);
   const heroGradient = `linear-gradient(135deg, ${theme.primary}33 0%, ${theme.accent}55 35%, transparent 70%)`;
+  const mobileLogoShiftClass = store.name.trim().length > 16 ? '-translate-x-[65%]' : '-translate-x-[50%]';
 
   // Owners can like/follow their own store once (no undo).
   const ownerFollowLocked = isStoreOwner && Boolean(store.viewerFollowing);
@@ -671,10 +672,10 @@ const HeroSection = ({
           >
             <motion.div
               variants={fadeInVariants}
-              className="flex min-h-[305px] flex-col items-center gap-3.5 rounded-3xl bg-black/30 px-3.5 py-4 backdrop-blur-md sm:min-h-0 sm:flex-row sm:items-center sm:px-4 sm:py-4"
+              className="flex min-h-[305px] flex-col items-center justify-start gap-3.5 rounded-3xl bg-black/30 px-3.5 py-4 backdrop-blur-md sm:min-h-0 sm:flex-row sm:items-center sm:justify-start sm:px-4 sm:py-4"
             >
-              <span className="relative inline-flex items-center">
-                <span className="relative inline-flex h-[3.9rem] w-[3.9rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/40 bg-white/95 p-1.5 shadow-xl sm:h-[4.6rem] sm:w-[4.6rem]">
+              <span className={`relative inline-flex items-center ${mobileLogoShiftClass} sm:translate-x-0`}>
+                <span className="relative inline-flex h-[3.12rem] w-[3.12rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/40 bg-white/95 p-1.5 shadow-xl sm:h-[4.6rem] sm:w-[4.6rem]">
                   {/* Always show the store's uploaded logo (even for the owner). */}
                   <img
                     src={store.logo}
@@ -702,15 +703,34 @@ const HeroSection = ({
                     )}
                   </span>
                 )}
+                <span className="absolute left-full top-1/2 ml-3 -translate-y-1/2 text-left sm:hidden">
+                  <h1 className="max-w-[170px] truncate text-xl font-semibold leading-tight text-white">{store.name}</h1>
+                  {store.id ? (
+                    <p
+                      className="mt-[1px] text-[10px] font-medium tabular-nums leading-snug text-white/75"
+                      aria-label={`Store ID ${store.id}`}
+                    >
+                      Store ID: {store.id}
+                    </p>
+                  ) : null}
+                </span>
               </span>
-              <motion.div variants={fadeInVariants} className="relative min-w-0 flex-1 text-center sm:text-left">
-                <h1 className="text-xl font-semibold leading-tight text-white sm:text-4xl lg:text-5xl">{store.name}</h1>
+              <motion.div variants={fadeInVariants} className="relative min-w-0 text-center sm:flex-1 sm:text-left">
+                <h1 className="hidden text-xl font-semibold leading-tight text-white sm:block sm:text-4xl lg:text-5xl">{store.name}</h1>
+                {store.id ? (
+                  <p
+                    className="mt-1 hidden text-[10px] font-medium tabular-nums leading-snug text-white/75 sm:block sm:text-xs sm:text-white/80"
+                    aria-label={`Store ID ${store.id}`}
+                  >
+                    Store ID: {store.id}
+                  </p>
+                ) : null}
                 {isProPlan && (
                   <span className="mt-3 inline-flex items-center gap-1 self-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-white shadow-lg sm:self-start">
                     Pro Store
                   </span>
                 )}
-                <div className="mt-2.5 flex flex-col items-center gap-1 text-[9px] text-white/80 sm:hidden">
+                <div className="flex flex-col items-center gap-1 text-[9px] text-white/80 sm:hidden">
                   <div className="flex flex-wrap justify-center gap-3 text-center">
                     <span className="inline-flex items-center gap-1">
                       <MapPin className="h-2.5 w-2.5" />
@@ -758,62 +778,55 @@ const HeroSection = ({
                   <ProductImageCarousel products={products} services={services} isStoreOwner={isStoreOwner} />
                 </div>
 
-                <div className="mt-2.5 grid w-full grid-cols-3 gap-2 text-slate-900 sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!canEngage || followBusy || !onToggleFollow) return;
-                      if (ownerFollowLocked) return;
-                      void onToggleFollow();
-                    }}
-                    disabled={!canEngage || followBusy || !onToggleFollow || ownerFollowLocked}
-                    className={`flex min-h-[48px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                      store.viewerFollowing
-                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-md hover:bg-emerald-700'
-                        : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-emerald-50/80'
-                    }`}
-                    aria-label={store.viewerFollowing ? 'Following store' : 'Follow store'}
-                  >
-                    <p className={`text-[12px] font-semibold tabular-nums ${store.viewerFollowing ? 'text-white' : 'text-slate-900'}`}>
-                      {(store.followersCount ?? 0).toLocaleString('en-IN')}
-                    </p>
-                    <p className={`mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium ${store.viewerFollowing ? 'text-white/90' : 'text-slate-500'}`}>
-                      {followBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <UserPlus className="h-2.5 w-2.5" />}
-                      {store.viewerFollowing ? 'Following' : 'Follow'}
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!canEngage || likeBusy || !onToggleLike) return;
-                      if (ownerLikeLocked) return;
-                      void onToggleLike();
-                    }}
-                    disabled={!canEngage || likeBusy || !onToggleLike || ownerLikeLocked}
-                    className={`flex min-h-[48px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                      store.viewerLiked
-                        ? 'border-red-600 bg-red-600 text-white shadow-md hover:bg-red-700'
-                        : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-rose-50/80'
-                    }`}
-                    aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
-                  >
-                    <p className={`text-[12px] font-semibold tabular-nums ${store.viewerLiked ? 'text-white' : 'text-slate-900'}`}>
-                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
-                    </p>
-                    <p className={`mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium ${store.viewerLiked ? 'text-white/90' : 'text-slate-500'}`}>
-                      {likeBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Heart className="h-2.5 w-2.5" />}
-                      {store.viewerLiked ? 'Liked' : 'Like'}
-                    </p>
-                  </button>
-                  <div className="flex min-h-[48px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white/95 px-1 py-1.5 text-center shadow-sm">
-                    <p className="text-[12px] font-semibold tabular-nums text-slate-900">
-                      {(store.seenCount ?? 0).toLocaleString('en-IN')}
-                    </p>
-                    <p className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-medium text-slate-500">
-                      <Eye className="h-2.5 w-2.5" />
-                      Seen
-                    </p>
+                <div className="mt-2.5 w-full sm:hidden">
+                  <div className="w-full rounded-[14px] border-[0.5px] border-[#e4e9f0] bg-white px-[12px] py-[4px] shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-1 flex-col items-center gap-[1px]">
+                        <div className="flex items-center gap-[5px]">
+                          <UserPlus className="h-[14.4px] w-[14.4px] text-[#0D3AD1]" strokeWidth={2} />
+                          <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
+                            {(store.followersCount ?? 0).toLocaleString('en-IN')}
+                          </p>
+                        </div>
+                        <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#0D3AD1]">Followers</p>
+                      </div>
+
+                      <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
+
+                      <div className="flex flex-1 flex-col items-center gap-[1px]">
+                        <div className="flex items-center gap-[5px]">
+                          <Heart className="h-[14.4px] w-[14.4px] text-[#D10DB4]" strokeWidth={2} />
+                          <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
+                            {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                          </p>
+                        </div>
+                        <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#D10DB4]">Likes</p>
+                      </div>
+
+                      <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
+
+                      <div className="flex flex-1 flex-col items-center gap-[1px]">
+                        <div className="flex items-center gap-[5px]">
+                          <Eye className="h-[14.4px] w-[14.4px] text-[#070A07]" strokeWidth={2} />
+                          <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
+                            {(store.seenCount ?? 0).toLocaleString('en-IN')}
+                          </p>
+                        </div>
+                        <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#070A07]">Views</p>
+                      </div>
+                    </div>
                   </div>
+                </div>
+                <div className="mt-3 mb-1 flex justify-center px-1 sm:hidden">
+                  <a
+                    href={`https://wa.me/?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(37,99,235,0.35)] transition hover:-translate-y-0.5 hover:bg-blue-500 sm:px-8 sm:text-base"
+                  >
+                    Share Catalogue Link
+                    <ArrowRight className="h-4 w-4" />
+                  </a>
                 </div>
               </motion.div>
             </motion.div>
@@ -841,61 +854,41 @@ const HeroSection = ({
                 </div>
               )}
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-slate-900">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEngage || followBusy || !onToggleFollow) return;
-                  if (ownerFollowLocked) return;
-                  void onToggleFollow();
-                }}
-                disabled={!canEngage || followBusy || !onToggleFollow || ownerFollowLocked}
-                className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  store.viewerFollowing
-                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-md hover:bg-emerald-700'
-                    : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-emerald-50'
-                }`}
-                aria-label={store.viewerFollowing ? 'Following store' : 'Follow store'}
-              >
-                <p className={`text-sm font-semibold tabular-nums ${store.viewerFollowing ? 'text-white' : 'text-slate-900'}`}>
-                  {(store.followersCount ?? 0).toLocaleString('en-IN')}
-                </p>
-                <p className={`mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium ${store.viewerFollowing ? 'text-white/90' : 'text-slate-600'}`}>
-                  {followBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
-                  {store.viewerFollowing ? 'Following' : 'Follow'}
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEngage || likeBusy || !onToggleLike) return;
-                  if (ownerLikeLocked) return;
-                  void onToggleLike();
-                }}
-                disabled={!canEngage || likeBusy || !onToggleLike || ownerLikeLocked}
-                className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl border px-1 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  store.viewerLiked
-                    ? 'border-red-600 bg-red-600 text-white shadow-md hover:bg-red-700'
-                    : 'border-slate-200 bg-white/95 text-slate-900 hover:bg-rose-50'
-                }`}
-                aria-label={store.viewerLiked ? 'Liked store' : 'Like store'}
-              >
-                <p className={`text-sm font-semibold tabular-nums ${store.viewerLiked ? 'text-white' : 'text-slate-900'}`}>
-                  {(store.likesCount ?? 0).toLocaleString('en-IN')}
-                </p>
-                <p className={`mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium ${store.viewerLiked ? 'text-white/90' : 'text-slate-600'}`}>
-                  {likeBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Heart className="h-3 w-3" />}
-                  {store.viewerLiked ? 'Liked' : 'Like'}
-                </p>
-              </button>
-              <div className="flex min-h-[52px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white/95 px-1 py-1.5 text-center shadow-sm">
-                <p className="text-sm font-semibold tabular-nums text-slate-900">
-                  {(store.seenCount ?? 0).toLocaleString('en-IN')}
-                </p>
-                <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-slate-600">
-                  <Eye className="h-3 w-3" />
-                  Seen
-                </p>
+            <div className="mt-4 w-full rounded-[14px] border-[0.5px] border-[#e4e9f0] bg-white px-[12px] py-[4px] shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-1 flex-col items-center gap-[1px]">
+                  <div className="flex items-center gap-[5px]">
+                    <UserPlus className="h-[14.4px] w-[14.4px] text-[#0D3AD1]" strokeWidth={2} />
+                    <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
+                      {(store.followersCount ?? 0).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#0D3AD1]">Followers</p>
+                </div>
+
+                <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
+
+                <div className="flex flex-1 flex-col items-center gap-[1px]">
+                  <div className="flex items-center gap-[5px]">
+                    <Heart className="h-[14.4px] w-[14.4px] text-[#D10DB4]" strokeWidth={2} />
+                    <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
+                      {(store.likesCount ?? 0).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#D10DB4]">Likes</p>
+                </div>
+
+                <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
+
+                <div className="flex flex-1 flex-col items-center gap-[1px]">
+                  <div className="flex items-center gap-[5px]">
+                    <Eye className="h-[14.4px] w-[14.4px] text-[#070A07]" strokeWidth={2} />
+                    <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
+                      {(store.seenCount ?? 0).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#070A07]">Views</p>
+                </div>
               </div>
             </div>
             <div className="mt-6 hidden sm:flex justify-center">
@@ -921,18 +914,6 @@ const HeroSection = ({
           </div>
         </section>
       </div>
-      <motion.div variants={fadeInVariants} className="relative z-20 mt-16 mb-20 flex justify-center px-4 sm:hidden">
-        <a
-          href={`https://wa.me/?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(37,99,235,0.35)] transition hover:-translate-y-0.5 hover:bg-blue-500 sm:px-8 sm:text-base"
-        >
-          Share Catalogue Link
-          <ArrowRight className="h-4 w-4" />
-        </a>
-      </motion.div>
-
     </div>
   );
 };
@@ -1593,9 +1574,11 @@ function StoreCatalogProductCard({
               product.inStock ? 'Add to cart' : 'Out of stock'
             }
             className={`inline-flex min-w-[74px] items-center justify-center gap-0.5 rounded-full border px-2 py-1 text-[8px] font-semibold transition md:min-w-[120px] md:gap-1 md:px-3.5 md:py-1.5 md:text-xs ${
-              product.inStock
-                ? 'border-slate-900 bg-white text-slate-900 hover:bg-slate-100'
-                : 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-500'
+              !product.inStock
+                ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-500'
+                : cartQty > 0
+                  ? 'border-slate-900 bg-white text-slate-900 hover:bg-slate-100'
+                  : 'border-[#3657E0] bg-[#3657E0] text-white hover:bg-[#2f4ccc]'
             }`}
           >
             <ShoppingCart className="h-2 w-2 md:h-3.5 md:w-3.5" />
@@ -1888,7 +1871,7 @@ const ProductGrid = ({
           viewport={{ once: false, amount: 0.4 }}
         />
 
-        <div className="mb-4 flex flex-col items-center gap-3 md:flex-row md:items-center">
+        <div className="mt-[2.81rem] mb-4 flex flex-col items-center gap-3 md:mt-8 md:flex-row md:items-center">
               <div className="flex w-full items-center justify-center gap-2 md:w-auto md:justify-start">
                 <button
                   type="button"
@@ -1896,7 +1879,7 @@ const ProductGrid = ({
                   className={`inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition-all ${
                     filterType === 'products'
                       ? 'bg-slate-900 text-white shadow-md'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                      : 'border border-slate-300 bg-white text-slate-700 hover:border-slate-500'
                   }`}
                 >
                   <ShoppingCart className="h-4 w-4" />
@@ -1908,7 +1891,7 @@ const ProductGrid = ({
                   className={`inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition-all ${
                     filterType === 'services'
                       ? 'bg-slate-900 text-white shadow-md'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                      : 'border border-slate-300 bg-white text-slate-700 hover:border-slate-500'
                   }`}
                 >
                   <Briefcase className="h-4 w-4" />
@@ -1917,7 +1900,7 @@ const ProductGrid = ({
                 <button
                   type="button"
                   onClick={() => setShowMobileSearch(!showMobileSearch)}
-                  className="md:hidden inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-2 text-slate-700 hover:border-slate-400 transition-all"
+                  className="md:hidden inline-flex items-center justify-center rounded-full border border-slate-300 bg-white p-2 text-slate-700 hover:border-slate-500 transition-all"
                   aria-label="Search"
                 >
                   <Search className="h-4 w-4" />

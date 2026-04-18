@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ArrowRight, Zap, Shield, TrendingUp } from 'lucide-react';
+import { ArrowRight, Zap, Shield, TrendingUp, Smile, Store, Star } from 'lucide-react';
 import StoreCard from '@/components/StoreCard';
 import Image from 'next/image';
 import TrendingProductsRail from '@/components/TrendingProductsRail';
@@ -19,6 +19,7 @@ import { useSearch } from '@/src/context/SearchContext';
 import { useAuth } from '@/src/context/AuthContext';
 import { extractCityTokens } from '@/src/lib/location';
 import { prioritizeCurrentUserStore } from '@/src/lib/prioritize-user-store';
+import { storeSearchMatchesId } from '@/src/lib/storeSearchMatch';
 
 export default function HomePage() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -216,6 +217,7 @@ export default function HomePage() {
       const query = searchQuery.toLowerCase().trim();
       filtered = filtered.filter((store) => {
         return (
+          storeSearchMatchesId(store, query) ||
           store.name.toLowerCase().includes(query) ||
           store.description?.toLowerCase().includes(query) ||
           store.categoryName?.toLowerCase().includes(query) ||
@@ -307,7 +309,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
       <HeroBanner />
 
-      <section className="relative overflow-hidden px-5 py-12 sm:py-16 lg:py-20">
+      <section className="relative overflow-hidden px-5 py-6 sm:py-8 lg:py-10">
         <div
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(251,191,36,0.18),transparent_50%),radial-gradient(ellipse_80%_60%_at_100%_50%,rgba(45,212,191,0.12),transparent_45%),radial-gradient(ellipse_70%_50%_at_0%_80%,rgba(167,139,250,0.1),transparent_40%)]"
           aria-hidden
@@ -329,24 +331,12 @@ export default function HomePage() {
               visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } },
             }}
           >
-            <motion.p
-              variants={{
-                hidden: { opacity: 0, y: 12 },
-                visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
-              }}
-              className="text-center text-[11px] font-bold uppercase tracking-[0.42em] text-amber-800/90 sm:text-left sm:text-xs"
-            >
-              <span className="bg-gradient-to-r from-amber-700 via-orange-600 to-amber-700 bg-clip-text text-transparent">
-                WHY CATELOG
-              </span>
-            </motion.p>
-
             <motion.h2
               variants={{
                 hidden: { opacity: 0, y: 20 },
                 visible: { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
               }}
-              className="mt-3 text-center text-[1.65rem] font-semibold leading-tight tracking-tight text-slate-900 sm:text-left sm:text-4xl lg:text-[2.35rem]"
+              className="text-center text-[1.32rem] font-semibold leading-tight tracking-tight text-slate-900 sm:mt-0 sm:text-left sm:text-4xl lg:text-[2.35rem]"
             >
               <span className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
                 Shop local. Live better.
@@ -358,7 +348,7 @@ export default function HomePage() {
                 hidden: { opacity: 0, y: 16 },
                 visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
               }}
-              className="mx-auto mt-4 max-w-2xl text-center text-[0.95rem] font-medium leading-relaxed text-slate-600 sm:mx-0 sm:text-left sm:text-base"
+              className="mx-auto mt-4 max-w-2xl text-center text-[0.76rem] font-medium leading-relaxed text-slate-600 sm:mx-0 sm:text-left sm:text-base"
             >
               Discover trusted neighbourhood stores, get doorstep support, and shop confidently with honest reviews from real customers across {locationLabel || 'your area'}.
             </motion.p>
@@ -434,47 +424,63 @@ export default function HomePage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.25 }}
             transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-            className="relative mt-10 overflow-hidden rounded-[28px] border border-white/20 bg-slate-900/95 px-6 py-7 text-white shadow-[0_28px_70px_-28px_rgba(15,23,42,0.95)] ring-1 ring-slate-700/60 backdrop-blur-sm sm:mt-12"
+            className="relative mt-8 overflow-hidden rounded-2xl border border-white/15 bg-slate-900/95 px-3 py-3 text-white shadow-[0_24px_60px_-24px_rgba(15,23,42,0.92)] ring-1 ring-slate-700/55 backdrop-blur-sm sm:mt-10 sm:rounded-[28px] sm:border-white/20 sm:px-6 sm:py-7 sm:shadow-[0_28px_70px_-28px_rgba(15,23,42,0.95)] sm:ring-slate-700/60 lg:mt-12"
           >
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal-500/10 via-transparent to-violet-500/10" aria-hidden />
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" aria-hidden />
-            <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-center sm:text-left">
-                <p className="text-xs font-semibold uppercase tracking-[0.42em] text-teal-200/80">COMMUNITY PULSE</p>
-                <p className="mt-2 text-lg font-semibold tracking-tight text-white sm:text-xl">
+
+            <div className="relative flex flex-col gap-2.5 sm:flex-row sm:items-stretch sm:justify-between sm:gap-8 lg:items-center">
+              <div className="text-center sm:max-w-[min(100%,22rem)] sm:text-left lg:max-w-md">
+                <p className="mx-auto max-w-[20rem] text-sm font-normal leading-normal tracking-normal text-white sm:mx-0 sm:max-w-none sm:text-base md:text-lg">
                   Loved by shoppers across {locationLabel || 'India'}
                 </p>
               </div>
-              <div className="grid grid-cols-3 gap-3 divide-x divide-white/15 text-center text-sm sm:flex sm:w-auto sm:divide-x-0 sm:gap-8 sm:text-left">
+
+              <div className="grid w-full grid-cols-3 divide-x divide-white/15 sm:w-auto sm:min-w-0 sm:max-w-2xl sm:flex-1 sm:gap-0">
                 <motion.div
-                  className="px-1 first:pl-0 sm:px-0"
-                  initial={{ opacity: 0, scale: 0.92 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
+                  className="flex min-w-0 flex-col items-center gap-[0.2875rem] px-1 py-0 text-center sm:flex-col sm:items-start sm:justify-center sm:gap-[0.2875rem] sm:px-4 sm:py-0 sm:text-left sm:pl-0 sm:pr-5 md:pr-7"
+                  initial={{ opacity: 0, y: 8 }}
+                  whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: 0.15, duration: 0.4 }}
+                  transition={{ delay: 0.12, duration: 0.35 }}
                 >
-                  <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-white/65">Happy shoppers</p>
-                  <p className="mt-1 bg-gradient-to-br from-white to-slate-200 bg-clip-text text-2xl font-semibold tabular-nums text-transparent">2,300+</p>
+                  <Smile className="h-3.5 w-3.5 shrink-0 text-teal-200/90 sm:hidden" aria-hidden />
+                  <p className="text-[7px] font-medium uppercase leading-tight tracking-[0.12em] text-white/70 sm:text-[11px] sm:tracking-[0.25em]">
+                    Happy shoppers
+                  </p>
+                  <p className="bg-gradient-to-br from-white to-slate-200 bg-clip-text text-base font-semibold tabular-nums text-transparent sm:mt-1 sm:text-2xl">
+                    2,300+
+                  </p>
                 </motion.div>
                 <motion.div
-                  className="px-1 first:pl-0 sm:px-0"
-                  initial={{ opacity: 0, scale: 0.92 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
+                  className="flex min-w-0 flex-col items-center gap-[0.2875rem] px-1 py-0 text-center sm:flex-col sm:items-start sm:justify-center sm:gap-[0.2875rem] sm:px-4 sm:py-0 sm:text-left sm:pr-5 md:pr-7"
+                  initial={{ opacity: 0, y: 8 }}
+                  whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: 0.22, duration: 0.4 }}
+                  transition={{ delay: 0.18, duration: 0.35 }}
                 >
-                  <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-white/65">Partner stores</p>
-                  <p className="mt-1 bg-gradient-to-br from-white to-slate-200 bg-clip-text text-2xl font-semibold tabular-nums text-transparent">180</p>
+                  <Store className="h-3.5 w-3.5 shrink-0 text-teal-200/90 sm:hidden" aria-hidden />
+                  <p className="text-[7px] font-medium uppercase leading-tight tracking-[0.12em] text-white/70 sm:text-[11px] sm:tracking-[0.25em]">
+                    Partner stores
+                  </p>
+                  <p className="bg-gradient-to-br from-white to-slate-200 bg-clip-text text-base font-semibold tabular-nums text-transparent sm:mt-1 sm:text-2xl">
+                    180
+                  </p>
                 </motion.div>
                 <motion.div
-                  className="px-1 first:pl-0 sm:px-0"
-                  initial={{ opacity: 0, scale: 0.92 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
+                  className="flex min-w-0 flex-col items-center gap-[0.2875rem] px-1 py-0 text-center sm:flex-col sm:items-start sm:justify-center sm:gap-[0.2875rem] sm:px-4 sm:py-0 sm:text-left sm:pr-0 sm:pl-5 md:pl-7"
+                  initial={{ opacity: 0, y: 8 }}
+                  whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: 0.29, duration: 0.4 }}
+                  transition={{ delay: 0.24, duration: 0.35 }}
                 >
-                  <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-white/65">Avg. satisfaction</p>
-                  <p className="mt-1 bg-gradient-to-br from-white to-slate-200 bg-clip-text text-2xl font-semibold tabular-nums text-transparent">4.8/5</p>
+                  <Star className="h-3.5 w-3.5 shrink-0 text-teal-200/90 sm:hidden" aria-hidden />
+                  <p className="text-[7px] font-medium uppercase leading-tight tracking-[0.12em] text-white/70 sm:text-[11px] sm:tracking-[0.25em]">
+                    Avg. satisfaction
+                  </p>
+                  <p className="bg-gradient-to-br from-white to-slate-200 bg-clip-text text-base font-semibold tabular-nums text-transparent sm:mt-1 sm:text-2xl">
+                    4.8/5
+                  </p>
                 </motion.div>
               </div>
             </div>

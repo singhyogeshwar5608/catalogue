@@ -18,6 +18,22 @@ export type ListingItem = Product & {
 
 const STORES_BATCH_SIZE = 8;
 
+function dedupeStoresById(stores: Store[]): Store[] {
+  const seen = new Set<string>();
+  return stores.filter((s) => {
+    const id = String(s.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function listingDedupeKey(item: ListingItem): string {
+  const sid = item.storeId != null && item.storeId !== '' ? String(item.storeId) : '';
+  const un = item.storeUsername?.trim() ?? '';
+  return `${sid || un || 'store'}-${String(item.id)}`;
+}
+
 export default function ProductsPageClient({ initialStores }: { initialStores: Store[] }) {
   const [stores, setStores] = useState<Store[]>(initialStores);
   const [items, setItems] = useState<ListingItem[]>([]);
@@ -31,7 +47,7 @@ export default function ProductsPageClient({ initialStores }: { initialStores: S
   const orderedStoresRef = useRef<Store[]>([]);
 
   useLayoutEffect(() => {
-    const prioritized = prioritizeCurrentUserStore(initialStores, user);
+    const prioritized = prioritizeCurrentUserStore(dedupeStoresById(initialStores), user);
     setStores(prioritized);
     orderedStoresRef.current = prioritized;
     setItems([]);
@@ -91,7 +107,17 @@ export default function ProductsPageClient({ initialStores }: { initialStores: S
     try {
       const nextStores = orderedStores.slice(cursor, cursor + STORES_BATCH_SIZE);
       const listingRows = await Promise.all(nextStores.map((store) => mapStoreItems(store)));
-      setItems((previous) => [...previous, ...listingRows.flat()]);
+      setItems((previous) => {
+        const seen = new Set(previous.map((p) => listingDedupeKey(p)));
+        const next: ListingItem[] = [...previous];
+        for (const row of listingRows.flat()) {
+          const k = listingDedupeKey(row);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          next.push(row);
+        }
+        return next;
+      });
       const nextCursor = cursor + nextStores.length;
       setCursor(nextCursor);
       setHasMore(nextCursor < orderedStores.length);
@@ -167,7 +193,7 @@ export default function ProductsPageClient({ initialStores }: { initialStores: S
           <div className="grid grid-cols-2 gap-2 min-w-0 sm:gap-3 md:grid-cols-3 md:gap-5 [&>*]:min-w-0">
             {filteredItems.map((item) => (
               <ProductCard
-                key={`${item.storeUsername ?? item.storeId ?? 's'}-${item.id}`}
+                key={listingDedupeKey(item)}
                 product={item}
                 href={item.storeUsername ? `/store/${item.storeUsername}` : undefined}
                 openInModal={false}

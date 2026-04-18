@@ -6,7 +6,6 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import {
   BarChart3,
-  Bell,
   Briefcase,
   CreditCard,
   Download,
@@ -35,18 +34,12 @@ import {
 } from 'lucide-react';
 import {
   getApiRequestBaseUrl,
-  getMyFollowNotifications,
-  getMyStoreNotifications,
   getProductsByStore,
-  markFollowNotificationRead,
-  markStoreNotificationRead,
   getStoreBySlugFromApi,
   getStoreSubscription,
   isApiError,
   updateStore,
 } from '@/src/lib/api';
-import type { CombinedNotificationItem } from '@/src/lib/combinedNotifications';
-import { mergeNotifications } from '@/src/lib/combinedNotifications';
 import { useAuth } from '@/src/context/AuthContext';
 import { perfLog } from '@/src/lib/perfLog';
 import { getDashboardExpiryWarningDaysRemaining, isPaidSubscriptionActive } from '@/src/lib/storeAccess';
@@ -183,11 +176,6 @@ export default function DashboardPage() {
   const socialInputRefs = useRef<Partial<Record<keyof typeof socialLinks, HTMLInputElement | null>>>({});
   const [showPhone, setShowPhone] = useState(true);
   const [savingPhoneVisibility, setSavingPhoneVisibility] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<CombinedNotificationItem[]>([]);
-  const [notificationsUnread, setNotificationsUnread] = useState(0);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
-  const notificationsPanelRef = useRef<HTMLDivElement>(null);
 
   const hasProducts = myProducts.length > 0;
 
@@ -444,10 +432,34 @@ export default function DashboardPage() {
   }, [myStore]);
 
   const socialPlatforms = [
-    { key: 'facebook', label: 'Facebook', prefix: 'facebook.com/', icon: Facebook, iconClassName: 'text-[#1877f2]' },
-    { key: 'instagram', label: 'Instagram', prefix: 'instagram.com/', icon: Instagram, iconClassName: 'text-[#e1306c]' },
-    { key: 'youtube', label: 'YouTube', prefix: 'youtube.com/@', icon: Youtube, iconClassName: 'text-[#ff0000]' },
-    { key: 'linkedin', label: 'LinkedIn', prefix: 'linkedin.com/in/', icon: Linkedin, iconClassName: 'text-[#0077b5]' },
+    {
+      key: 'facebook',
+      label: 'Facebook',
+      placeholder: 'Paste full Facebook link here',
+      icon: Facebook,
+      iconClassName: 'text-[#1877f2]',
+    },
+    {
+      key: 'instagram',
+      label: 'Instagram',
+      placeholder: 'Paste full Instagram link here',
+      icon: Instagram,
+      iconClassName: 'text-[#e1306c]',
+    },
+    {
+      key: 'youtube',
+      label: 'YouTube',
+      placeholder: 'Paste full YouTube link here',
+      icon: Youtube,
+      iconClassName: 'text-[#ff0000]',
+    },
+    {
+      key: 'linkedin',
+      label: 'LinkedIn',
+      placeholder: 'Paste full LinkedIn link here',
+      icon: Linkedin,
+      iconClassName: 'text-[#0077b5]',
+    },
   ] as const;
 
   const handleSocialLinkChange = (key: keyof typeof socialLinks, value: string) => {
@@ -515,80 +527,6 @@ export default function DashboardPage() {
     } finally {
       setSavingPhoneVisibility(false);
     }
-  };
-
-  const loadNotifications = useCallback(async () => {
-    if (!isLoggedIn) return;
-    setNotificationsLoading(true);
-    try {
-      const [owner, follower] = await Promise.all([
-        getMyStoreNotifications({ limit: 24 }),
-        getMyFollowNotifications({ limit: 24 }),
-      ]);
-      setNotifications(mergeNotifications(owner.notifications, follower.notifications));
-      setNotificationsUnread(owner.unread_count + follower.unread_count);
-    } catch {
-      // keep dashboard stable if notification endpoint fails
-    } finally {
-      setNotificationsLoading(false);
-    }
-  }, [isLoggedIn]);
-
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    void loadNotifications();
-    const id = window.setInterval(() => {
-      void loadNotifications();
-    }, 7000);
-    return () => window.clearInterval(id);
-  }, [isLoggedIn, loadNotifications]);
-
-  useEffect(() => {
-    if (!notificationsOpen) return;
-    const onDocClick = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (notificationsPanelRef.current && target && !notificationsPanelRef.current.contains(target)) {
-        setNotificationsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, [notificationsOpen]);
-
-  const handleNotificationClick = async (row: CombinedNotificationItem) => {
-    const notification = row.notification;
-    if (!notification.read_at) {
-      try {
-        if (row.source === 'owner') {
-          await markStoreNotificationRead(notification.id);
-        } else {
-          await markFollowNotificationRead(notification.id);
-        }
-        const ts = new Date().toISOString();
-        setNotifications((prev) =>
-          prev.map((item): CombinedNotificationItem => {
-            if (item.source !== row.source || item.notification.id !== notification.id) return item;
-            if (item.source === 'owner') {
-              return { source: 'owner', notification: { ...item.notification, read_at: ts } };
-            }
-            return { source: 'follower', notification: { ...item.notification, read_at: ts } };
-          })
-        );
-        setNotificationsUnread((prev) => Math.max(0, prev - 1));
-      } catch {
-        // ignore read-mark failure in quick panel
-      }
-    }
-    setNotificationsOpen(false);
-    const pid =
-      row.source === 'follower' && typeof notification.meta?.product_id === 'number'
-        ? notification.meta.product_id
-        : null;
-    if (pid != null) {
-      router.push(`/product/${pid}`);
-      return;
-    }
-    router.push('/dashboard/notifications');
   };
 
   if (loading) {
@@ -660,36 +598,36 @@ export default function DashboardPage() {
         <div className="audience-inline-grid flex items-center justify-between">
           <div className="flex flex-1 flex-col items-center gap-[1px]">
             <div className="flex items-center gap-[5px]">
-              <UserPlus className="h-3 w-3 text-[#0d9488]" strokeWidth={2} />
+              <UserPlus className="h-[14.4px] w-[14.4px] text-[#0D3AD1]" strokeWidth={2} />
               <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
                 {(myStore.followersCount ?? 0).toLocaleString('en-IN')}
               </p>
             </div>
-            <p className="text-[8px] leading-none tracking-[0.03em] text-[#9ca3af]">Followers</p>
+            <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#0D3AD1]">Followers</p>
           </div>
 
           <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
 
           <div className="flex flex-1 flex-col items-center gap-[1px]">
             <div className="flex items-center gap-[5px]">
-              <Heart className="h-3 w-3 text-[#0d9488]" strokeWidth={2} />
+              <Heart className="h-[14.4px] w-[14.4px] text-[#D10DB4]" strokeWidth={2} />
               <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
                 {(myStore.likesCount ?? 0).toLocaleString('en-IN')}
               </p>
             </div>
-            <p className="text-[8px] leading-none tracking-[0.03em] text-[#9ca3af]">Likes</p>
+            <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#D10DB4]">Likes</p>
           </div>
 
           <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
 
           <div className="flex flex-1 flex-col items-center gap-[1px]">
             <div className="flex items-center gap-[5px]">
-              <Eye className="h-3 w-3 text-[#0d9488]" strokeWidth={2} />
+              <Eye className="h-[14.4px] w-[14.4px] text-[#070A07]" strokeWidth={2} />
               <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
                 {(myStore.seenCount ?? 0).toLocaleString('en-IN')}
               </p>
             </div>
-            <p className="text-[8px] leading-none tracking-[0.03em] text-[#9ca3af]">Views</p>
+            <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#070A07]">Views</p>
           </div>
         </div>
       </div>
@@ -704,6 +642,14 @@ export default function DashboardPage() {
               </span>
               <div>
                 <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 sm:text-3xl">{myStore.name}</h1>
+                {myStore.id ? (
+                  <p
+                    className="mt-1 text-[8px] font-semibold tabular-nums leading-snug text-slate-600 sm:text-[10px]"
+                    aria-label={`Store ID ${myStore.id}`}
+                  >
+                    Store ID: {myStore.id}
+                  </p>
+                ) : null}
                 {myStore.location ? (
                   <p className="mt-1 text-sm text-slate-500">{myStore.location}</p>
                 ) : (
@@ -712,59 +658,6 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">
-              <div ref={notificationsPanelRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => setNotificationsOpen((prev) => !prev)}
-                  className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  aria-label="Open notifications"
-                >
-                  <Bell className="h-4 w-4" />
-                  {notificationsUnread > 0 ? (
-                    <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-                      {notificationsUnread > 9 ? '9+' : notificationsUnread}
-                    </span>
-                  ) : null}
-                </button>
-                {notificationsOpen ? (
-                  <div className="absolute right-0 z-30 mt-2 w-[min(90vw,340px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                    <div className="border-b border-slate-100 px-3 py-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Notifications</p>
-                    </div>
-                    <div className="max-h-72 overflow-auto">
-                      {notificationsLoading ? (
-                        <p className="px-3 py-4 text-sm text-slate-500">Loading...</p>
-                      ) : notifications.length === 0 ? (
-                        <p className="px-3 py-4 text-sm text-slate-500">No notifications yet.</p>
-                      ) : (
-                        notifications.slice(0, 6).map((row) => {
-                          const n = row.notification;
-                          return (
-                            <button
-                              key={`${row.source}-${n.id}`}
-                              type="button"
-                              onClick={() => void handleNotificationClick(row)}
-                              className={`block w-full border-b border-slate-100 px-3 py-2 text-left transition hover:bg-slate-50 ${
-                                n.read_at ? 'bg-white' : 'bg-primary/[0.04]'
-                              }`}
-                            >
-                              <p className="truncate text-sm font-semibold text-slate-900">
-                                {n.title || 'Notification'}
-                              </p>
-                              {n.body ? <p className="truncate text-xs text-slate-600">{n.body}</p> : null}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                    <div className="px-3 py-2">
-                      <Link href="/dashboard/notifications" className="text-xs font-semibold text-primary hover:underline">
-                        View all
-                      </Link>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
               <div className="relative h-14 w-14 sm:h-16 sm:w-16">
                 <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-500 shadow-sm" aria-hidden />
                 {myStore.logo ? (
@@ -828,20 +721,29 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <div className="dashboard-primary-cta-row flex flex-wrap gap-2 sm:hidden">
+          <div className="dashboard-primary-cta-row flex flex-col gap-2 sm:hidden">
             {(myStore.businessType === 'product' || myStore.businessType === 'hybrid') && (
-              <Link
-                href="/dashboard/products"
-                className="dashboard-primary-cta inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
-              >
-                <Plus className="h-4 w-4" />
-                Add Product
-              </Link>
+              <div className="dashboard-product-actions flex w-full min-w-0 justify-center gap-2">
+                <Link
+                  href="/dashboard/products"
+                  className="dashboard-primary-cta inline-flex min-w-0 items-center justify-center gap-1 rounded-full bg-primary px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-700"
+                >
+                  <Plus className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Add Product</span>
+                </Link>
+                <Link
+                  href="/dashboard/products"
+                  className="dashboard-view-products-cta inline-flex min-w-0 items-center justify-center gap-1 rounded-full border border-primary bg-white px-2.5 py-1.5 text-xs font-semibold text-primary shadow-sm transition hover:bg-primary/10"
+                >
+                  <Package className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">View Products</span>
+                </Link>
+              </div>
             )}
             {(myStore.businessType === 'service' || myStore.businessType === 'hybrid') && (
               <Link
                 href="/dashboard/products?tab=services"
-                className="dashboard-secondary-cta inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="dashboard-secondary-cta inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
                 <Briefcase className="h-4 w-4" />
                 Add Service
@@ -870,6 +772,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="social-links-card w-full max-w-[430px] rounded-2xl border bg-white p-5 shadow-sm sm:p-6" style={{ borderWidth: '0.5px', borderColor: '#e8e8e8' }}>
+          <h2 className="mb-4 text-base font-semibold tracking-tight text-slate-900 sm:text-lg">Social Media Links</h2>
           <div className="mt-0 grid gap-2.5">
             {socialPlatforms.map((platform) => {
               const Icon = platform.icon;
@@ -892,22 +795,18 @@ export default function DashboardPage() {
 
                   {isOpen && (
                     <div id={`social-panel-${platform.key}`} className="border-t border-slate-100 px-3.5 pb-3.5 pt-3">
-                      <div className="relative">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-                          {platform.prefix}
-                        </span>
-                        <input
-                          ref={(node) => {
-                            socialInputRefs.current[platform.key] = node;
-                          }}
-                          type="text"
-                          inputMode="url"
-                          autoComplete="url"
-                          value={socialLinks[platform.key]}
-                          onChange={(event) => handleSocialLinkChange(platform.key, event.target.value)}
-                          className="w-full rounded-xl border border-slate-200 py-2.5 pl-[7.35rem] pr-3 text-sm text-slate-700 transition focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                        />
-                      </div>
+                      <input
+                        ref={(node) => {
+                          socialInputRefs.current[platform.key] = node;
+                        }}
+                        type="text"
+                        inputMode="url"
+                        autoComplete="url"
+                        value={socialLinks[platform.key]}
+                        onChange={(event) => handleSocialLinkChange(platform.key, event.target.value)}
+                        placeholder={platform.placeholder}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 placeholder:text-slate-400 transition focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      />
                     </div>
                   )}
                 </div>
@@ -1048,7 +947,14 @@ export default function DashboardPage() {
             flex-shrink: 0;
           }
 
-          .dashboard-primary-cta {
+          .dashboard-product-actions .dashboard-primary-cta,
+          .dashboard-product-actions .dashboard-view-products-cta {
+            flex: 0 1 auto;
+            min-width: 7.25rem;
+            min-height: 1.9rem;
+          }
+
+          .dashboard-primary-cta-row > .dashboard-primary-cta {
             flex: 1 1 100%;
             min-height: 2.5rem;
           }

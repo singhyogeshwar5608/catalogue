@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/src/context/AuthContext';
 import { lookupPinCode } from '@/src/lib/location';
@@ -348,15 +347,7 @@ export default function CreateStorePage() {
     <div className="create-store-page flex w-full flex-col bg-gray-50 px-2 pt-3 pb-8 md:px-4 md:pt-6 md:pb-12">
       <div className="create-store-shell flex w-full items-start px-2 py-0 max-[700px]:px-1.5 md:px-0 md:py-0">
         <div className="create-store-container mx-auto flex w-full max-w-md flex-1 flex-col justify-start">
-          <div className="mb-2 flex items-center justify-end md:mb-4">
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 md:px-4 md:py-2 md:text-sm"
-            >
-              Back to login
-            </Link>
-          </div>
-        <form onSubmit={handleSubmit} className="create-store-form bg-white rounded-xl border border-gray-200 shadow-sm px-2 py-2.5 space-y-2.5 max-[700px]:space-y-2 max-[700px]:px-1.5 max-[700px]:py-2 md:rounded-2xl md:px-4 md:py-5 md:space-y-5">
+          <form onSubmit={handleSubmit} className="create-store-form bg-white rounded-xl border border-gray-200 shadow-sm px-2 py-2.5 space-y-2.5 max-[700px]:space-y-2 max-[700px]:px-1.5 max-[700px]:py-2 md:rounded-2xl md:px-4 md:py-5 md:space-y-5">
           <div className="create-store-logo-block space-y-2 max-[700px]:space-y-1.5 md:space-y-3">
             <div className="flex items-center justify-between gap-1.5 md:justify-center md:gap-4">
               <div className="create-store-hook-panel hidden lg:flex">
