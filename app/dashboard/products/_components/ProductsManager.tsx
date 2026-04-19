@@ -14,7 +14,7 @@ import {
   Search,
   ChevronDown,
   Check,
-  ExternalLink,
+  ArrowRight,
   Loader2,
 } from 'lucide-react';
 import type { Product, Service, Store } from '@/types';
@@ -1310,12 +1310,10 @@ export default function ProductsManager({ defaultShowForm = false }: ProductsMan
             {hasStore && user?.storeSlug ? (
               <Link
                 href={`/store/${encodeURIComponent(user.storeSlug)}`}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
               >
                 View store
-                <ExternalLink className="h-3.5 w-3.5 opacity-90" aria-hidden />
+                <ArrowRight className="h-3.5 w-3.5 opacity-90" aria-hidden />
               </Link>
             ) : null}
           </div>

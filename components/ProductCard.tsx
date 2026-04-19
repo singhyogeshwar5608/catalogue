@@ -7,7 +7,6 @@ import { ArrowRight, ShoppingCart, Star } from 'lucide-react';
 import { Product } from '@/types';
 
 const CARD_BG = '#ffffff';
-const MUTED = '#6b7280';
 const FALLBACK_PRODUCT_IMAGE = '/fallback/product-placeholder.svg';
 
 interface ProductCardProps {
@@ -41,7 +40,6 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
   const displayPrice = product.price > 0 ? `₹${product.price}` : 'On request';
-  const tagline = product.category || product.storeName || 'Best quality product';
   const brandInitial = (product.storeName?.trim()?.charAt(0) || 'B').toUpperCase();
   const badgeLabel = discount > 0 ? 'Best Seller' : 'Featured';
 
@@ -69,7 +67,7 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
             alt={product.name}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 320px"
-            className="object-cover transition duration-300 group-hover:scale-[1.02]"
+            className="object-contain transition duration-300 group-hover:brightness-[1.03]"
             onError={() => {
               setHeroImageSrc(FALLBACK_PRODUCT_IMAGE);
             }}
@@ -104,22 +102,26 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
         ) : null}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col bg-white p-3 md:p-4">
-        <h3 className="line-clamp-2 text-[15px] font-bold leading-tight text-slate-900 md:text-lg">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#E3E6E8] p-3 md:p-4">
+        <h3 className="min-w-0 truncate text-[15px] font-bold leading-tight text-slate-900 md:text-lg" title={product.name}>
           {product.name}
         </h3>
-        <p className="mt-0.5 text-xs font-medium text-slate-500 md:mt-1 md:text-sm">{tagline}</p>
-        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-500 md:mt-1 md:text-xs md:leading-relaxed">
-          {product.description}
-        </p>
+        {product.description?.trim() ? (
+          <p
+            className="mt-0.5 min-w-0 truncate text-[11px] leading-snug text-slate-500 md:mt-1 md:text-xs md:leading-relaxed"
+            title={product.description.trim()}
+          >
+            {product.description.trim()}
+          </p>
+        ) : null}
 
-        <div className="mt-3 flex items-center justify-between gap-2 md:mt-4">
-          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-slate-800 md:px-3 md:py-1 md:text-sm">
+        <div className="mt-3 flex min-w-0 items-center gap-2 md:mt-4">
+          <span className="inline-flex min-w-0 flex-1 truncate rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-slate-800 md:px-3 md:py-1 md:text-sm">
             {displayPrice}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-black px-3 py-1 text-[11px] font-semibold text-white md:px-3.5 md:py-1.5 md:text-xs">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black px-3 py-1 text-[11px] font-semibold text-white md:px-3.5 md:py-1.5 md:text-xs">
             Buy Now
-            <ArrowRight className="h-3 w-3 md:h-3.5 md:w-3.5" />
+            <ArrowRight className="h-3 w-3 shrink-0 md:h-3.5 md:w-3.5" />
           </span>
         </div>
       </div>
@@ -159,7 +161,7 @@ export default function ProductCard({ product, href, openInModal = true }: Produ
                   src={modalImageSrc}
                   alt={product.name}
                   fill
-                  className="object-cover"
+                  className="object-contain"
                   onError={() => {
                     setModalImageSrc(FALLBACK_PRODUCT_IMAGE);
                   }}

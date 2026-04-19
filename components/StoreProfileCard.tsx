@@ -2,8 +2,16 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Store } from '@/types';
-import { Star, MapPin, Phone, Facebook, Instagram, Youtube } from 'lucide-react';
+import { Star, MapPin, Phone } from 'lucide-react';
 import { getStoreBannerImage } from '@/utils/storeBanner';
+import {
+  FACEBOOK_SOCIAL_BRAND_ICON_URL,
+  INSTAGRAM_SOCIAL_BRAND_ICON_URL,
+  LINKEDIN_SOCIAL_BRAND_ICON_URL,
+  SOCIAL_BRAND_ICON_DISPLAY_PX,
+  SOCIAL_BRAND_ICON_ROW_GAP_PX,
+  YOUTUBE_SOCIAL_BRAND_ICON_URL,
+} from '@/src/lib/socialBrandAssets';
 
 interface StoreProfileCardProps {
   store: Store;
@@ -36,24 +44,23 @@ export default function StoreProfileCard({ store, categoryBannerIndex }: StorePr
   const socialLinks = [
     {
       href: store.socialLinks?.facebook,
-      icon: Facebook,
+      iconSrc: FACEBOOK_SOCIAL_BRAND_ICON_URL,
       label: 'Facebook',
-      bgColor: 'bg-[#1877F2]',
-      hoverColor: 'hover:bg-[#1664d9]',
     },
     {
       href: store.socialLinks?.instagram,
-      icon: Instagram,
+      iconSrc: INSTAGRAM_SOCIAL_BRAND_ICON_URL,
       label: 'Instagram',
-      bgColor: 'bg-gradient-to-br from-[#f58529] via-[#dd2a7b] to-[#8134af]',
-      hoverColor: 'hover:brightness-110',
     },
     {
       href: store.socialLinks?.youtube,
-      icon: Youtube,
+      iconSrc: YOUTUBE_SOCIAL_BRAND_ICON_URL,
       label: 'YouTube',
-      bgColor: 'bg-[#FF0000]',
-      hoverColor: 'hover:bg-[#e00000]',
+    },
+    {
+      href: store.socialLinks?.linkedin,
+      iconSrc: LINKEDIN_SOCIAL_BRAND_ICON_URL,
+      label: 'LinkedIn',
     },
   ].filter((link) => Boolean(link.href));
 
@@ -91,18 +98,16 @@ export default function StoreProfileCard({ store, categoryBannerIndex }: StorePr
           {/* Logo - Overlapping Banner */}
           <div className="absolute left-1/2 -top-12 -translate-x-1/2">
             <div className="relative inline-flex items-center justify-center">
-              <div className="h-24 w-24 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-xl">
-                <img
-                  src={store.logo}
-                  alt={store.name}
-                  width={96}
-                  height={96}
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                  decoding="async"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+              <img
+                src={store.logo}
+                alt={store.name}
+                width={96}
+                height={96}
+                className="h-24 w-24 rounded-2xl object-cover shadow-xl"
+                loading="lazy"
+                decoding="async"
+                referrerPolicy="no-referrer"
+              />
             </div>
           </div>
 
@@ -152,23 +157,40 @@ export default function StoreProfileCard({ store, categoryBannerIndex }: StorePr
 
           {/* Social Media Icons - Only on Mobile */}
           {socialLinks.length > 0 && (
-            <div className="mt-5 flex justify-center gap-3 md:hidden">
-              {socialLinks.map((link) => {
-                const Icon = link.icon;
-                return (
+            <div className="mt-5 flex w-full min-w-0 justify-center md:hidden">
+              <div
+                className="flex flex-nowrap items-center justify-center gap-0 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+                style={
+                  SOCIAL_BRAND_ICON_ROW_GAP_PX > 0
+                    ? { gap: `${SOCIAL_BRAND_ICON_ROW_GAP_PX}px` }
+                    : undefined
+                }
+              >
+              {socialLinks.map((link) => (
                   <a
                     key={link.label}
                     href={link.href as string}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${link.bgColor} ${link.hoverColor}`}
+                    className="inline-flex shrink-0 items-center justify-center rounded-md p-0 leading-none transition hover:opacity-90 hover:-translate-y-0.5"
                     aria-label={link.label}
                   >
-                    <Icon className="h-5 w-5" />
+                    <img
+                      src={link.iconSrc}
+                      alt=""
+                      width={SOCIAL_BRAND_ICON_DISPLAY_PX}
+                      height={SOCIAL_BRAND_ICON_DISPLAY_PX}
+                      className="block object-contain align-middle"
+                      style={{
+                        width: SOCIAL_BRAND_ICON_DISPLAY_PX,
+                        height: SOCIAL_BRAND_ICON_DISPLAY_PX,
+                      }}
+                      aria-hidden
+                    />
                   </a>
-                );
-              })}
+                ))}
+              </div>
             </div>
           )}
         </div>

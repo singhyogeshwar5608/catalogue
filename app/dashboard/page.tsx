@@ -13,10 +13,7 @@ import {
   EyeOff,
   ExternalLink,
   ChevronDown,
-  Facebook,
   Home,
-  Instagram,
-  Linkedin,
   MapPin,
   Phone,
   Package,
@@ -28,7 +25,6 @@ import {
   UserPlus,
   Heart,
   X,
-  Youtube,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -43,6 +39,7 @@ import {
 import { useAuth } from '@/src/context/AuthContext';
 import { perfLog } from '@/src/lib/perfLog';
 import { getDashboardExpiryWarningDaysRemaining, isPaidSubscriptionActive } from '@/src/lib/storeAccess';
+import { SOCIAL_BRAND_ICON_DASHBOARD_PX, SOCIAL_BRAND_ICON_URL_BY_PLATFORM } from '@/src/lib/socialBrandAssets';
 import type { Product, Store, StoreSubscription, SubscriptionPlan } from '@/types';
 import SubscriptionExpiryPopup from '@/components/SubscriptionExpiryPopup';
 import ProductLimitPopup from '@/components/ProductLimitPopup';
@@ -436,29 +433,21 @@ export default function DashboardPage() {
       key: 'facebook',
       label: 'Facebook',
       placeholder: 'Paste full Facebook link here',
-      icon: Facebook,
-      iconClassName: 'text-[#1877f2]',
     },
     {
       key: 'instagram',
       label: 'Instagram',
       placeholder: 'Paste full Instagram link here',
-      icon: Instagram,
-      iconClassName: 'text-[#e1306c]',
     },
     {
       key: 'youtube',
       label: 'YouTube',
       placeholder: 'Paste full YouTube link here',
-      icon: Youtube,
-      iconClassName: 'text-[#ff0000]',
     },
     {
       key: 'linkedin',
       label: 'LinkedIn',
       placeholder: 'Paste full LinkedIn link here',
-      icon: Linkedin,
-      iconClassName: 'text-[#0077b5]',
     },
   ] as const;
 
@@ -775,7 +764,6 @@ export default function DashboardPage() {
           <h2 className="mb-4 text-base font-semibold tracking-tight text-slate-900 sm:text-lg">Social Media Links</h2>
           <div className="mt-0 grid gap-2.5">
             {socialPlatforms.map((platform) => {
-              const Icon = platform.icon;
               const isOpen = openSocialPlatform === platform.key;
               return (
                 <div key={platform.key} className="rounded-xl border border-slate-200 bg-white">
@@ -787,7 +775,18 @@ export default function DashboardPage() {
                     aria-controls={`social-panel-${platform.key}`}
                   >
                     <span className="inline-flex items-center gap-2.5 text-sm font-medium text-slate-700">
-                      <Icon className={`h-4.5 w-4.5 ${platform.iconClassName}`} />
+                      <img
+                        src={SOCIAL_BRAND_ICON_URL_BY_PLATFORM[platform.key]}
+                        alt=""
+                        width={SOCIAL_BRAND_ICON_DASHBOARD_PX}
+                        height={SOCIAL_BRAND_ICON_DASHBOARD_PX}
+                        className="shrink-0 object-contain"
+                        style={{
+                          width: SOCIAL_BRAND_ICON_DASHBOARD_PX,
+                          height: SOCIAL_BRAND_ICON_DASHBOARD_PX,
+                        }}
+                        aria-hidden
+                      />
                       {platform.label}
                     </span>
                     <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
