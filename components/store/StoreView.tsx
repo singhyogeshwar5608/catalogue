@@ -827,19 +827,65 @@ const HeroSection = ({
                 <div className="mt-2.5 flex w-full justify-center sm:hidden">
                   <div className="w-[70%] max-w-full min-w-0 rounded-[14px] border-[0.5px] border-[#e4e9f0] bg-white px-[12px] py-[4px] shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
                     <div className="flex items-center justify-between">
-                      <div className="flex flex-1 flex-col items-center gap-[1px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!canEngage || followBusy || ownerFollowLocked) return;
+                          void onToggleFollow?.();
+                        }}
+                        disabled={!canEngage || followBusy || ownerFollowLocked}
+                        aria-pressed={Boolean(store.viewerFollowing)}
+                        className={`flex flex-1 flex-col items-center gap-[1px] rounded-xl px-2 py-1 transition ${
+                          !canEngage || followBusy || ownerFollowLocked
+                            ? 'cursor-not-allowed opacity-60'
+                            : 'cursor-pointer hover:bg-slate-50 active:bg-slate-100'
+                        } ${store.viewerFollowing ? 'ring-1 ring-[#0D3AD1]/25' : ''}`}
+                        title={
+                          !canEngage
+                            ? 'Sign in to follow'
+                            : ownerFollowLocked
+                              ? 'You already followed your own store'
+                              : store.viewerFollowing
+                                ? 'Unfollow'
+                                : 'Follow'
+                        }
+                      >
                         <div className="flex items-center gap-[5px]">
                           <UserPlus className="h-[14.4px] w-[14.4px] text-[#0D3AD1]" strokeWidth={2} />
                           <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
                             {(store.followersCount ?? 0).toLocaleString('en-IN')}
                           </p>
                         </div>
-                        <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#0D3AD1]">Followers</p>
-                      </div>
+                        <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#0D3AD1]">
+                          Followers
+                        </p>
+                      </button>
 
                       <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
 
-                      <div className="flex flex-1 flex-col items-center gap-[1px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!canEngage || likeBusy || ownerLikeLocked) return;
+                          void onToggleLike?.();
+                        }}
+                        disabled={!canEngage || likeBusy || ownerLikeLocked}
+                        aria-pressed={Boolean(store.viewerLiked)}
+                        className={`flex flex-1 flex-col items-center gap-[1px] rounded-xl px-2 py-1 transition ${
+                          !canEngage || likeBusy || ownerLikeLocked
+                            ? 'cursor-not-allowed opacity-60'
+                            : 'cursor-pointer hover:bg-slate-50 active:bg-slate-100'
+                        } ${store.viewerLiked ? 'ring-1 ring-[#D10DB4]/25' : ''}`}
+                        title={
+                          !canEngage
+                            ? 'Sign in to like'
+                            : ownerLikeLocked
+                              ? 'You already liked your own store'
+                              : store.viewerLiked
+                                ? 'Unlike'
+                                : 'Like'
+                        }
+                      >
                         <div className="flex items-center gap-[5px]">
                           <Heart className="h-[14.4px] w-[14.4px] text-[#D10DB4]" strokeWidth={2} />
                           <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
@@ -847,7 +893,7 @@ const HeroSection = ({
                           </p>
                         </div>
                         <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#D10DB4]">Likes</p>
-                      </div>
+                      </button>
 
                       <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
 
@@ -868,7 +914,7 @@ const HeroSection = ({
                     href={`https://wa.me/?text=Hi%20${encodeURIComponent(store.name)}%2C%20I'm%20interested%20in%20your%20products.%20Here's%20your%20store%20catalogue%3A%20${encodeURIComponent(window.location.href)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex w-[70%] max-w-md items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(37,99,235,0.35)] transition hover:-translate-y-0.5 hover:bg-blue-500 sm:px-8 sm:text-base"
+                    className="inline-flex w-[70%] max-w-md items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-2.5 text-[10px] font-semibold text-white shadow-[0_10px_30px_rgba(37,99,235,0.35)] transition hover:-translate-y-0.5 hover:bg-blue-500 sm:px-8 sm:text-base"
                   >
                     Share Catalogue Link
                     <ArrowRight className="h-4 w-4" />
@@ -902,7 +948,29 @@ const HeroSection = ({
             </div>
             <div className="mt-4 w-full rounded-[14px] border-[0.5px] border-[#e4e9f0] bg-white px-[12px] py-[4px] shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
               <div className="flex items-center justify-between">
-                <div className="flex flex-1 flex-col items-center gap-[1px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!canEngage || followBusy || ownerFollowLocked) return;
+                    void onToggleFollow?.();
+                  }}
+                  disabled={!canEngage || followBusy || ownerFollowLocked}
+                  aria-pressed={Boolean(store.viewerFollowing)}
+                  className={`flex flex-1 flex-col items-center gap-[1px] rounded-xl px-2 py-1 transition ${
+                    !canEngage || followBusy || ownerFollowLocked
+                      ? 'cursor-not-allowed opacity-60'
+                      : 'cursor-pointer hover:bg-slate-50 active:bg-slate-100'
+                  } ${store.viewerFollowing ? 'ring-1 ring-[#0D3AD1]/25' : ''}`}
+                  title={
+                    !canEngage
+                      ? 'Sign in to follow'
+                      : ownerFollowLocked
+                        ? 'You already followed your own store'
+                        : store.viewerFollowing
+                          ? 'Unfollow'
+                          : 'Follow'
+                  }
+                >
                   <div className="flex items-center gap-[5px]">
                     <UserPlus className="h-[14.4px] w-[14.4px] text-[#0D3AD1]" strokeWidth={2} />
                     <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
@@ -910,11 +978,33 @@ const HeroSection = ({
                     </p>
                   </div>
                   <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#0D3AD1]">Followers</p>
-                </div>
+                </button>
 
                 <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
 
-                <div className="flex flex-1 flex-col items-center gap-[1px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!canEngage || likeBusy || ownerLikeLocked) return;
+                    void onToggleLike?.();
+                  }}
+                  disabled={!canEngage || likeBusy || ownerLikeLocked}
+                  aria-pressed={Boolean(store.viewerLiked)}
+                  className={`flex flex-1 flex-col items-center gap-[1px] rounded-xl px-2 py-1 transition ${
+                    !canEngage || likeBusy || ownerLikeLocked
+                      ? 'cursor-not-allowed opacity-60'
+                      : 'cursor-pointer hover:bg-slate-50 active:bg-slate-100'
+                  } ${store.viewerLiked ? 'ring-1 ring-[#D10DB4]/25' : ''}`}
+                  title={
+                    !canEngage
+                      ? 'Sign in to like'
+                      : ownerLikeLocked
+                        ? 'You already liked your own store'
+                        : store.viewerLiked
+                          ? 'Unlike'
+                          : 'Like'
+                  }
+                >
                   <div className="flex items-center gap-[5px]">
                     <Heart className="h-[14.4px] w-[14.4px] text-[#D10DB4]" strokeWidth={2} />
                     <p className="text-[13px] font-medium leading-none text-[#111827] tabular-nums">
@@ -922,7 +1012,7 @@ const HeroSection = ({
                     </p>
                   </div>
                   <p className="text-[8px] font-extrabold leading-none tracking-[0.03em] text-[#D10DB4]">Likes</p>
-                </div>
+                </button>
 
                 <div className="h-4 w-[0.5px] bg-[#e4e9f0]" />
 

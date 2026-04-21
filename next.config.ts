@@ -23,6 +23,15 @@ function laravelProxyOrigin(): string {
 }
 
 const nextConfig: NextConfig = {
+  /**
+   * Allow loading dev assets (/_next/*) when accessing the dev server from LAN IPs.
+   * This prevents ChunkLoadError/timeouts when opening the app via `http://<local-ip>:3000`.
+   */
+  allowedDevOrigins: [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://192.168.29.165:3000",
+  ],
   images: {
     remotePatterns: [
       {
