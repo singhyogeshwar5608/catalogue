@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ArrowRight, Zap, Shield, TrendingUp, Smile, Store, Star } from 'lucide-react';
+import { ArrowRight, Zap, Shield, TrendingUp, Smile, Store as StoreIcon, Star } from 'lucide-react';
 import StoreCard from '@/components/StoreCard';
 import Image from 'next/image';
 import TrendingProductsRail from '@/components/TrendingProductsRail';
@@ -459,7 +459,7 @@ export default function HomePage() {
                   viewport={{ once: true }}
                   transition={{ delay: 0.18, duration: 0.35 }}
                 >
-                  <Store className="h-3.5 w-3.5 shrink-0 text-teal-200/90 sm:hidden" aria-hidden />
+                  <StoreIcon className="h-3.5 w-3.5 shrink-0 text-teal-200/90 sm:hidden" aria-hidden />
                   <p className="text-[7px] font-medium uppercase leading-tight tracking-[0.12em] text-white/70 sm:text-[11px] sm:tracking-[0.25em]">
                     Partner stores
                   </p>
