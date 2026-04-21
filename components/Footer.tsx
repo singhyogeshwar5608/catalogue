@@ -87,6 +87,7 @@ export default function Footer() {
                 <li><Link href="/stores" className="footer-link text-gray-600 hover:text-red-600">All Stores</Link></li>
                 <li><Link href="/create-store" className="footer-link text-gray-600 hover:text-red-600">Create Store</Link></li>
                 <li><Link href="/pricing" className="footer-link text-gray-600 hover:text-red-600">Pricing</Link></li>
+                <li><Link href="/admin" className="footer-link text-gray-600 hover:text-red-600">Admin Panel</Link></li>
               </ul>
             </div>
 
