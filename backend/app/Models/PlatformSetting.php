@@ -53,11 +53,18 @@ class PlatformSetting extends Model
 
     public static function freeTrialDays(): int
     {
-        return (int) Cache::remember(
-            self::CACHE_KEY_FREE_TRIAL_DAYS_RESOLVED,
-            3600,
-            static fn (): int => self::intValue(self::KEY_FREE_TRIAL_DAYS, self::DEFAULT_FREE_TRIAL_DAYS)
-        );
+        $fallback = static fn (): int => self::intValue(self::KEY_FREE_TRIAL_DAYS, self::DEFAULT_FREE_TRIAL_DAYS);
+
+        try {
+            return (int) Cache::remember(
+                self::CACHE_KEY_FREE_TRIAL_DAYS_RESOLVED,
+                3600,
+                $fallback
+            );
+        } catch (\Throwable) {
+            // Redis unreachable / CACHE_STORE=redis without a server would otherwise 500 any JSON with Store#trial_ends_at.
+            return $fallback();
+        }
     }
 
     public static function setInt(string $key, int $value): void
@@ -72,7 +79,11 @@ class PlatformSetting extends Model
         );
 
         if ($key === self::KEY_FREE_TRIAL_DAYS) {
-            Cache::forget(self::CACHE_KEY_FREE_TRIAL_DAYS_RESOLVED);
+            try {
+                Cache::forget(self::CACHE_KEY_FREE_TRIAL_DAYS_RESOLVED);
+            } catch (\Throwable) {
+                /* ignore if cache driver is down */
+            }
         }
     }
 

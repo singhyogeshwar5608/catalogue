@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Store;
 use App\Support\NextCatalogCacheInvalidate;
+use App\Support\StoreProductListCache;
 use App\Support\ProductImageStorage;
 use App\Support\SubscriptionPlanProductLimit;
 use App\Support\UserFollowNotificationRecorder;
@@ -153,7 +154,7 @@ class ProductController extends Controller
 
         UserFollowNotificationRecorder::newProduct($store, $product);
 
-        $this->bumpStoreProductListCache((int) $store->id);
+        StoreProductListCache::bump((int) $store->id);
         NextCatalogCacheInvalidate::products();
 
         $fresh = $product->fresh();
@@ -270,7 +271,7 @@ class ProductController extends Controller
 
         $product->update($data);
 
-        $this->bumpStoreProductListCache((int) $product->store_id);
+        StoreProductListCache::bump((int) $product->store_id);
         NextCatalogCacheInvalidate::products();
 
         $fresh = $product->fresh();
@@ -299,7 +300,7 @@ class ProductController extends Controller
 
         $product->delete();
 
-        $this->bumpStoreProductListCache($storeId);
+        StoreProductListCache::bump($storeId);
         NextCatalogCacheInvalidate::products();
 
         return $this->successResponse('Product deleted successfully.');
@@ -329,7 +330,7 @@ class ProductController extends Controller
 
         $cacheKey = "products:store:{$storeId}:v{$version}:u{$updatedToken}:page:{$page}:per:{$perPage}";
 
-        $paginator = Cache::remember($cacheKey, 60, function () use ($storeId, $page, $perPage) {
+        $loadPage = function () use ($storeId, $page, $perPage) {
             $p = Product::query()
                 ->select(Product::LIST_COLUMNS)
                 ->where('store_id', $storeId)
@@ -343,7 +344,13 @@ class ProductController extends Controller
             });
 
             return $p;
-        });
+        };
+
+        try {
+            $paginator = Cache::remember($cacheKey, 60, $loadPage);
+        } catch (\Throwable) {
+            $paginator = $loadPage();
+        }
 
         return $this->successResponse('Products retrieved successfully.', $paginator);
     }
@@ -370,18 +377,6 @@ class ProductController extends Controller
         $payload['checkout'] = ProductCheckoutController::buildPublicCheckoutPayload($product, $request);
 
         return $this->successResponse('Product retrieved successfully.', $payload);
-    }
-
-    private function bumpStoreProductListCache(int $storeId): void
-    {
-        // Always touch store updated_at so cache keys invalidate even on environments
-        // where `product_list_cache_version` migration is not deployed yet.
-        Store::query()->whereKey($storeId)->update(['updated_at' => now()]);
-
-        if (! Schema::hasColumn('stores', 'product_list_cache_version')) {
-            return;
-        }
-        Store::query()->whereKey($storeId)->increment('product_list_cache_version');
     }
 
     private function resolveIncomingPrimaryImage(Request $request, ?string $previous): ?string

@@ -30,20 +30,26 @@ final class NextCatalogCacheInvalidate
         $url = (string) config('services.next_cache_invalidate_url', '');
         $url = rtrim(trim($url), '/');
         if ($url === '') {
+            Log::warning('Next catalog cache not invalidated: NEXT_CACHE_INVALIDATE_URL is empty. Set it in backend .env to your Next.js origin, e.g. http://127.0.0.1:3000/api/cache/invalidate (see backend/.env.example).', [
+                'scopes' => $scopes,
+            ]);
+
             return;
         }
 
         $secret = (string) config('services.next_cache_invalidate_secret', '');
         try {
-            Http::timeout(5)
+            Http::timeout(8)
+                ->retry(2, 200)
                 ->withHeaders([
                     'X-Cache-Invalidate-Secret' => $secret,
                     'Accept' => 'application/json',
                 ])
                 ->post($url, ['scopes' => $scopes]);
         } catch (\Throwable $e) {
-            Log::warning('Next catalog cache invalidate skipped or failed.', [
+            Log::warning('Next catalog cache invalidate request failed.', [
                 'scopes' => $scopes,
+                'url' => $url,
                 'message' => $e->getMessage(),
             ]);
         }
