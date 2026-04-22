@@ -31,6 +31,7 @@ import {
 import {
   getApiRequestBaseUrl,
   getProductsByStore,
+  getMyStores,
   getStoreBySlugFromApi,
   getStoreSubscription,
   isApiError,
@@ -151,7 +152,7 @@ function formatActiveSubscriptionPlanLine(sub: StoreSubscription): string {
 /** True only for a paid plan period — not the platform default `free` slug row from signup. */
 export default function DashboardPage() {
   const router = useRouter();
-  const { isLoggedIn, user } = useAuth();
+  const { isLoggedIn, user, setUser } = useAuth();
   const [myStore, setMyStore] = useState<Store | null>(null);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -195,17 +196,67 @@ export default function DashboardPage() {
 
   const prettyUrl = useMemo(() => storeUrl.replace(/^https?:\/\//, ''), [storeUrl]);
 
-  const dashboardSwrKey = isLoggedIn && user?.storeSlug ? user.storeSlug : null;
+  /**
+   * Use `/my/stores` as source of truth — not `user.storeSlug` from localStorage (stale slugs
+   * cause 404 "Store not found" after username changes, Redis/Next is unrelated for this path).
+   */
+  const dashboardSwrKey = isLoggedIn && user?.id ? ['dashboard', user.id] as const : null;
 
   const { data: dashboardData, error: swrError, isLoading: swrLoading, mutate: mutateDashboard } = useSWR(
     dashboardSwrKey,
-    async (slug: string) => {
+    async () => {
       perfLog('dashboard', 'SWR fetch start');
-      const store = await getStoreBySlugFromApi(slug);
-      const products = await getProductsByStore(store.id);
-      const subData = await getStoreSubscription(store.id);
+      let stores: Store[] = [];
+      let myStoresError: unknown;
+      try {
+        stores = await getMyStores();
+      } catch (e) {
+        myStoresError = e;
+      }
+      if (stores.length === 0 && user?.storeSlug?.trim()) {
+        try {
+          const one = await getStoreBySlugFromApi(user.storeSlug.trim());
+          stores = [one];
+          perfLog('dashboard', 'Loaded store via GET /store/:slug fallback (my/stores failed or empty)');
+        } catch (fallbackErr) {
+          if (myStoresError) {
+            throw myStoresError;
+          }
+          throw fallbackErr;
+        }
+      }
+      if (!stores.length) {
+        if (myStoresError) {
+          throw myStoresError;
+        }
+        throw new Error('You need to create a store first.');
+      }
+      const prefer = user?.storeSlug?.trim();
+      let store: Store;
+      if (prefer) {
+        const byUsername = stores.find((s) => s.username === prefer);
+        const byId = stores.find((s) => String(s.id) === prefer);
+        store = byUsername ?? byId ?? stores[0];
+      } else {
+        store = stores[0];
+      }
+      // Subscription/products endpoints can 500 on production (DB, Redis) while `/my/stores` works.
+      // Do not block the whole dashboard — show store shell and empty subscription if needed.
+      const [prodResult, subResult] = await Promise.allSettled([
+        getProductsByStore(store.id),
+        getStoreSubscription(store.id),
+      ]);
+      const products = prodResult.status === 'fulfilled' ? (prodResult.value ?? []) : [];
+      if (prodResult.status === 'rejected') {
+        perfLog('dashboard', `products load failed: ${String(prodResult.reason)}`);
+      }
+      const activeSubscription =
+        subResult.status === 'fulfilled' ? subResult.value.activeSubscription : null;
+      if (subResult.status === 'rejected') {
+        perfLog('dashboard', `subscription load failed: ${String(subResult.reason)}`);
+      }
       perfLog('dashboard', 'SWR data ready');
-      return { store, products: products ?? [], activeSubscription: subData.activeSubscription };
+      return { store, products, activeSubscription };
     },
     { revalidateOnFocus: true, dedupingInterval: 5000 }
   );
@@ -237,32 +288,36 @@ export default function DashboardPage() {
     }
   }, [dashboardData]);
 
+  /** Fix stale `storeSlug` in localStorage after `/my/stores` returns the real username. */
+  useEffect(() => {
+    if (!dashboardData?.store || !user) return;
+    const u = dashboardData.store.username?.trim();
+    if (u && user.storeSlug !== u) {
+      setUser({ ...user, storeSlug: u });
+    }
+  }, [dashboardData?.store, user, setUser]);
+
   useEffect(() => {
     if (!swrError) return;
     if (isApiError(swrError) && swrError.status === 401) {
       router.replace('/auth?redirect=/dashboard');
       return;
     }
-    setError(swrError instanceof Error ? swrError.message : 'Unable to load store data');
+    let msg = swrError instanceof Error ? swrError.message : 'Unable to load store data';
+    if (/^Server Error$/i.test(msg.trim()) || /Internal Server Error/i.test(msg)) {
+      msg =
+        'Could not load your store (API error). If this continues, run migrations and check the Laravel log on the API server.';
+    }
+    setError(msg);
   }, [swrError, router]);
 
   useEffect(() => {
     if (!isLoggedIn) {
       router.replace('/auth?redirect=/dashboard');
-      return;
     }
-    if (!user?.storeSlug) {
-      setError('You need to create a store first.');
-      setMyStore(null);
-      setMyProducts([]);
-      setSubscription(null);
-    } else {
-      setError(null);
-    }
-  }, [isLoggedIn, user?.storeSlug, router]);
+  }, [isLoggedIn, router]);
 
-  const loading =
-    isLoggedIn && Boolean(user?.storeSlug) && swrLoading && !dashboardData && !swrError;
+  const loading = isLoggedIn && Boolean(user?.id) && swrLoading && !dashboardData && !swrError;
 
   useEffect(() => {
     try {
